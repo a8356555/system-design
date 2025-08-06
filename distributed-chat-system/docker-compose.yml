@@ -1,0 +1,181 @@
+version: '3.8'
+
+services:
+  # Chat Application
+  chat-app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - REDIS_HOST=redis
+      - KAFKA_HOST=kafka:9092
+      - MONGODB_URI=mongodb://mongo:27017/chatdb
+      - JWT_SECRET=your-jwt-secret-here
+    depends_on:
+      - redis
+      - kafka
+      - mongo
+    networks:
+      - chat-network
+    deploy:
+      replicas: 3
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  # Load Balancer
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./ssl:/etc/nginx/ssl
+    depends_on:
+      - chat-app
+    networks:
+      - chat-network
+
+  # Redis for caching and session management
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    networks:
+      - chat-network
+
+  # Redis Cluster (for production scaling)
+  redis-node-1:
+    image: redis:7-alpine
+    command: redis-server --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --appendonly yes
+    volumes:
+      - redis-cluster-1:/data
+    networks:
+      - chat-network
+
+  redis-node-2:
+    image: redis:7-alpine
+    command: redis-server --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --appendonly yes
+    volumes:
+      - redis-cluster-2:/data
+    networks:
+      - chat-network
+
+  redis-node-3:
+    image: redis:7-alpine
+    command: redis-server --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --appendonly yes
+    volumes:
+      - redis-cluster-3:/data
+    networks:
+      - chat-network
+
+  # Apache Kafka for message queuing
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - chat-network
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: true
+      KAFKA_NUM_PARTITIONS: 3
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    networks:
+      - chat-network
+
+  # MongoDB for message persistence
+  mongo:
+    image: mongo:6
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+      - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password
+      MONGO_INITDB_DATABASE: chatdb
+    networks:
+      - chat-network
+
+  # MongoDB Replica Set (for production)
+  mongo-primary:
+    image: mongo:6
+    command: mongod --replSet rs0 --bind_ip_all
+    volumes:
+      - mongo-primary:/data/db
+    networks:
+      - chat-network
+
+  mongo-secondary:
+    image: mongo:6
+    command: mongod --replSet rs0 --bind_ip_all
+    volumes:
+      - mongo-secondary:/data/db
+    networks:
+      - chat-network
+
+  mongo-arbiter:
+    image: mongo:6
+    command: mongod --replSet rs0 --bind_ip_all
+    volumes:
+      - mongo-arbiter:/data/db
+    networks:
+      - chat-network
+
+  # Monitoring
+  prometheus:
+    image: prom/prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    networks:
+      - chat-network
+
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+    networks:
+      - chat-network
+
+volumes:
+  redis-data:
+  redis-cluster-1:
+  redis-cluster-2:
+  redis-cluster-3:
+  kafka-data:
+  mongo-data:
+  mongo-primary:
+  mongo-secondary:
+  mongo-arbiter:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  chat-network:
+    driver: bridge

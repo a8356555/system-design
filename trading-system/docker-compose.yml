@@ -1,0 +1,544 @@
+version: '3.8'
+
+services:
+  # Market Data Engine
+  market-data-engine:
+    build: 
+      context: ./services/market-data-engine
+      dockerfile: Dockerfile.cpp
+    ports:
+      - "8001:8001"
+    environment:
+      - NUMA_ENABLED=true
+      - CPU_AFFINITY=0-7
+      - MEMORY_POOL_SIZE=1GB
+      - MAX_SYMBOLS=10000
+      - UPDATE_RATE_TARGET=1000000
+    volumes:
+      - market-data:/data/market-data
+      - ./configs/market-data.conf:/app/config/market-data.conf:ro
+    depends_on:
+      - redis-cluster
+      - timescaledb
+    networks:
+      - hft-network
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '4.0'
+        reservations:
+          memory: 1G
+          cpus: '2.0'
+    privileged: true  # For real-time scheduling and NUMA
+
+  # Order Matching Engine
+  order-matching-engine:
+    build:
+      context: ./services/order-matching-engine
+      dockerfile: Dockerfile.cpp
+    ports:
+      - "8002:8002"
+    environment:
+      - NUMA_ENABLED=true
+      - CPU_AFFINITY=8-15
+      - MEMORY_POOL_SIZE=2GB
+      - MAX_ORDER_BOOK_DEPTH=1000
+      - MATCHING_ALGORITHM=FIFO_PRICE_TIME
+    volumes:
+      - order-data:/data/orders
+      - ./configs/matching-engine.conf:/app/config/matching-engine.conf:ro
+    depends_on:
+      - redis-cluster
+      - timescaledb
+    networks:
+      - hft-network
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '8.0'
+        reservations:
+          memory: 2G
+          cpus: '4.0'
+    privileged: true
+
+  # Risk Management Engine
+  risk-management:
+    build: ./services/risk-management
+    ports:
+      - "8003:8003"
+    environment:
+      - REDIS_CLUSTER_NODES=redis-node-1:7001,redis-node-2:7002,redis-node-3:7003
+      - MONGODB_URI=mongodb://mongo-primary:27017,mongo-secondary1:27017,mongo-secondary2:27017/?replicaSet=rs0
+      - TIMESCALEDB_URL=postgresql://postgres:password@timescaledb:5432/trading
+      - MAX_POSITION_SIZE=10000000
+      - MAX_ORDER_SIZE=1000000
+      - RISK_CHECK_TIMEOUT_US=100
+      - VAR_CALCULATION_INTERVAL=60s
+    depends_on:
+      - redis-cluster
+      - mongo-primary
+      - timescaledb
+    networks:
+      - hft-network
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '2.0'
+
+  # FIX Gateway
+  fix-gateway:
+    build: ./services/fix-gateway
+    ports:
+      - "9878:9878"  # FIX Protocol port
+      - "8004:8004"  # HTTP management port
+    environment:
+      - FIX_CONFIG_FILE=/app/config/quickfix.cfg
+      - MARKET_DATA_ENGINE_URL=http://market-data-engine:8001
+      - ORDER_MATCHING_ENGINE_URL=http://order-matching-engine:8002
+      - RISK_MANAGEMENT_URL=http://risk-management:8003
+      - SSL_ENABLED=true
+      - SSL_CERT_PATH=/app/ssl/server.crt
+      - SSL_KEY_PATH=/app/ssl/server.key
+    volumes:
+      - ./configs/quickfix.cfg:/app/config/quickfix.cfg:ro
+      - ./ssl:/app/ssl:ro
+    depends_on:
+      - market-data-engine
+      - order-matching-engine
+      - risk-management
+    networks:
+      - hft-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
+
+  # Trading API Gateway
+  trading-api:
+    build: ./services/trading-api
+    ports:
+      - "8080:8080"
+    environment:
+      - GIN_MODE=release
+      - JWT_SECRET=${JWT_SECRET}
+      - RATE_LIMIT_REQUESTS_PER_SECOND=1000
+      - CIRCUIT_BREAKER_THRESHOLD=50
+      - TIMEOUT_SECONDS=1
+    depends_on:
+      - market-data-engine
+      - order-matching-engine
+      - risk-management
+    networks:
+      - hft-network
+    deploy:
+      replicas: 3
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+
+  # Portfolio Management Service
+  portfolio-manager:
+    build: ./services/portfolio-manager
+    environment:
+      - MONGODB_URI=mongodb://mongo-primary:27017,mongo-secondary1:27017,mongo-secondary2:27017/?replicaSet=rs0
+      - REDIS_CLUSTER_NODES=redis-node-1:7001,redis-node-2:7002,redis-node-3:7003
+      - PORTFOLIO_VALUATION_INTERVAL=1s
+      - PNL_CALCULATION_INTERVAL=100ms
+    depends_on:
+      - mongo-primary
+      - redis-cluster
+    networks:
+      - hft-network
+
+  # Analytics Engine
+  analytics-engine:
+    build: ./services/analytics
+    ports:
+      - "8005:8005"
+    environment:
+      - TIMESCALEDB_URL=postgresql://postgres:password@timescaledb:5432/trading
+      - CLICKHOUSE_URL=tcp://clickhouse:9000/trading
+      - REDIS_CLUSTER_NODES=redis-node-1:7001,redis-node-2:7002,redis-node-3:7003
+      - KAFKA_BROKERS=kafka-1:9092,kafka-2:9093,kafka-3:9094
+      - METRICS_RETENTION_DAYS=90
+    depends_on:
+      - timescaledb
+      - clickhouse
+      - redis-cluster
+      - kafka-cluster
+    networks:
+      - hft-network
+
+  # FPGA Accelerator Service (Mock)
+  fpga-accelerator:
+    build: ./services/fpga-accelerator
+    environment:
+      - FPGA_DEVICE_PATH=/dev/fpga0
+      - ACCELERATION_MODE=order_matching
+      - LATENCY_TARGET_NS=100
+    volumes:
+      - /dev:/dev
+    privileged: true
+    networks:
+      - hft-network
+
+  # Redis Cluster for ultra-fast caching
+  redis-node-1:
+    image: redis:7-alpine
+    command: >
+      redis-server 
+      --port 7001 
+      --cluster-enabled yes 
+      --cluster-config-file nodes.conf 
+      --cluster-node-timeout 5000 
+      --appendonly yes
+      --maxmemory 1gb
+      --maxmemory-policy allkeys-lru
+      --tcp-keepalive 60
+      --timeout 0
+    ports:
+      - "7001:7001"
+    volumes:
+      - redis-node-1:/data
+    networks:
+      - hft-network
+
+  redis-node-2:
+    image: redis:7-alpine
+    command: >
+      redis-server 
+      --port 7002 
+      --cluster-enabled yes 
+      --cluster-config-file nodes.conf 
+      --cluster-node-timeout 5000 
+      --appendonly yes
+      --maxmemory 1gb
+      --maxmemory-policy allkeys-lru
+      --tcp-keepalive 60
+      --timeout 0
+    ports:
+      - "7002:7002"
+    volumes:
+      - redis-node-2:/data
+    networks:
+      - hft-network
+
+  redis-node-3:
+    image: redis:7-alpine
+    command: >
+      redis-server 
+      --port 7003 
+      --cluster-enabled yes 
+      --cluster-config-file nodes.conf 
+      --cluster-node-timeout 5000 
+      --appendonly yes
+      --maxmemory 1gb
+      --maxmemory-policy allkeys-lru
+      --tcp-keepalive 60
+      --timeout 0
+    ports:
+      - "7003:7003"
+    volumes:
+      - redis-node-3:/data
+    networks:
+      - hft-network
+
+  # MongoDB Replica Set for persistent storage
+  mongo-primary:
+    image: mongo:6
+    command: mongod --replSet rs0 --bind_ip_all --port 27017
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-primary:/data/db
+      - ./configs/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
+      MONGO_INITDB_DATABASE: trading
+    networks:
+      - hft-network
+
+  mongo-secondary1:
+    image: mongo:6
+    command: mongod --replSet rs0 --bind_ip_all --port 27017
+    volumes:
+      - mongo-secondary1:/data/db
+    networks:
+      - hft-network
+
+  mongo-secondary2:
+    image: mongo:6
+    command: mongod --replSet rs0 --bind_ip_all --port 27017
+    volumes:
+      - mongo-secondary2:/data/db
+    networks:
+      - hft-network
+
+  # TimescaleDB for time-series market data
+  timescaledb:
+    image: timescale/timescaledb:latest-pg15
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: trading
+    volumes:
+      - timescaledb-data:/var/lib/postgresql/data
+      - ./configs/timescaledb-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    command: postgres -c shared_preload_libraries=timescaledb -c max_connections=1000 -c shared_buffers=256MB
+    networks:
+      - hft-network
+
+  # ClickHouse for analytics
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    environment:
+      CLICKHOUSE_DB: trading
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - ./configs/clickhouse-config.xml:/etc/clickhouse-server/config.xml:ro
+    networks:
+      - hft-network
+
+  # Kafka Cluster for event streaming
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+    networks:
+      - hft-network
+
+  kafka-1:
+    image: confluentinc/cp-kafka:latest
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-1:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: true
+      KAFKA_NUM_PARTITIONS: 16
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+      KAFKA_LOG_RETENTION_MS: 86400000  # 1 day
+      KAFKA_LOG_SEGMENT_BYTES: 1073741824  # 1GB
+    volumes:
+      - kafka-1-data:/var/lib/kafka/data
+    networks:
+      - hft-network
+
+  kafka-2:
+    image: confluentinc/cp-kafka:latest
+    depends_on:
+      - zookeeper
+    ports:
+      - "9093:9093"
+    environment:
+      KAFKA_BROKER_ID: 2
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-2:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+    volumes:
+      - kafka-2-data:/var/lib/kafka/data
+    networks:
+      - hft-network
+
+  kafka-3:
+    image: confluentinc/cp-kafka:latest
+    depends_on:
+      - zookeeper
+    ports:
+      - "9094:9094"
+    environment:
+      KAFKA_BROKER_ID: 3
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-3:9094
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+    volumes:
+      - kafka-3-data:/var/lib/kafka/data
+    networks:
+      - hft-network
+
+  # Prometheus for metrics collection
+  prometheus:
+    image: prom/prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./configs/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=7d'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    networks:
+      - hft-network
+
+  # Grafana for monitoring dashboards
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+      GF_INSTALL_PLUGINS: grafana-worldmap-panel,grafana-piechart-panel
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./configs/grafana:/etc/grafana/provisioning:ro
+    networks:
+      - hft-network
+
+  # Jaeger for distributed tracing
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "16686:16686"
+      - "14268:14268"
+    environment:
+      COLLECTOR_ZIPKIN_HOST_PORT: :9411
+    networks:
+      - hft-network
+
+  # Load Balancer
+  haproxy:
+    image: haproxy:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8404:8404"  # Stats page
+    volumes:
+      - ./configs/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+      - ./ssl:/etc/ssl:ro
+    depends_on:
+      - trading-api
+    networks:
+      - hft-network
+
+  # Market Data Simulator
+  market-data-simulator:
+    build: ./services/market-data-simulator
+    environment:
+      - SYMBOLS_FILE=/app/config/symbols.csv
+      - OUTPUT_RATE=100000  # messages per second
+      - PRICE_VOLATILITY=0.02
+      - MARKET_DATA_ENGINE_URL=http://market-data-engine:8001
+    volumes:
+      - ./configs/symbols.csv:/app/config/symbols.csv:ro
+    depends_on:
+      - market-data-engine
+    networks:
+      - hft-network
+
+  # Latency Monitor
+  latency-monitor:
+    build: ./services/latency-monitor
+    environment:
+      - TARGET_SERVICES=market-data-engine:8001,order-matching-engine:8002,risk-management:8003
+      - MEASUREMENT_INTERVAL_MS=100
+      - ALERT_THRESHOLD_US=1000
+    networks:
+      - hft-network
+
+  # System Health Monitor
+  health-monitor:
+    build: ./services/health-monitor
+    ports:
+      - "8006:8006"
+    environment:
+      - REDIS_CLUSTER_NODES=redis-node-1:7001,redis-node-2:7002,redis-node-3:7003
+      - MONGODB_URI=mongodb://mongo-primary:27017
+      - TIMESCALEDB_URL=postgresql://postgres:password@timescaledb:5432/trading
+      - CHECK_INTERVAL_SECONDS=5
+    depends_on:
+      - redis-cluster
+      - mongo-primary
+      - timescaledb
+    networks:
+      - hft-network
+
+volumes:
+  redis-node-1:
+  redis-node-2:
+  redis-node-3:
+  mongo-primary:
+  mongo-secondary1:
+  mongo-secondary2:
+  timescaledb-data:
+  clickhouse-data:
+  kafka-1-data:
+  kafka-2-data:
+  kafka-3-data:
+  zookeeper-data:
+  prometheus-data:
+  grafana-data:
+  market-data:
+  order-data:
+
+networks:
+  hft-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.40.0.0/16
+    driver_opts:
+      com.docker.network.bridge.name: hft-br0
+
+# Hardware optimization settings
+x-numa-config: &numa-config
+  sysctls:
+    - net.core.rmem_max=268435456
+    - net.core.wmem_max=268435456
+    - net.core.rmem_default=268435456
+    - net.core.wmem_default=268435456
+    - net.core.netdev_max_backlog=5000
+    - net.core.netdev_budget=600
+    - kernel.sched_migration_cost_ns=0
+    - kernel.sched_rt_period_us=1000000
+    - kernel.sched_rt_runtime_us=950000
+
+# Resource constraints for production
+x-trading-engine-resources: &trading-engine-resources
+  deploy:
+    resources:
+      limits:
+        memory: 4G
+        cpus: '8.0'
+      reservations:
+        memory: 2G
+        cpus: '4.0'
+    placement:
+      constraints:
+        - node.labels.node-type==trading
+
+x-database-resources: &database-resources
+  deploy:
+    resources:
+      limits:
+        memory: 8G
+        cpus: '4.0'
+      reservations:
+        memory: 4G
+        cpus: '2.0'
+    placement:
+      constraints:
+        - node.labels.node-type==database

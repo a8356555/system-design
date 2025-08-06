@@ -1,0 +1,525 @@
+version: '3.8'
+
+services:
+  # Notification Gateway - Main entry point
+  notification-gateway:
+    build: ./services/notification-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - REDIS_ADDR=redis:6379
+      - MONGO_URI=mongodb://mongo:27017/notifications
+      - KAFKA_SERVERS=kafka:9092
+      - MAX_WORKERS=20
+      - BATCH_SIZE=1000
+      - RATE_LIMIT_PER_MINUTE=10000
+      - DELIVERY_RETRIES=3
+    depends_on:
+      - redis
+      - mongo
+      - kafka
+    networks:
+      - notification-network
+    deploy:
+      replicas: 5
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+
+  # Push Notification Channel (FCM/APNS)
+  push-channel:
+    build: ./services/push-channel
+    environment:
+      - REDIS_ADDR=redis:6379
+      - MONGO_URI=mongodb://mongo:27017/notifications
+      - FCM_SERVICE_ACCOUNT_PATH=/app/config/fcm-service-account.json
+      - APNS_CERT_PATH=/app/config/apns-cert.p8
+      - APNS_KEY_ID=${APNS_KEY_ID}
+      - APNS_TEAM_ID=${APNS_TEAM_ID}
+      - MAX_CONNECTIONS=100
+      - RATE_LIMIT_PER_SECOND=1000
+    volumes:
+      - ./configs/fcm-service-account.json:/app/config/fcm-service-account.json:ro
+      - ./configs/apns-cert.p8:/app/config/apns-cert.p8:ro
+    depends_on:
+      - redis
+      - mongo
+    networks:
+      - notification-network
+    deploy:
+      replicas: 3
+
+  # Email Channel (SMTP/SES)
+  email-channel:
+    build: ./services/email-channel
+    environment:
+      - REDIS_ADDR=redis:6379
+      - MONGO_URI=mongodb://mongo:27017/notifications
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_USERNAME=${SMTP_USERNAME}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - FROM_EMAIL=${FROM_EMAIL}
+      - FROM_NAME=${FROM_NAME}
+      - USE_TLS=true
+      - MAX_CONNECTIONS=50
+      - RATE_LIMIT_PER_MINUTE=1000
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION}
+    depends_on:
+      - redis
+      - mongo
+    networks:
+      - notification-network
+    deploy:
+      replicas: 3
+
+  # SMS Channel (Twilio/SNS)
+  sms-channel:
+    build: ./services/sms-channel
+    environment:
+      - REDIS_ADDR=redis:6379
+      - MONGO_URI=mongodb://mongo:27017/notifications
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - TWILIO_FROM_NUMBER=${TWILIO_FROM_NUMBER}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION}
+      - RATE_LIMIT_PER_MINUTE=100
+    depends_on:
+      - redis
+      - mongo
+    networks:
+      - notification-network
+    deploy:
+      replicas: 2
+
+  # In-App Notification Channel (WebSocket)
+  in-app-channel:
+    build: ./services/in-app-channel
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - REDIS_ADDR=redis:6379
+      - MONGO_URI=mongodb://mongo:27017/notifications
+      - JWT_SECRET=${JWT_SECRET}
+      - MAX_CONNECTIONS=10000
+    depends_on:
+      - redis
+      - mongo
+    networks:
+      - notification-network
+    deploy:
+      replicas: 3
+
+  # Template Service
+  template-service:
+    build: ./services/template-service
+    ports:
+      - "3002:3002"
+    environment:
+      - PORT=3002
+      - REDIS_ADDR=redis:6379
+      - MONGO_URI=mongodb://mongo:27017/notifications
+      - TEMPLATE_DIR=/app/templates
+      - CACHE_TTL=3600
+    volumes:
+      - ./templates:/app/templates:ro
+    depends_on:
+      - redis
+      - mongo
+    networks:
+      - notification-network
+
+  # Analytics Service
+  analytics-service:
+    build: ./services/analytics
+    ports:
+      - "3003:3003"
+    environment:
+      - PORT=3003
+      - REDIS_ADDR=redis:6379
+      - MONGO_URI=mongodb://mongo:27017/notifications
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=${INFLUXDB_TOKEN}
+      - CLICKHOUSE_HOST=clickhouse
+      - CLICKHOUSE_PORT=9000
+    depends_on:
+      - redis
+      - mongo
+      - influxdb
+      - clickhouse
+    networks:
+      - notification-network
+
+  # User Preferences Service
+  user-preferences:
+    build: ./services/user-preferences
+    ports:
+      - "3004:3004"
+    environment:
+      - PORT=3004
+      - REDIS_ADDR=redis:6379
+      - MONGO_URI=mongodb://mongo:27017/notifications
+      - JWT_SECRET=${JWT_SECRET}
+      - CACHE_TTL=1800
+    depends_on:
+      - redis
+      - mongo
+    networks:
+      - notification-network
+
+  # Scheduler Service for delayed notifications
+  scheduler-service:
+    build: ./services/scheduler
+    environment:
+      - REDIS_ADDR=redis:6379
+      - MONGO_URI=mongodb://mongo:27017/notifications
+      - KAFKA_SERVERS=kafka:9092
+      - CHECK_INTERVAL=10s
+      - BATCH_SIZE=1000
+    depends_on:
+      - redis
+      - mongo
+      - kafka
+    networks:
+      - notification-network
+
+  # Dead Letter Queue Processor
+  dlq-processor:
+    build: ./services/dlq-processor
+    environment:
+      - REDIS_ADDR=redis:6379
+      - MONGO_URI=mongodb://mongo:27017/notifications
+      - KAFKA_SERVERS=kafka:9092
+      - MAX_RETRIES=5
+      - RETRY_DELAY=300s
+    depends_on:
+      - redis
+      - mongo
+      - kafka
+    networks:
+      - notification-network
+
+  # Redis for caching and queues
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 4gb --maxmemory-policy allkeys-lru
+    networks:
+      - notification-network
+
+  # Redis Cluster for high availability
+  redis-cluster:
+    image: redis:7-alpine
+    deploy:
+      replicas: 6
+    command: redis-server --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --appendonly yes
+    volumes:
+      - redis-cluster-data:/data
+    networks:
+      - notification-network
+
+  # MongoDB for persistent storage
+  mongo:
+    image: mongo:6
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+      - ./configs/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
+      MONGO_INITDB_DATABASE: notifications
+    networks:
+      - notification-network
+
+  # MongoDB Replica Set
+  mongo-primary:
+    image: mongo:6
+    command: mongod --replSet rs0 --bind_ip_all
+    volumes:
+      - mongo-primary:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
+    networks:
+      - notification-network
+
+  mongo-secondary1:
+    image: mongo:6
+    command: mongod --replSet rs0 --bind_ip_all
+    volumes:
+      - mongo-secondary1:/data/db
+    networks:
+      - notification-network
+
+  mongo-secondary2:
+    image: mongo:6
+    command: mongod --replSet rs0 --bind_ip_all
+    volumes:
+      - mongo-secondary2:/data/db
+    networks:
+      - notification-network
+
+  # Apache Kafka for message queuing
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+    networks:
+      - notification-network
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: true
+      KAFKA_NUM_PARTITIONS: 12
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_LOG_RETENTION_BYTES: 1073741824
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    networks:
+      - notification-network
+
+  # Kafka Connect for data pipeline
+  kafka-connect:
+    image: confluentinc/cp-kafka-connect:latest
+    depends_on:
+      - kafka
+      - mongo
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: kafka:9092
+      CONNECT_REST_ADVERTISED_HOST_NAME: kafka-connect
+      CONNECT_GROUP_ID: notification-connect-group
+      CONNECT_CONFIG_STORAGE_TOPIC: notification-connect-configs
+      CONNECT_OFFSET_STORAGE_TOPIC: notification-connect-offsets
+      CONNECT_STATUS_STORAGE_TOPIC: notification-connect-status
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_PLUGIN_PATH: /usr/share/java,/usr/share/confluent-hub-components
+    networks:
+      - notification-network
+
+  # InfluxDB for time-series metrics
+  influxdb:
+    image: influxdb:2.7-alpine
+    ports:
+      - "8086:8086"
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=${INFLUXDB_PASSWORD}
+      - DOCKER_INFLUXDB_INIT_ORG=notifications
+      - DOCKER_INFLUXDB_INIT_BUCKET=metrics
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=${INFLUXDB_TOKEN}
+    networks:
+      - notification-network
+
+  # ClickHouse for analytics
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - ./configs/clickhouse/config.xml:/etc/clickhouse-server/config.xml
+    environment:
+      CLICKHOUSE_DB: notifications
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+    networks:
+      - notification-network
+
+  # Elasticsearch for search and logs
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.8.0
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms2g -Xmx2g"
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    networks:
+      - notification-network
+
+  # Kibana for log analysis
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.8.0
+    depends_on:
+      - elasticsearch
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    networks:
+      - notification-network
+
+  # Prometheus for metrics collection
+  prometheus:
+    image: prom/prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./configs/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - notification-network
+
+  # Grafana for monitoring dashboards
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+      - GF_INSTALL_PLUGINS=grafana-worldmap-panel,grafana-piechart-panel
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./configs/grafana:/etc/grafana/provisioning
+    networks:
+      - notification-network
+
+  # Jaeger for distributed tracing
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "16686:16686"
+      - "14268:14268"
+    environment:
+      - COLLECTOR_ZIPKIN_HOST_PORT=:9411
+    networks:
+      - notification-network
+
+  # Load Balancer
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./configs/nginx.conf:/etc/nginx/nginx.conf
+      - ./ssl:/etc/nginx/ssl
+    depends_on:
+      - notification-gateway
+      - in-app-channel
+      - analytics-service
+    networks:
+      - notification-network
+
+  # Rate Limiter Service
+  rate-limiter:
+    build: ./services/rate-limiter
+    environment:
+      - REDIS_ADDR=redis:6379
+      - RATE_LIMITS_CONFIG=/app/config/rate-limits.yml
+      - DEFAULT_RATE_LIMIT=1000
+      - SLIDING_WINDOW_SIZE=60
+    volumes:
+      - ./configs/rate-limits.yml:/app/config/rate-limits.yml:ro
+    depends_on:
+      - redis
+    networks:
+      - notification-network
+
+  # Webhook Service for delivery callbacks
+  webhook-service:
+    build: ./services/webhook
+    ports:
+      - "3005:3005"
+    environment:
+      - PORT=3005
+      - REDIS_ADDR=redis:6379
+      - MONGO_URI=mongodb://mongo:27017/notifications
+      - MAX_RETRIES=5
+      - TIMEOUT=30s
+    depends_on:
+      - redis
+      - mongo
+    networks:
+      - notification-network
+
+  # A/B Testing Service
+  ab-testing:
+    build: ./services/ab-testing
+    environment:
+      - REDIS_ADDR=redis:6379
+      - MONGO_URI=mongodb://mongo:27017/notifications
+      - EXPERIMENT_CONFIG_PATH=/app/config/experiments.yml
+    volumes:
+      - ./configs/experiments.yml:/app/config/experiments.yml:ro
+    depends_on:
+      - redis
+      - mongo
+    networks:
+      - notification-network
+
+volumes:
+  redis-data:
+  redis-cluster-data:
+  mongo-data:
+  mongo-primary:
+  mongo-secondary1:
+  mongo-secondary2:
+  kafka-data:
+  zookeeper-data:
+  influxdb-data:
+  clickhouse-data:
+  elasticsearch-data:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  notification-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16
+
+# Health checks
+x-healthcheck: &default-healthcheck
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 40s
+
+# Resource limits
+x-resources: &default-resources
+  limits:
+    memory: 1G
+  reservations:
+    memory: 256M

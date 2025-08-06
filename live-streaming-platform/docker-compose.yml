@@ -1,0 +1,441 @@
+version: '3.8'
+
+services:
+  # Stream Ingestion Service
+  stream-ingestion:
+    build: ./services/stream-ingestion
+    ports:
+      - "1935:1935"  # RTMP
+      - "8080:8080"  # HTTP API
+    environment:
+      - RTMP_PORT=1935
+      - HTTP_PORT=8080
+      - REDIS_ADDR=redis:6379
+      - CDN_BASE_URL=http://cdn-edge:8080
+      - HLS_OUTPUT_DIR=/tmp/hls
+      - DASH_OUTPUT_DIR=/tmp/dash
+    volumes:
+      - hls-storage:/tmp/hls
+      - dash-storage:/tmp/dash
+      - ./configs/nginx-rtmp.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - redis
+    networks:
+      - streaming-network
+    deploy:
+      replicas: 3
+
+  # CDN Edge Servers
+  cdn-edge:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./services/cdn-edge/nginx.conf:/etc/nginx/nginx.conf
+      - hls-storage:/var/www/hls
+      - dash-storage:/var/www/dash
+      - ./ssl:/etc/ssl
+    depends_on:
+      - stream-ingestion
+    networks:
+      - streaming-network
+    deploy:
+      replicas: 5
+
+  # Chat Service
+  chat-service:
+    build: ./services/chat-service
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - REDIS_HOST=redis
+      - MONGODB_URI=mongodb://mongo:27017/streaming_chat
+      - JWT_SECRET=${JWT_SECRET}
+      - ALLOWED_ORIGINS=https://streaming.example.com
+    depends_on:
+      - redis
+      - mongo
+    networks:
+      - streaming-network
+    deploy:
+      replicas: 3
+
+  # Analytics Service
+  analytics-service:
+    build: ./services/analytics
+    environment:
+      - KAFKA_BROKERS=kafka:9092
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=${INFLUXDB_TOKEN}
+      - REDIS_ADDR=redis:6379
+    depends_on:
+      - kafka
+      - influxdb
+      - redis
+    networks:
+      - streaming-network
+
+  # User Management Service
+  user-service:
+    build: ./services/user-management
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - MONGODB_URI=mongodb://mongo:27017/streaming_users
+      - JWT_SECRET=${JWT_SECRET}
+      - REDIS_ADDR=redis:6379
+    depends_on:
+      - mongo
+      - redis
+    networks:
+      - streaming-network
+
+  # Recommendation Engine
+  recommendation-engine:
+    build: ./services/recommendations
+    environment:
+      - MONGODB_URI=mongodb://mongo:27017/streaming_recommendations
+      - REDIS_ADDR=redis:6379
+      - ML_MODEL_PATH=/app/models
+    volumes:
+      - ml-models:/app/models
+    depends_on:
+      - mongo
+      - redis
+    networks:
+      - streaming-network
+
+  # WebRTC Signaling Server (for ultra-low latency)
+  webrtc-signaling:
+    build: ./services/webrtc-signaling
+    ports:
+      - "3478:3478/udp"  # STUN/TURN
+      - "3479:3479"      # Signaling
+    environment:
+      - SIGNALING_PORT=3479
+      - STUN_PORT=3478
+      - REDIS_ADDR=redis:6379
+    depends_on:
+      - redis
+    networks:
+      - streaming-network
+
+  # Redis for caching and real-time data
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 2gb --maxmemory-policy allkeys-lru
+    networks:
+      - streaming-network
+
+  # Redis Cluster for high availability
+  redis-cluster:
+    image: redis:7-alpine
+    deploy:
+      replicas: 6
+    command: redis-server --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --appendonly yes
+    volumes:
+      - redis-cluster-data:/data
+    networks:
+      - streaming-network
+
+  # MongoDB for persistent data
+  mongo:
+    image: mongo:6
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
+    networks:
+      - streaming-network
+
+  # MongoDB Replica Set
+  mongo-primary:
+    image: mongo:6
+    command: mongod --replSet rs0 --bind_ip_all
+    volumes:
+      - mongo-primary:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
+    networks:
+      - streaming-network
+
+  mongo-secondary1:
+    image: mongo:6
+    command: mongod --replSet rs0 --bind_ip_all
+    volumes:
+      - mongo-secondary1:/data/db
+    networks:
+      - streaming-network
+
+  mongo-secondary2:
+    image: mongo:6
+    command: mongod --replSet rs0 --bind_ip_all
+    volumes:
+      - mongo-secondary2:/data/db
+    networks:
+      - streaming-network
+
+  # Apache Kafka for event streaming
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+    networks:
+      - streaming-network
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: true
+      KAFKA_NUM_PARTITIONS: 12
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    networks:
+      - streaming-network
+
+  # InfluxDB for time-series analytics
+  influxdb:
+    image: influxdb:2.7-alpine
+    ports:
+      - "8086:8086"
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=${INFLUXDB_PASSWORD}
+      - DOCKER_INFLUXDB_INIT_ORG=streaming
+      - DOCKER_INFLUXDB_INIT_BUCKET=metrics
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=${INFLUXDB_TOKEN}
+    networks:
+      - streaming-network
+
+  # Elasticsearch for search and logs
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.8.0
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms2g -Xmx2g"
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    networks:
+      - streaming-network
+
+  # Kibana for log analysis
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.8.0
+    depends_on:
+      - elasticsearch
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    networks:
+      - streaming-network
+
+  # Prometheus for metrics
+  prometheus:
+    image: prom/prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./configs/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - streaming-network
+
+  # Grafana for dashboards
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3002:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+      - GF_INSTALL_PLUGINS=grafana-worldmap-panel,grafana-piechart-panel
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./configs/grafana:/etc/grafana/provisioning
+    networks:
+      - streaming-network
+
+  # Jaeger for distributed tracing
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "16686:16686"
+      - "14268:14268"
+    environment:
+      - COLLECTOR_ZIPKIN_HOST_PORT=:9411
+    networks:
+      - streaming-network
+
+  # MinIO for object storage (thumbnails, VODs)
+  minio:
+    image: minio/minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+    command: server /data --console-address ":9001"
+    networks:
+      - streaming-network
+
+  # Load Balancer
+  haproxy:
+    image: haproxy:alpine
+    ports:
+      - "8443:443"
+      - "8081:80"
+    volumes:
+      - ./configs/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg
+      - ./ssl:/etc/ssl
+    depends_on:
+      - cdn-edge
+      - chat-service
+      - user-service
+    networks:
+      - streaming-network
+
+  # FFmpeg Service for transcoding
+  ffmpeg-transcoder:
+    build: ./services/ffmpeg-transcoder
+    environment:
+      - INPUT_DIR=/input
+      - OUTPUT_DIR=/output
+      - REDIS_ADDR=redis:6379
+      - KAFKA_BROKERS=kafka:9092
+    volumes:
+      - transcoding-input:/input
+      - transcoding-output:/output
+    depends_on:
+      - redis
+      - kafka
+    networks:
+      - streaming-network
+    deploy:
+      replicas: 4
+
+  # Machine Learning Service for content recommendation
+  ml-service:
+    build: ./services/ml-service
+    environment:
+      - MONGODB_URI=mongodb://mongo:27017/streaming_ml
+      - REDIS_ADDR=redis:6379
+      - MODEL_SERVING_PORT=8090
+    ports:
+      - "8090:8090"
+    volumes:
+      - ml-models:/app/models
+    depends_on:
+      - mongo
+      - redis
+    networks:
+      - streaming-network
+
+  # Content Delivery Network Origin
+  cdn-origin:
+    build: ./services/cdn-origin
+    volumes:
+      - hls-storage:/var/www/hls
+      - dash-storage:/var/www/dash
+      - vod-storage:/var/www/vod
+    environment:
+      - REDIS_ADDR=redis:6379
+    depends_on:
+      - redis
+    networks:
+      - streaming-network
+    deploy:
+      replicas: 3
+
+  # Stream Health Monitor
+  stream-monitor:
+    build: ./services/stream-monitor
+    environment:
+      - REDIS_ADDR=redis:6379
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=${INFLUXDB_TOKEN}
+      - CHECK_INTERVAL=10s
+    depends_on:
+      - redis
+      - influxdb
+    networks:
+      - streaming-network
+
+volumes:
+  redis-data:
+  redis-cluster-data:
+  mongo-data:
+  mongo-primary:
+  mongo-secondary1:
+  mongo-secondary2:
+  kafka-data:
+  zookeeper-data:
+  influxdb-data:
+  elasticsearch-data:
+  prometheus-data:
+  grafana-data:
+  minio-data:
+  hls-storage:
+  dash-storage:
+  vod-storage:
+  transcoding-input:
+  transcoding-output:
+  ml-models:
+
+networks:
+  streaming-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/16
+
+# Health checks and monitoring
+x-healthcheck: &default-healthcheck
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 40s
+
+# Resource limits
+x-resources: &default-resources
+  limits:
+    memory: 1G
+  reservations:
+    memory: 512M
