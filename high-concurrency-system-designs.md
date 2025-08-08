@@ -296,4 +296,105 @@ This document provides detailed architectural designs for several high concurren
 - Error tracking
 - Performance profiling
 
+## 8. E-commerce Recommendation System
+
+### Architecture Overview
+- **Scale**: 10K+ concurrent users, <100ms response time, 10M+ products
+- **Requirements**: Real-time personalization, high-performance caching, scalable ML inference
+
+### Implementation: Vertical Slice Architecture
+**Features:**
+- **Product Recommendations** - Item-based collaborative filtering
+- **User Recommendations** - Personalized homepage with cold-start handling
+- **Cart Recommendations** - Frequently bought together, upsell suggestions
+- **Trending Products** - Real-time popularity analysis
+
+**Tech Stack:**
+- FastAPI with async/await for high concurrency
+- PostgreSQL with async SQLAlchemy
+- Redis caching with TTL-based invalidation
+- Scikit-learn for ML algorithms
+
+**Performance Patterns:**
+- Vertical slice architecture for rapid feature development
+- Async database queries with connection pooling
+- Multi-layer caching (recommendation cache, user cache, trending cache)
+- Background task processing for user interaction tracking
+
+**Project Structure:**
+```
+ecommerce-recommendation-system/
+├── app/features/           # Feature-based organization
+│   ├── product_recommendations/
+│   ├── user_recommendations/
+│   ├── cart_recommendations/
+│   └── trending_products/
+├── app/shared/            # Shared infrastructure
+│   ├── database.py       # Async models & connection
+│   ├── cache.py          # Redis service
+│   └── ml_engine.py      # ML algorithms
+└── main.py              # FastAPI application
+```
+
+## 9. Streaming Recommendation System
+
+### Architecture Overview  
+- **Scale**: Real-time content personalization, 100M+ content items, contextual recommendations
+- **Requirements**: Session-aware recommendations, device optimization, genre exploration
+
+### Implementation: Clean Architecture
+**Features:**
+- **Content Discovery** - Collaborative + content-based filtering with fallback strategies
+- **Continue Watching** - Smart progress tracking with next episode suggestions  
+- **Similar Content** - Multi-factor similarity scoring (genre, cast, metadata)
+- **Trending Content** - Growth rate analysis and regional trending
+- **Genre-based Recommendations** - Preference learning and genre exploration
+- **Real-time Recommendations** - Session context and device-aware suggestions
+
+**Tech Stack:**
+- FastAPI with Clean Architecture layers
+- PostgreSQL for transactional data
+- Redis for recommendation caching
+- Dependency injection for clean separation
+
+**Clean Architecture Benefits:**
+- Domain layer with pure business logic
+- Technology-independent core algorithms
+- Easy testing and mocking of dependencies
+- Maintainable and scalable codebase
+
+**Project Structure:**
+```
+streaming-recommendation-system/
+├── domain/                    # Business Logic (Core)
+│   ├── entities/             # Business objects
+│   ├── repositories/         # Data access interfaces  
+│   └── services/            # Use cases & business rules
+├── application/              # Application Layer
+│   ├── dto/                 # Data Transfer Objects
+│   └── handlers/            # Use case handlers
+├── infrastructure/          # External Concerns
+│   ├── database/           # SQLAlchemy models
+│   ├── cache/              # Redis implementation
+│   └── dependencies.py    # DI container
+└── presentation/           # API Layer
+    └── api/               # FastAPI routes
+```
+
+### Architecture Comparison: Vertical Slice vs Clean Architecture
+
+| Aspect | E-commerce (Vertical Slice) | Streaming (Clean Architecture) |
+|--------|----------------------------|-------------------------------|
+| **Structure** | Feature-based slices | Layered by concerns |
+| **Development Speed** | ⚡ Fast iteration | 🏗️ Structured development |
+| **Testability** | Integration-focused | Unit test friendly |
+| **Maintainability** | Quick feature changes | Long-term maintainability |
+| **Team Scalability** | Feature teams | Layer-based teams |
+| **Complexity** | Simple, direct paths | Well-organized abstractions |
+| **Use Case** | Rapid prototyping & delivery | Enterprise-grade systems |
+
+**When to Use Each:**
+- **Vertical Slice**: Fast-moving product teams, time-to-market priority, feature-focused development
+- **Clean Architecture**: Long-term projects, complex business rules, team scalability, testability requirements
+
 Each system requires careful consideration of consistency models, fault tolerance, and performance trade-offs based on specific business requirements.
