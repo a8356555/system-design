@@ -1,0 +1,48 @@
+# PyFlink Docker image with all dependencies
+FROM flink:1.18.0-scala_2.12-java11
+
+# Install Python and system dependencies
+USER root
+RUN apt-get update && apt-get install -y \
+    python3.9 \
+    python3-pip \
+    python3-dev \
+    build-essential \
+    wget \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Miniconda for better Python environment management
+RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/miniconda.sh && \
+    bash /tmp/miniconda.sh -b -p /opt/miniconda3 && \
+    rm /tmp/miniconda.sh
+
+# Set PATH to include conda
+ENV PATH="/opt/miniconda3/bin:$PATH"
+
+# Create conda environment with required Python packages
+COPY requirements.txt /tmp/requirements.txt
+RUN conda create -n pyflink python=3.9 -y && \
+    conda activate pyflink && \
+    pip install -r /tmp/requirements.txt
+
+# Create Python environment archive for Flink
+RUN cd /opt/miniconda3/envs && \
+    zip -r /opt/python_env.zip pyflink/
+
+# Set up Flink Python configuration
+ENV FLINK_HOME=/opt/flink
+ENV PYTHONPATH="/opt/miniconda3/envs/pyflink/lib/python3.9/site-packages:$PYTHONPATH"
+
+# Copy Python source code
+COPY src/ /opt/src/
+COPY config/ /opt/config/
+
+# Set working directory
+WORKDIR /opt/flink
+
+# Switch back to flink user
+USER flink
+
+# Set Python executable for Flink
+ENV PYFLINK_PYTHON=/opt/miniconda3/envs/pyflink/bin/python
