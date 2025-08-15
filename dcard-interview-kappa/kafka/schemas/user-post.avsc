@@ -1,0 +1,44 @@
+{
+  "type": "record",
+  "name": "UserPost",
+  "namespace": "com.dcard.events",
+  "fields": [
+    {
+      "name": "user_id",
+      "type": "long",
+      "doc": "ID of the user who created/deleted the post"
+    },
+    {
+      "name": "post_id",
+      "type": "string",
+      "doc": "Unique identifier for the post"
+    },
+    {
+      "name": "event_type",
+      "type": {
+        "type": "enum",
+        "name": "EventType",
+        "symbols": ["POST_CREATED", "POST_DELETED"]
+      },
+      "doc": "Type of event - creation or deletion"
+    },
+    {
+      "name": "timestamp",
+      "type": "long",
+      "logicalType": "timestamp-millis",
+      "doc": "Event timestamp in milliseconds since epoch"
+    },
+    {
+      "name": "board_id",
+      "type": ["null", "string"],
+      "default": null,
+      "doc": "Board where the post was created (optional)"
+    },
+    {
+      "name": "metadata",
+      "type": ["null", "string"],
+      "default": null,
+      "doc": "Additional metadata as JSON string (optional)"
+    }
+  ]
+}

@@ -1,0 +1,99 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - "alert_rules.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Serving Layer API metrics
+  - job_name: 'serving-api'
+    static_configs:
+      - targets: ['serving-api:8000']
+    scrape_interval: 10s
+    metrics_path: /metrics
+
+  # Flink JobManager metrics
+  - job_name: 'flink-jobmanager'
+    static_configs:
+      - targets: ['flink-jobmanager:9249']
+    scrape_interval: 15s
+    metrics_path: /
+
+  # Flink TaskManager metrics  
+  - job_name: 'flink-taskmanager'
+    static_configs:
+      - targets: ['flink-taskmanager:9249']
+    scrape_interval: 15s
+    metrics_path: /
+
+  # Spark Master metrics
+  - job_name: 'spark-master'
+    static_configs:
+      - targets: ['spark-master:8080']
+    scrape_interval: 30s
+    metrics_path: /metrics/prometheus
+
+  # Spark Worker metrics
+  - job_name: 'spark-worker'
+    static_configs:
+      - targets: ['spark-worker:8081']
+    scrape_interval: 30s
+    metrics_path: /metrics/prometheus
+
+  # Kafka metrics (via JMX exporter)
+  - job_name: 'kafka'
+    static_configs:
+      - targets: ['kafka:9308']
+    scrape_interval: 15s
+
+  # ClickHouse metrics
+  - job_name: 'clickhouse'
+    static_configs:
+      - targets: ['clickhouse:9363']
+    scrape_interval: 15s
+    metrics_path: /metrics
+
+  # Redis metrics (via redis_exporter)
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+    scrape_interval: 15s
+
+  # HDFS NameNode metrics
+  - job_name: 'hdfs-namenode'
+    static_configs:
+      - targets: ['hdfs-namenode:9870']
+    scrape_interval: 30s
+    metrics_path: /jmx
+
+  # HDFS DataNode metrics
+  - job_name: 'hdfs-datanode'
+    static_configs:
+      - targets: ['hdfs-datanode:9864']
+    scrape_interval: 30s
+    metrics_path: /jmx
+
+  # System metrics (node_exporter if available)
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    scrape_interval: 15s
+
+  # Custom Lambda Architecture metrics
+  - job_name: 'lambda-metrics'
+    static_configs:
+      - targets: ['serving-api:8000']
+    scrape_interval: 10s
+    metrics_path: /api/v1/metrics
+    scrape_timeout: 5s
