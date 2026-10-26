@@ -1,0 +1,546 @@
+{
+ "mechanisms": [
+  {
+   "id": "presence-ephemeral-awareness",
+   "domain": "collab",
+   "apps": [
+    "Yjs awareness",
+    "Liveblocks"
+   ],
+   "title": "Presence 是 ephemeral：游標/選取不進文件、不落地，靠 heartbeat 判斷離線",
+   "naive": "直覺做法：把游標位置當成文件的一個欄位，跟內容一起寫進同一份 CRDT/op log 與資料庫",
+   "breaks": "每次滑鼠移動都產生一筆要持久化、要重放的寫入；op log 與 snapshot 被游標垃圾灌爆；斷線的人游標永遠殘留在畫面上",
+   "trick": "Yjs 的 awareness 是獨立於文件的通道：只存在 session 期間、不持久化，每個 client 帶遞增 clock 廣播自己的狀態，並需定期重送以免被判離線；超過 30 秒沒收到某 peer 的更新就標為 offline。Liveblocks 同樣區分 Presence（斷線即重置）與 Storage（持久化的 shared structure）",
+   "cost": "presence 丟了就丟了，新加入者要等別人下一次廣播才看得到游標；靠 heartbeat timeout 判離線會有延遲（關分頁後游標還會殘留一陣子）。若產品要求游標位置可回放（如錄製會議/稽核），ephemeral 就不夠",
+   "alternatives": [
+    {
+     "name": "把 presence 當文件欄位持久化",
+     "pickIf": "需要事後回放協作過程或稽核，且寫入量可接受"
+    },
+    {
+     "name": "server 端 Redis 存 presence + TTL",
+     "pickIf": "要讓非連線者（如文件列表頁）也能看到誰在線"
+    }
+   ],
+   "numbers": [
+    "Yjs awareness：超過 30 秒沒收到遠端更新即標記 offline",
+    "Liveblocks：斷線後預設 5 秒才觸發 lost-connection（可設 1000–30000ms）"
+   ],
+   "interviewUse": "設計協作編輯器被問到「游標怎麼同步」時，先說 presence 與文件內容分流：ephemeral、不落地、用 heartbeat 過期，再補一句它為什麼不能進 op log。",
+   "sources": [
+    {
+     "title": "Yjs docs: Awareness",
+     "url": "https://docs.yjs.dev/api/about-awareness"
+    },
+    {
+     "title": "Liveblocks client API reference (presence, throttle)",
+     "url": "https://liveblocks.io/docs/api-reference/liveblocks-client"
+    }
+   ],
+   "topics": [
+    "realtime"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "presence-throttle-and-caps",
+   "domain": "collab",
+   "apps": [
+    "Liveblocks",
+    "Figma",
+    "FigJam"
+   ],
+   "title": "Presence 的頻率節流與人數上限：fan-out 是 O(n²)，要主動降級",
+   "naive": "直覺做法：每個 mousemove 事件立刻送出，並把所有人的游標都廣播給所有人",
+   "breaks": "n 個人各自高頻更新、再廣播給 n-1 人，訊息量隨人數平方成長；大型工作坊/課堂型 session 先被 presence 流量壓垮，而不是編輯流量",
+   "trick": "client 端節流：Liveblocks 預設 throttle 100ms（10 次/秒），可調 16–1000ms（16ms≈60 FPS）。產品端設硬上限：Figma/FigJam 同一檔案最多顯示 200 個游標（編輯者優先、被 follow 的人永遠顯示）、200 人編輯、500 人總參與；超過 500 後新來的人只看到靜態版本",
+   "cost": "節流讓游標看起來有階梯感，需要 client 做內插平滑；上限是產品妥協（超過的人看不到游標、被降成 view-only）。小團隊（個位數人）根本用不到，過早設計是浪費",
+   "alternatives": [
+    {
+     "name": "不節流、直送",
+     "pickIf": "同一房間人數固定很小（如 2–5 人）且追求最低延遲"
+    },
+    {
+     "name": "只廣播視窗範圍內的游標（viewport culling）",
+     "pickIf": "畫布很大、多數人互相看不到對方"
+    }
+   ],
+   "numbers": [
+    "Liveblocks throttle 預設 100ms，範圍 16–1000ms",
+    "Figma：200 個游標 / 200 人編輯 / 500 總參與者；滿 500 時仍可再讓最多 20 位編輯者加入"
+   ],
+   "interviewUse": "被問「1 萬人同時看同一份文件怎麼辦」時，點出 presence 廣播是平方級、要節流並對可見游標設上限，把大量觀眾降級成只讀。",
+   "sources": [
+    {
+     "title": "Liveblocks client API reference (presence, throttle)",
+     "url": "https://liveblocks.io/docs/api-reference/liveblocks-client"
+    },
+    {
+     "title": "Figma Help: multiplayer limits (cursors / editors / participants)",
+     "url": "https://help.figma.com/hc/en-us/articles/1500006775761"
+    }
+   ],
+   "topics": [
+    "realtime",
+    "fanout"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "doc-per-process-routing",
+   "domain": "collab",
+   "apps": [
+    "Figma",
+    "Cloudflare Durable Objects"
+   ],
+   "title": "一份文件一個 server process：把「跨機排序」換成「誰擁有這份文件」",
+   "naive": "直覺做法：任一 WebSocket server 都能接任一文件的連線，靠 pub/sub 或 DB polling 互相同步",
+   "breaks": "「後到 server 者贏」或 OT 的 transform 順序，只有在單一地方看到所有寫入時才有意義；多台各自排序會得到不一致的順序",
+   "trick": "Figma 為每個 multiplayer 文件啟動一個獨立 process，所有編輯者連到它，開檔下載完整副本後只開一條 WebSocket。Cloudflare Durable Objects 把這件事做成原語：每個 object 有全域唯一名稱、可從任何地方定址，單一實例可搭配 WebSocket 協調多個 client，並附帶最大 10 GB 的 transactional 儲存",
+   "cost": "要自己處理 process 啟停、client 找到正確 process、node 掛掉時文件換家且不能同時有兩個 writer；單文件吞吐受限於單一 process，超熱門文件是上限。小產品用 sticky routing + 單機通常就夠，不必上 actor 平台",
+   "alternatives": [
+    {
+     "name": "任意 server + pub/sub（以 docId 為 channel）",
+     "pickIf": "衝突解法本身與順序無關（如純 CRDT），或規模小到不想管路由"
+    },
+    {
+     "name": "consistent hashing + 服務發現指派",
+     "pickIf": "自管機房，要自己實作文件到機器的映射"
+    }
+   ],
+   "numbers": [
+    "Cloudflare DO：每個 object 的儲存最大 10 GB",
+    "Cloudflare 文件稱可擁有數百萬個 object"
+   ],
+   "interviewUse": "講協作編輯的擴展時，先說「每文件單一 authority」把分散式排序變單機問題，再坦承代價是路由與 failover 不能 split-brain。",
+   "sources": [
+    {
+     "title": "How Figma's multiplayer technology works",
+     "url": "https://www.figma.com/blog/how-figmas-multiplayer-technology-works/"
+    },
+    {
+     "title": "Cloudflare Durable Objects: What are Durable Objects",
+     "url": "https://developers.cloudflare.com/durable-objects/concepts/what-are-durable-objects/"
+    }
+   ],
+   "topics": [
+    "realtime",
+    "scaling-writes"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "websocket-hibernation",
+   "domain": "collab",
+   "apps": [
+    "Cloudflare Durable Objects"
+   ],
+   "title": "Hibernation：閒置文件從記憶體卸載，但 WebSocket 連線保留",
+   "naive": "直覺做法：每份開著的文件都常駐一個 process，連線全掛在它身上，即使沒人在打字",
+   "breaks": "協作產品的長尾文件大多數時間閒置，常駐記憶體與計費（連線期間持續計費）浪費；全部 evict 又會斷線重連風暴",
+   "trick": "Durable Objects 的 WebSocket Hibernation API：object 被 evict 出記憶體時，WebSocket client 仍連在 Cloudflare 網路上；有事件進來時 object 重新初始化、constructor 重跑。in-memory 狀態會被重置，需靠 serializeAttachment（每條連線附帶，最大 16,384 bytes）或 Storage API 還原",
+   "cost": "必須把狀態設計成可從 storage 重建、constructor 要輕；活躍編輯中的文件不會 hibernate，所以對熱門文件沒幫助。綁定特定平台",
+   "alternatives": [
+    {
+     "name": "常駐 process + 自己做閒置回收",
+     "pickIf": "自管基礎設施，連線數不大"
+    },
+    {
+     "name": "stateless WS gateway + 外部狀態存儲",
+     "pickIf": "不想綁平台，能接受每次事件多一次讀狀態"
+    }
+   ],
+   "numbers": [
+    "serializeAttachment 最大序列化大小 16,384 bytes"
+   ],
+   "interviewUse": "被追問「幾百萬份文件大多閒置，成本怎麼控」時，提 hibernation：連線保留、狀態卸載、事件到來再重建。",
+   "sources": [
+    {
+     "title": "Cloudflare Durable Objects: WebSockets best practices",
+     "url": "https://developers.cloudflare.com/durable-objects/best-practices/websockets/"
+    },
+    {
+     "title": "Cloudflare Durable Objects: What are Durable Objects",
+     "url": "https://developers.cloudflare.com/durable-objects/concepts/what-are-durable-objects/"
+    }
+   ],
+   "topics": [
+    "scaling-writes",
+    "realtime"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "journal-checkpoint-durability",
+   "domain": "collab",
+   "apps": [
+    "Figma"
+   ],
+   "title": "Write-ahead journal + checkpoint：記憶體權威狀態如何做到秒級持久化",
+   "naive": "直覺做法：文件狀態只在 process 記憶體，每隔一段時間把整份檔案壓縮後上傳一次",
+   "breaks": "Figma 原本每 30–60 秒把整檔編碼壓縮上傳 S3：最壞丟 60 秒資料，且部署時重啟造成寫入尖峰",
+   "trick": "在 checkpoint 之外加一層增量 write-ahead journal：每個變更拿到遞增 sequence number，30 FPS 的更新被批次成帶起訖範圍的 journal entry，存 DynamoDB；multiplayer 重啟時載入最新 checkpoint，再重放 sequence 更高的 journal entry。不複製 journal 跨區，而是確保所有 journal 變更在 30 分鐘內被 checkpoint 並依賴 S3 的跨區複製",
+   "cost": "多一個 datastore 與一致性驗證負擔（Figma 先在影子模式驗證到約 40 萬次連續成功才推到 100%）；小文件/低寫入量時整檔 snapshot 更簡單便宜",
+   "alternatives": [
+    {
+     "name": "只做定期整檔 snapshot",
+     "pickIf": "可容忍丟失數十秒資料、寫入量低"
+    },
+    {
+     "name": "每個 op 同步寫 DB 後才 ack",
+     "pickIf": "零資料遺失優先於延遲"
+    }
+   ],
+   "numbers": [
+    "舊 checkpoint 每 30–60 秒一次",
+    "95% 的編輯在 600ms 內被儲存",
+    "journal 目前處理超過 22 億筆/天",
+    "約 40 萬次連續驗證成功後推到 100%",
+    "journal 變更須在 30 分鐘內被 checkpoint"
+   ],
+   "interviewUse": "被問「server 記憶體裡的文件掛了怎麼辦」時，答 snapshot + 增量 log + sequence number 重放，並給出 snapshot 頻率 vs 重放時間的取捨。",
+   "sources": [
+    {
+     "title": "Making multiplayer more reliable (Figma)",
+     "url": "https://www.figma.com/blog/making-multiplayer-more-reliable/"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "storage-choice"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "local-first-sync-engine",
+   "domain": "collab",
+   "apps": [
+    "Linear"
+   ],
+   "title": "Local-first sync engine：client 持有副本，server 只負責排序（lastSyncId + delta）",
+   "naive": "直覺做法：每個畫面都打 REST/GraphQL，等 server 回應才更新 UI",
+   "breaks": "每次互動都卡在網路往返；離線完全不能用；列表/看板這類高頻操作體感遲鈍",
+   "trick": "Linear 的做法（依第三方逆向整理，非官方文件）：client 在瀏覽器 IndexedDB 保有完整副本，mutation 先進持久化的 transaction queue 並樂觀更新記憶體，server 接受後遞增全域 lastSyncId，再向所有 client 廣播含 sync action 的 delta packet；client 的 lastSyncId 小於 server 即表示落後，重連時用增量補。由中央 server 決定交易順序，而非 CRDT。Bootstrap 分 Full / Partial（按需載入）/ Local（本機載入再補 delta）",
+   "cost": "要維護 client 端資料庫與 schema migration、初次 bootstrap 成本、記憶體壓力；資料量大到不可能整份放 client（如大型分析資料）時要走 partial。純文字協同編輯仍需 CRDT/OT，這招處理的是結構化記錄",
+   "alternatives": [
+    {
+     "name": "傳統 request/response + 輕量 cache",
+     "pickIf": "產品離線與即時性要求低，團隊沒資源維護 client 資料層"
+    },
+    {
+     "name": "Replicache / 通用同步框架",
+     "pickIf": "不想自建 sync engine，願意實作 push/pull endpoint"
+    }
+   ],
+   "numbers": [],
+   "interviewUse": "被問「issue tracker 怎麼做到點了就變」時，說樂觀更新 + server 全域單調遞增 version + delta 廣播，並說明 server 是順序權威而不是每次互動的必經路徑。",
+   "sources": [
+    {
+     "title": "reverse-linear-sync-engine (第三方逆向整理)",
+     "url": "https://github.com/wzhudev/reverse-linear-sync-engine"
+    },
+    {
+     "title": "Linear: scaling the linear sync engine (僅為影片公告頁)",
+     "url": "https://linear.app/now/scaling-the-linear-sync-engine"
+    }
+   ],
+   "topics": [
+    "consistency",
+    "realtime"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "offline-rebase-replay",
+   "domain": "collab",
+   "apps": [
+    "Replicache",
+    "Figma"
+   ],
+   "title": "離線編輯後的 rebase：回到 server 狀態，再把本地待送 mutation 重放",
+   "naive": "直覺做法：離線期間的本地變更直接 patch 蓋到新的 server 狀態上，或乾脆丟棄",
+   "breaks": "本地結果是基於舊 server 狀態算出來的；直接蓋會覆蓋他人修改，丟棄則使用者離線寫的東西消失",
+   "trick": "Replicache：mutator 是可在 client 與 server 各執行一次的函式；pull 之後先 rewind 到上次 server 狀態、套用 server patch，再把尚未確認的 pending mutation 重放（rebase），所以衝突靠重新執行商業邏輯解決。Figma 更簡單：重連時下載整份最新文件、把離線期間的編輯 reapply 上去、再開新 socket，離線數小時與斷線數秒沒有差別",
+   "cost": "Replicache 要求 mutator 為確定性、且 server 端有同名實作，邏輯要寫兩份；Figma 式重新下載在大文件上昂貴（所以才需要 dynamic page loading）。文字編輯中被他人刪掉的段落，重放可能語意失敗，需要 CRDT",
+   "alternatives": [
+    {
+     "name": "CRDT 直接合併離線更新",
+     "pickIf": "文字/列表內容，要求不丟任何字元"
+    },
+    {
+     "name": "重連即重新下載 + replay（Figma 式）",
+     "pickIf": "有中央 server 且文件大小可接受，想省掉 session resume 邏輯"
+    }
+   ],
+   "numbers": [],
+   "interviewUse": "被問離線支援時，不要說「用 CRDT 就好」，改說：本地先樂觀套用、重連後在最新 server 狀態上重放待送操作，衝突由 server 順序與資料型態規則決定。",
+   "sources": [
+    {
+     "title": "Replicache: How it works",
+     "url": "https://doc.replicache.dev/concepts/how-it-works"
+    },
+    {
+     "title": "How Figma's multiplayer technology works",
+     "url": "https://www.figma.com/blog/how-figmas-multiplayer-technology-works/"
+    }
+   ],
+   "topics": [
+    "consistency"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "multiplayer-undo-semantics",
+   "domain": "collab",
+   "apps": [
+    "Figma",
+    "Yjs UndoManager",
+    "ProseMirror"
+   ],
+   "title": "多人環境的 undo/redo：只撤銷自己的操作，不能蓋掉別人的修改",
+   "naive": "直覺做法：undo = 把整份文件回到上一個狀態（全域 stack）",
+   "breaks": "全域 undo 會把同事剛做的修改一起撤掉；在多人下「上一個狀態」不存在唯一定義",
+   "trick": "Figma 以一個原則定義語意：undo 很多步、複製某物、再 redo 回到現在，文件不應改變，因此 redo 時會修改 undo 歷史、反之亦然，避免誤蓋協作者的編輯。Yjs UndoManager 預設只追蹤沒有 transaction origin 的本地變更（可用 trackedOrigins 調整），並把 500ms captureTimeout 內的編輯合併成一個 undo 步。ProseMirror 用 transaction metadata 區分可 undo 的變更與 undo/redo 本身",
+   "cost": "使用者以為「undo = 時光倒流」，實際只撤自己的；若別人已修改同一物件，undo 結果可能與預期不同。細節（如 undo 對已被他人刪除物件的處理）要自己定義，Figma 則靠 client 端 undo history 保留的屬性來還原誤刪",
+   "alternatives": [
+    {
+     "name": "全域 undo（單人或輪流編輯）",
+     "pickIf": "一次只有一人可編輯，或唯讀觀眾為主"
+    },
+    {
+     "name": "版本歷史還原（粗粒度）",
+     "pickIf": "只需要退回到某個時間點，不要逐步 undo"
+    }
+   ],
+   "numbers": [
+    "Yjs UndoManager captureTimeout 預設 500ms"
+   ],
+   "interviewUse": "被問「多人下 undo 怎麼辦」時，先宣告語意：undo 是 per-user 的反向操作，不是回溯時間，再提 transform 到目前狀態。",
+   "sources": [
+    {
+     "title": "How Figma's multiplayer technology works",
+     "url": "https://www.figma.com/blog/how-figmas-multiplayer-technology-works/"
+    },
+    {
+     "title": "Yjs docs: UndoManager",
+     "url": "https://docs.yjs.dev/api/undo-manager"
+    },
+    {
+     "title": "ProseMirror guide (position mapping, rebasing, collab)",
+     "url": "https://prosemirror.net/docs/guide/"
+    }
+   ],
+   "topics": [
+    "consistency"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "dynamic-page-loading",
+   "domain": "collab",
+   "apps": [
+    "Figma"
+   ],
+   "title": "大文件分段載入：只載入當前頁與它的讀/寫依賴",
+   "naive": "直覺做法：開檔就下載整份文件到 client，才能保證編輯時引用（component、style）都在",
+   "breaks": "檔案越來越大，最慢的檔案載入時間與 out-of-memory 錯誤隨之惡化",
+   "trick": "Figma 只載入選取的頁面，加上其 read dependencies（跨頁的 component、style、variable）與 write dependencies（編輯此頁會影響的下游節點）。multiplayer 用雙向依賴圖 QueryGraph 計算哪些變更對該 client 是 reachable，只推相關更新；先在 shadow mode 驗證計算結果，因為漏掉依賴會造成 instance 與 component 分歧、layout 錯誤",
+   "cost": "必須有完美的 write dependency 偵測，漏一個就可能損壞檔案，工程與驗證成本高。替代的「先唯讀、背景補載入」較簡單但載入期間不可編輯。小文件整份載入反而更簡單",
+   "alternatives": [
+    {
+     "name": "背景補載入期間唯讀",
+     "pickIf": "可接受短暫唯讀，想避免依賴計算的正確性風險"
+    },
+    {
+     "name": "整份載入",
+     "pickIf": "文件小（如純文字文件）"
+    }
+   ],
+   "numbers": [
+    "最慢載入加速 33%（同期檔案大小年增 18%）",
+    "初始載入的 client 節點減少 70%",
+    "out-of-memory 錯誤減少 33%"
+   ],
+   "interviewUse": "被問「巨大文件怎麼開得快」時，答分段載入 + 依賴圖，並指出難點在於未載入部分被同事改到時，server 要算出該通知誰。",
+   "sources": [
+    {
+     "title": "Speeding up file load times, one page at a time (Figma)",
+     "url": "https://www.figma.com/blog/speeding-up-file-load-times-one-page-at-a-time/"
+    }
+   ],
+   "topics": [
+    "scaling-reads"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "tombstone-growth-and-gc",
+   "domain": "collab",
+   "apps": [
+    "Yjs",
+    "Automerge",
+    "Figma"
+   ],
+   "title": "CRDT 的 tombstone 成長與 GC：Yjs 丟內容留長度，Automerge 全保留，Figma 直接刪除",
+   "naive": "直覺做法：CRDT 刪除只標記不移除，永遠保留所有被刪內容",
+   "breaks": "文件存活多年後，metadata 無限膨脹；Figma 因此明確不留 tombstone，直接把整個 entry 從 map 移除，對過期 ID 的編輯落空丟棄",
+   "trick": "Yjs 開啟 GC 時，被刪物件的內容換成只記長度的輕量 GC 結構；刪除不記是誰何時刪的，delete set 因為刪除常成連續區間而很小（B4 benchmark：18.2 萬次插入、7.7 萬字元被刪，snapshot 的 delete set 只有 4.5Kb）。Automerge 不做 GC，保留完整歷史，只把增量 change 定期 compact 成單一 snapshot。需要還原舊內容時，Yjs 要設 doc.gc = false",
+   "cost": "GC 後無法還原已刪內容，也無法重建歷史 snapshot；不 GC 則文件只增不減。有中央 server 的結構化資料（如設計稿）可以像 Figma 直接刪，但文字合併仍需 CRDT",
+   "alternatives": [
+    {
+     "name": "不 GC（保留全部歷史）",
+     "pickIf": "要版本歷史/稽核，且文件規模與壽命有限（Automerge 預設取向）"
+    },
+    {
+     "name": "中央 server 排序 + 直接刪除 entry",
+     "pickIf": "資料是物件屬性而非文字，且有單一 authority"
+    }
+   ],
+   "numbers": [
+    "Yjs B4 benchmark：182k inserts、77k deleted characters，snapshot 的 delete set 僅 4.5Kb"
+   ],
+   "interviewUse": "被問「CRDT 的缺點」時，講 tombstone 成長，並說明實務有三種處理：丟內容留長度（Yjs）、全留 + compact（Automerge）、不用 CRDT 直接刪（Figma）。",
+   "sources": [
+    {
+     "title": "Yjs INTERNALS.md",
+     "url": "https://github.com/yjs/yjs/blob/main/INTERNALS.md"
+    },
+    {
+     "title": "Yjs docs: Y.Doc (gc)",
+     "url": "https://docs.yjs.dev/api/y.doc"
+    },
+    {
+     "title": "Automerge docs: Storage",
+     "url": "https://automerge.org/docs/reference/under-the-hood/storage/"
+    },
+    {
+     "title": "How Figma's multiplayer technology works",
+     "url": "https://www.figma.com/blog/how-figmas-multiplayer-technology-works/"
+    }
+   ],
+   "topics": [
+    "storage-choice"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "stable-anchors-relative-position",
+   "domain": "collab",
+   "apps": [
+    "Yjs",
+    "ProseMirror"
+   ],
+   "title": "評論與游標的錨點：用相對位置或 position mapping，而不是整數 index",
+   "naive": "直覺做法：評論記錄「第 120–135 個字元」，游標記錄整數 index",
+   "breaks": "只要有人在前面插入或刪除文字，所有 index 就失效，評論會漂到錯的句子；遠端更新一來，選取範圍也會錯位",
+   "trick": "Yjs 的 Relative Position 錨定在特定元素（如某個字元）上而非 index，其他人在前面插入時仍指向原字元；所有 client 同步後，同一 relative position 會換算成相同 index，可用於游標、選取與評論錨點，且可序列化成二進位存起來。ProseMirror 則讓每個 step 產生 map，把舊位置映射到新位置，並有 bias 參數決定在該位置插入內容時錨點留在前還是後",
+   "cost": "錨點所在內容被整段刪除時，需要決定評論變 orphan、貼到鄰近位置還是標示失效；relative position 要存額外 metadata；OT 系統需要每次經 mapping 計算，CRDT 才有天然穩定的 id",
+   "alternatives": [
+    {
+     "name": "Position mapping（OT/step-based）",
+     "pickIf": "已有中央 authority 與 step 歷史，編輯器本來就維護 mapping"
+    },
+    {
+     "name": "存引用的文字片段，事後做 fuzzy 重新定位",
+     "pickIf": "內容來自外部系統、拿不到編輯 op（如 Drive API 的 anchor 只能保存、不保證跟隨）"
+    }
+   ],
+   "numbers": [],
+   "interviewUse": "設計評論或 @mention 功能時，先指出整數 index 在並行編輯下會失效，再提錨定到字元 id 或透過 mapping 追蹤，並討論被刪除時的 orphan 策略。",
+   "sources": [
+    {
+     "title": "Yjs docs: Relative Positions",
+     "url": "https://docs.yjs.dev/api/relative-positions"
+    },
+    {
+     "title": "ProseMirror guide (position mapping, rebasing, collab)",
+     "url": "https://prosemirror.net/docs/guide/"
+    }
+   ],
+   "topics": [
+    "consistency"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "version-history-snapshots",
+   "domain": "collab",
+   "apps": [
+    "Figma"
+   ],
+   "title": "版本歷史：定期 checkpoint + 命名版本，與即時 op 流分開",
+   "naive": "直覺做法：保存每一個 op，要看歷史就從頭重放",
+   "breaks": "op 流量巨大、重放成本與儲存線性成長；使用者要的也不是每個按鍵，而是有意義的時間點",
+   "trick": "Figma 每 30 分鐘記錄一個 checkpoint，連線中斷或當機時也會補一個 autosave；使用者可另存命名版本，並可 duplicate 或 restore（還原時不會丟掉較新的評論）。刪除版本只刪 metadata，不刪實際 checkpoint。免費方案/草稿只保留 30 天歷史",
+   "cost": "粒度只到 checkpoint，無法還原到任意按鍵；多存 snapshot 要付儲存成本，所以用保留期限控制。要細到每個字元的歷史，需 CRDT 不 GC 或保留 op log",
+   "alternatives": [
+    {
+     "name": "完整 op log（event sourcing）",
+     "pickIf": "要稽核或任意時間點重建，且願意付儲存與壓縮成本"
+    },
+    {
+     "name": "CRDT 不 GC（Yjs doc.gc=false）",
+     "pickIf": "要在文件內還原舊內容，文件規模可控"
+    }
+   ],
+   "numbers": [
+    "checkpoint 每 30 分鐘",
+    "命名版本標題上限 25 字元",
+    "免費方案/草稿保留 30 天"
+   ],
+   "interviewUse": "被問版本歷史時，說明它是 coarse snapshot 與 realtime op 流分開的產物，用 snapshot 頻率與保留期限控制成本。",
+   "sources": [
+    {
+     "title": "Figma Help: version history",
+     "url": "https://help.figma.com/hc/en-us/articles/360038006754"
+    },
+    {
+     "title": "Making multiplayer more reliable (Figma)",
+     "url": "https://www.figma.com/blog/making-multiplayer-more-reliable/"
+    }
+   ],
+   "topics": [
+    "storage-choice"
+   ],
+   "byAgents": false
+  }
+ ],
+ "quiz": [
+  {
+   "q": "協作文件的游標位置為什麼不該跟文件內容一起寫進 op log？比較 ephemeral 與持久化 presence 的取捨。",
+   "a": "游標更新頻率高且價值短暫，寫入 log 會灌爆儲存與重放成本，斷線者游標也會殘留。做法是獨立通道、不落地、靠 heartbeat（Yjs 超過 30 秒無更新標 offline）過期。代價是新加入者要等下次廣播、無法回放；若要稽核或回放才考慮持久化。",
+   "topic": "collab",
+   "kind": "取捨"
+  },
+  {
+   "q": "一個 session 有 800 人同時開同一份設計稿，presence 與編輯怎麼設計以免被打垮？",
+   "a": "presence 廣播是平方級：client 端節流（Liveblocks 預設 100ms）、限制可見游標數（Figma 200 個、200 人編輯、500 總參與，其餘降為只讀或靜態）、編輯者優先。代價是超過上限的人體驗降級；編輯權威仍維持單一文件 process。",
+   "topic": "collab",
+   "kind": "情境"
+  },
+  {
+   "q": "為什麼 Figma 選「一份文件一個 server process」而不是任意 server + pub/sub？代價是什麼？",
+   "a": "『後到 server 者贏』只有在單一地方看到所有寫入時才有意義，單 process 把跨 server 排序變成『誰擁有此文件』的問題。代價是要處理 process 啟停、路由、failover 時不能有兩個 writer，且單文件吞吐有上限。",
+   "topic": "collab",
+   "kind": "取捨"
+  },
+  {
+   "q": "用戶離線 4 小時後重連，Figma 與 Replicache 各自怎麼把本地編輯併回去？適用情境有何不同？",
+   "a": "Figma：重新下載最新文件，把離線編輯 reapply 上去再開新 socket，省掉 session resume，但大文件重載昂貴。Replicache：rewind 到 server 狀態、套 patch，再重放 pending mutator，需要 mutator 在 client/server 各實作且確定性。前者適合有中央 server 的物件型文件，後者適合通用結構化資料。",
+   "topic": "collab",
+   "kind": "情境"
+  },
+  {
+   "q": "Yjs、Automerge、Figma 各自怎麼處理刪除造成的 metadata 成長？為什麼不一定要用 GC？",
+   "a": "Yjs：開 GC 時被刪內容換成只記長度的結構，但之後無法還原（要還原須 gc=false）。Automerge：不 GC，保留完整歷史，只把增量 change compact 成 snapshot。Figma：有中央 server，直接移除 entry，對過期 ID 的編輯丟棄。需要版本歷史就別 GC；只要物件屬性且有單一 authority 就可直接刪。",
+   "topic": "collab",
+   "kind": "取捨"
+  },
+  {
+   "q": "文件已有評論錨定在某段文字，別人在前面插入內容後，如何讓評論跟著走？錨點內容被整段刪除時怎麼辦？",
+   "a": "不要存整數 index；用 CRDT 的 relative position（錨在字元 id，如 Yjs）或 OT 的 position mapping（step map 加 bias）。內容被整段刪除時要自行決定策略（標為 orphan、貼到鄰近、或標示失效），這是產品層取捨。",
+   "topic": "collab",
+   "kind": "情境"
+  }
+ ]
+}

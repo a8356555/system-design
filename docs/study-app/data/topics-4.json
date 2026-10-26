@@ -1,0 +1,845 @@
+[
+  {
+    "id": "search",
+    "title": "搜尋（Search）",
+    "group": "資料與查詢",
+    "oneLiner": "決定關鍵字／語意查詢要靠主 DB 索引、自建 inverted index、外掛搜尋引擎還是向量檢索，以及排序要不要拆成「近似召回 + 精確重排」兩段。",
+    "question": "使用者要用關鍵字搜尋貼文，並依時間或按讚數排序，你會怎麼做？可以直接 LIKE 嗎？",
+    "signals": [
+      "依關鍵字、名稱、全文搜尋",
+      "結果要依相關性、時間或熱度排序，並加 filter / facet / geo 條件",
+      "「意思相近」而非字面相同：語意搜尋、相似商品、RAG、近似去重",
+      "面試官說「不能用 Elasticsearch」→ 考 inverted index 與 data layout 基本功",
+      "新資料要在 N 秒／1 分鐘內可被搜到（freshness SLA）",
+      "排序依據是高頻變動的值（按讚數、觀看數）"
+    ],
+    "options": [
+      {
+        "name": "SQL LIKE / DB 內建全文索引（Postgres GIN tsvector、MySQL FULLTEXT）",
+        "how": "LIKE '%kw%' 逐列掃描比對；Postgres GIN（tsvector）或 MySQL FULLTEXT 則在主 DB 內維護 inverted index。",
+        "bestWhen": "資料量小（< 100k documents）或很少變動、查詢條件單純，不想多養一套系統與同步管線。",
+        "cost": "LIKE '%kw%' 用不到 B-tree（只有 'prefix%' 能用），每次查詢全表掃；全文索引加重寫入成本，相關性排序、facet 能力有限，且與交易查詢搶同一台 DB。",
+        "failure": "PB 級資料下 LIKE 是死路：sharding / replication 只是把時間除以 N，仍然太慢；熱門查詢一多會拖垮主 DB 的交易路徑。",
+        "scale": "原文：資料量 < 100k documents 或很少變動時，直接查主 DB 通常夠用。"
+      },
+      {
+        "name": "自建 inverted index（Redis list / sorted set，每種排序一份）",
+        "how": "Ingestion 對新 post tokenize，把 postId append 到每個 keyword；recency 用只 append 的 list，likes 用 score = 讚數的 sorted set，避免 request-time 排序。",
+        "bestWhen": "面試官禁止 ES / 預建全文索引，或排序維度固定且要極低延遲。",
+        "cost": "一個 post 觸發 10–1,000 次 keyword 寫入；多一種排序就多一份 index、儲存翻倍；多字片語要對百萬級集合做交集，或改建 bigram（keys 從約 10m 變 100m+）。",
+        "failure": "熱門字 posting list 巨大，request-time 排序要拉數百 MB、上千萬次查詢；likes 高頻更新壓爆 sorted set；Redis 有 durability 疑慮。需要 index 上限（1k–10k/keyword）與冷熱分層（冷 index 搬到 blob）。",
+        "scale": "FB Post Search：10k posts/s、100k likes/s、10k searches/s，10 年 3.6 PB。"
+      },
+      {
+        "name": "Elasticsearch（CDC 從權威 DB 同步）",
+        "how": "主 DB 當 source of truth，CDC 把變更送進 ES；Lucene immutable segment + inverted index 做全文，doc values 做排序／聚合，可同時套 filter、geo_distance。",
+        "bestWhen": "複雜搜尋：全文 + filter + 相關性／評分排序 + facet + geo，且讀多寫少（Yelp 商家、Tinder feed、Ticketmaster 活動搜尋）。",
+        "cost": "多一套要營運的叢集與同步管線；eventual consistency（refresh interval 約 1s 才生成新 segment，加上同步延遲）；要 denormalize 成 1–2 個 query 就拿到結果。",
+        "failure": "與底層 DB 同步失敗造成 drift（常見 bug 來源）；更新 = soft delete + 插入新文件，頻繁更新（按讚數、impression）讓 ES 吃力；from/size 深分頁超過約 10,000 筆變貴；不能當主資料庫（耐久性／一致性）。",
+        "scale": "資料量超過約 100k documents 且查詢複雜時；replica 同時提供 HA 與讀吞吐（shard X TPS、Y 個 replica 約 X*Y TPS）。"
+      },
+      {
+        "name": "Vector DB / pgvector（ANN 語意檢索）",
+        "how": "文件 embedding 離線預算、query embedding 線上算；HNSW / IVF 等 ANN 索引找最近鄰，回傳 ID 再回主 DB 取完整資料。",
+        "bestWhen": "要「意思相近」：semantic search、相似商品、RAG、去重。已在 Postgres 就先用 pgvector，已有 ES 就用 kNN。",
+        "cost": "HNSW 記憶體約原向量 2 倍（100 萬 × 1536 維 ≈ 6GB 再加倍）、建索引慢（一千萬向量可能 1 小時以上）、insert 貴；還要付 embedding 推論成本。",
+        "failure": "ANN 本身犧牲 recall，post-filter 太嚴時可能湊不到 K 個，兩種損失相乘；大量 insert 後 HNSW graph 品質退化；換 embedding model 舊向量全部不相容，要整批重建。",
+        "scale": "pgvector 處理數百萬向量沒問題；超過約 1 億向量才考慮專用 vector DB；調好的系統常見 1–5ms、recall 95%+。"
+      },
+      {
+        "name": "Hybrid search（lexical BM25 + semantic 向量）",
+        "how": "平行執行關鍵字搜尋與向量搜尋，再用 ranking function 合併（ES 原生支援 BM25 + kNN）。",
+        "bestWhen": "query 同時有必須精確命中的字（型號、人名）與模糊意圖（例：red running shoes）；純 keyword 零結果率高時。",
+        "cost": "兩套 index、兩次查詢與兩條同步管線；合併權重要調、要有評估集。",
+        "failure": "權重沒調好結果會被其中一路主導；兩邊 freshness 不同導致結果互相矛盾。",
+        "scale": "LinkedIn：Boolean keyword search 對約 50% query 回零結果，是轉向語意檢索的動機。"
+      },
+      {
+        "name": "Two-stage：近似召回 + 精確重排",
+        "how": "第一段用便宜的近似 index（ANN、對數里程碑 like 數）撈大候選集（如 top 1000、top N×2），第二段向權威資料源取最新值或跑重模型重排。",
+        "bestWhen": "排序依據高頻變動（讚數）、或排序模型太貴無法對全量跑；推薦與搜尋排序題的骨架。",
+        "cost": "多一段 latency budget 與工程複雜度；index 內的值變成近似（宜命名為 approxLikes / logLikes）。",
+        "failure": "第一段沒召回的第二段救不回；候選集取太小排序不準，取太大第二段太慢。",
+        "scale": "FB Post Search：只在 like 數過 2 的冪時更新 index，1000 likes 只需約 10 次寫入；LinkedIn MUSE 對 1.3B+ profiles，query 端 p95 <100ms。"
+      }
+    ],
+    "decisionGuide": [
+      {
+        "if": "資料量小（< 100k docs）、查詢單純",
+        "then": "Postgres 全文索引（GIN）",
+        "why": "少一套系統與同步管線；夠用就別上 ES。"
+      },
+      {
+        "if": "全文 + filter + 排序 + geo，讀多寫少",
+        "then": "Elasticsearch + CDC，主 DB 保留 source of truth",
+        "why": "ES 為複雜搜尋而生；接受 eventual consistency 換查詢能力，drift 靠重新索引修。"
+      },
+      {
+        "if": "面試官禁止 ES，或排序維度固定",
+        "then": "自建 inverted index，每種排序一份預排序 index + index 上限",
+        "why": "避開 request-time sort，以空間換讀延遲。"
+      },
+      {
+        "if": "排序值高頻變動（likes、views）",
+        "then": "近似 index（里程碑更新）+ 取 top N×2 向權威來源重排",
+        "why": "寫入量指數下降，儲存近似但結果精確。"
+      },
+      {
+        "if": "要語意相近",
+        "then": "pgvector / ES kNN 起步，> 1 億向量才上專用 vector DB",
+        "why": "先從簡單開始，附贈 ACID、join 與少一套營運系統。"
+      },
+      {
+        "if": "精確字與語意都要命中",
+        "then": "Hybrid（BM25 + 向量平行查再合併）",
+        "why": "兩者合併通常比單一方式好。"
+      }
+    ],
+    "defaultAnswer": "Postgres 當 source of truth，透過 CDC 同步到 Elasticsearch 當搜尋層；資料量小就直接用 Postgres 全文索引，因為多一套系統的同步與營運成本只有在複雜查詢時才值得。",
+    "interviewScript": "我會讓 Postgres 當權威資料，用 CDC 把變更同步進 Elasticsearch，由 inverted index 處理全文、filter 和排序；代價是搜尋結果最終一致、新資料約秒級才可搜，而且要監控同步 drift。如果排序依據是按讚數這種高頻變動值，我不會每個讚都更新 index，而是只在里程碑更新，查詢時取 top 2N 再向 Like Service 拿精確值重排。若需求是語意搜尋，我先用 pgvector，超過約 1 億向量才考慮專用 vector DB。",
+    "pitfalls": [
+      "用 LIKE '%kw%' 當搜尋方案，或以為 sharding 能救全表掃描",
+      "把 Elasticsearch 當主資料庫，或沒提同步 drift 與重新索引",
+      "把按讚數、impression 這類高頻更新欄位直接塞進 ES 文件",
+      "對熱門字的全部結果做 request-time 排序（數百 MB payload）",
+      "深分頁用 from/size（> 10,000 筆）而不是 search_after / PIT",
+      "向量搜尋只講 ANN，沒提 filter 策略（pre / post）與換 embedding model 要重建"
+    ],
+    "cases": [
+      {
+        "name": "FB Post Search",
+        "ref": "hellointerview-breakdowns/fb-post-search.md",
+        "note": "禁用 ES：Redis 自建 inverted index（list 存 recency、sorted set 存 likes），bigram 處理片語，like 用對數里程碑更新 + top 2N 重排。"
+      },
+      {
+        "name": "Yelp",
+        "ref": "hellointerview-breakdowns/yelp.md",
+        "note": "名稱全文 + geo_distance + category + 評分排序，用 ES 經 CDC 從主 DB 同步；10M 商家約 10GB，單一索引多 shard 即可。"
+      },
+      {
+        "name": "Tinder",
+        "ref": "hellointerview-breakdowns/tinder.md",
+        "note": "Feed 用 ES（含 geo index）即時查詢，再與預先計算的 cache feed 混合；同步靠 CDC，大量更新要 batch 寫入。"
+      },
+      {
+        "name": "LinkedIn MUSE 語意搜尋",
+        "ref": "threads-chunhao2026/tech-blog/linkedin-muse-semantic-search.md",
+        "note": "1.3B+ profiles：profile 向量離線預算、query 線上算，IVFPQ ANN + attribute filter，再交給 L2 ranker 重排；指出 ANN 與 post-filter 損失相乘。"
+      },
+      {
+        "name": "Spotify 資料湖點查",
+        "ref": "hellointerview-learn/in-the-wild/spotify-data-lake-point-queries.md",
+        "note": "非文字搜尋的同一招：bucket 把 90,000 檔縮到 90、Bloom filter 縮到約 12，最後用確定性外部索引直接定位 row。"
+      }
+    ],
+    "sources": [
+      "domain-specific-mechanisms.md",
+      "hellointerview-learn/deep-dives/elasticsearch.md",
+      "hellointerview-learn/deep-dives/vector-databases.md",
+      "hellointerview-learn/core-concepts/db-indexing.md",
+      "hellointerview-breakdowns/fb-post-search.md",
+      "hellointerview-breakdowns/yelp.md",
+      "threads-chunhao2026/tech-blog/linkedin-muse-semantic-search.md"
+    ],
+    "byAgents": false
+  },
+  {
+    "id": "geo",
+    "title": "地理鄰近查詢（Geo / Proximity）",
+    "group": "資料與查詢",
+    "oneLiner": "決定「附近的 X」用哪種空間索引：把二維壓成一維 key（geohash / S2 / H3 / Redis GEO），還是用 spatial tree（quadtree / R-tree），以及昂貴的距離計算放在哪一步。",
+    "question": "找出使用者 3 公里內的可用司機（或 1 小時內能送達的倉庫），你怎麼查？對 lat、lng 建索引可以嗎？",
+    "signals": [
+      "附近的司機 / 餐廳 / 倉庫 / 配對對象",
+      "高頻位置更新（每 5–10 秒回報）",
+      "配送範圍、行政區、polygon containment",
+      "條件其實是行車時間 / ETA，而不是直線距離",
+      "全球服務、高緯度地區",
+      "依地區分片（geo-sharding）、跨邊界查詢"
+    ],
+    "options": [
+      {
+        "name": "lat / lng 各建 B-tree（或 composite index）",
+        "how": "對 lat、lng 建索引，用 BETWEEN 圈出方框再逐筆算距離。",
+        "bestWhen": "資料量很小的 baseline；面試開場用來說明為什麼不行。",
+        "cost": "幾乎零額外基礎設施。",
+        "failure": "B-tree 只能對一維排序，composite 也只是先排第一欄 → 拿到一條帶狀區域，內含數百萬列且沒有距離順序，退化成逐列算距離的 brute force。",
+        "scale": "只適用很小的資料集（定性）。"
+      },
+      {
+        "name": "Geohash（存字串 / 整數，走一般 B-tree）",
+        "how": "經緯度交錯編碼成 base32，共同前綴 = 地理相近；WHERE geohash LIKE 'dr5ru%' 即 prefix scan，查自身 + 8 鄰格再用精確距離 post-filter。",
+        "bestWhen": "點資料、想用任何 KV / DB 既有索引，不想裝 spatial extension。",
+        "cost": "要選精度並永遠多查 8 格；格子大小固定，密度不均時市中心一格擠爆、郊區空格。",
+        "failure": "邊界問題：相距 1 公尺的兩點可能 prefix 完全不同，只查自己那格會漏；高緯度格子變形（經度 1 度在赤道約 111 km、極點趨近 0）。",
+        "scale": "5 字元 ≈ 5 km、6 字元 ≈ 1 km、7 字元 ≈ 150 m、9 字元 ≈ 5 m。"
+      },
+      {
+        "name": "Redis GEO（geohash 存在 sorted set）",
+        "how": "GEOADD 把經緯度轉成 52-bit geohash 當 sorted set score，同 member 覆寫舊位置；GEOSEARCH 先取 bounding box 候選再精確過濾半徑。",
+        "bestWhen": "易失、高頻寫的移動點（司機位置）：掉了下一輪回報就重建，不必落 DB。",
+        "cost": "全記憶體；要另建以時間戳為 score 的 companion sorted set，定期清掉超過門檻（如 30 秒）的離線司機。",
+        "failure": "async replication 與持久化視窗會丟寫入，不能當 system of record；單 key 過大要依地區切分，跨區邊界查詢要 scatter-gather。",
+        "scale": "Uber：約 10M 司機每 5 秒回報 → 約 2M updates/s；同樣寫入用 DynamoDB on-demand 一天超過 $200k。"
+      },
+      {
+        "name": "Quadtree",
+        "how": "密度高的格遞迴切四象限，點只存在 leaf；查詢往下落到 leaf，再加鄰近 leaf 避免漏掉跨邊界的點。",
+        "bestWhen": "記憶體內、密度極不均、資料變動不頻繁（地圖 tiles、遊戲碰撞偵測）。",
+        "cost": "pointer 結構，放 disk 時每個 pointer 可能是一次 random read；分散式要自己做。",
+        "failure": "永遠切幾何中點而非資料所在處：密集區要切十幾層、鄉下只要 2 層 → latency 隨查詢位置不同，最忙的區域最慢；高頻移動的點需不斷調整樹。",
+        "scale": "單機記憶體放得下的資料（定性）。"
+      },
+      {
+        "name": "R-tree / PostGIS（GiST）",
+        "how": "以 Minimum Bounding Rectangle 層層包住物件，節點 = 一個 disk page，像 B-tree 一樣平衡；PostGIS 以 GiST 實作，ES 的 geo field 用 BKD tree。",
+        "bestWhen": "資料是形狀：polygon、道路、配送區、containment / intersection 查詢（Yelp 的城市／社區邊界）。",
+        "cost": "需要 spatial extension；寫入較貴（要 split / merge 並重平衡矩形）。",
+        "failure": "矩形重疊時查詢要兩邊都下鑽，插入策略差 → 重疊多 → 變慢（實務用 R*-tree 緩解）；不適合持續移動、高 churn 的點。",
+        "scale": "幾何資料的預設選擇（定性）。"
+      },
+      {
+        "name": "S2 / H3（階層式 cell ID）",
+        "how": "S2 把地球投影到立方體六面，cell 大致等面積、64-bit 階層 ID；H3 用六邊形，6 個鄰居距離大致相同，用 grid math 算出周圍 ring 的 cell ID 再 WHERE h3_cell IN (...)。",
+        "bestWhen": "全球尺度（避開 geohash 高緯變形）、需要「N 圈內」鄰域或熱力圖（Uber dispatch、surge pricing）。",
+        "cost": "要引入 library 並選 cell 解析度；概念比 geohash 難在面試中解釋。",
+        "failure": "H3 ID 相近不保證地圖相近，不能 range scan，只能逐 cell 查；cell 太大候選爆量，太小要擴很多圈。",
+        "scale": "S2 / H3 為 64-bit ID；H3 dispatch 範例 cell ≈ 200 m；encoded cell 讓移動點更新只是改一個整數，可擴到每秒數百萬寫入。"
+      }
+    ],
+    "decisionGuide": [
+      {
+        "if": "資料是 polygon / 道路 / 配送區",
+        "then": "PostGIS（R-tree）",
+        "why": "Spatial tree for shapes：點線面通吃，代價是 extension 與較貴的寫入。"
+      },
+      {
+        "if": "持續移動的點、寫入密集",
+        "then": "Encoded cells（geohash / H3）或 Redis GEO",
+        "why": "移動只是改一個整數，不用重平衡樹。"
+      },
+      {
+        "if": "位置可丟、每幾秒會重報",
+        "then": "只放 Redis GEO 不持久化，歷史軌跡另外 async 批次落 time-series 儲存",
+        "why": "高頻定位讀寫反轉：寫遠多於讀，持久化每一筆不值得。"
+      },
+      {
+        "if": "已經用 ES 做文字搜尋",
+        "then": "ES geo_point + geo_distance 與名稱、類別、評分排序同一個 query",
+        "why": "少一套系統，複合條件一次查完。"
+      },
+      {
+        "if": "真正的條件是行車時間 / ETA",
+        "then": "先用廉價半徑預篩候選，再只對候選呼叫昂貴的 travel-time 服務",
+        "why": "Gopuff：60 英里（最樂觀 1 小時車程）篩掉多數不可能送達的 DC，避免對每個 DC 打外部服務。"
+      },
+      {
+        "if": "全球系統或高緯度地區",
+        "then": "S2 或 H3",
+        "why": "geohash 把經緯度當平面矩形，高緯度格子變細長條。"
+      }
+    ],
+    "defaultAnswer": "移動點（司機）用 Redis GEO（geohash），靜態商家用 Elasticsearch geo_point 或 PostGIS；不論哪種都查自身 + 鄰格，再用精確距離 post-filter。",
+    "interviewScript": "(lat, lng) 的 composite B-tree 只會給我一條帶狀區域，所以要把二維壓成一維 key。司機位置每 5 秒更新、掉了能重建，我放 Redis GEO，代價是不持久化，而且要用時間戳 sorted set 清掉離線司機；商家這種靜態資料，我用 Elasticsearch 的 geo filter 跟名稱、類別一起查。cell 有邊界問題，所以我一定查自己格加 8 個鄰格，再算精確距離。如果真正的條件是行車時間，我會先用半徑預篩，再只對候選呼叫 ETA 服務。",
+    "pitfalls": [
+      "以為 (lat, lng) composite index 能有效做半徑查詢",
+      "只查自己那格，忘了查 3x3 / 一圈 ring 再 post-filter",
+      "每一筆司機定位都同步寫進 DynamoDB / Postgres",
+      "對所有候選呼叫昂貴的 travel-time / mapping API，沒有先預篩",
+      "高頻移動的點用 R-tree / quadtree，忽略重平衡成本",
+      "沒處理離線司機的陳舊位置"
+    ],
+    "cases": [
+      {
+        "name": "Uber",
+        "ref": "hellointerview-breakdowns/uber.md",
+        "note": "2M updates/s 的司機定位放 Redis GEO（GEOADD 覆寫、GEOSEARCH 查），companion sorted set 清 30 秒未回報者；geo-sharding 後只有邊界查詢要 scatter-gather。"
+      },
+      {
+        "name": "Gopuff",
+        "ref": "hellointerview-breakdowns/gopuff.md",
+        "note": "先用 60 英里半徑預篩 DC，再只對候選呼叫 Travel Time Service；DC 依 zipcode 前 3 碼分區，查詢多半只打 1–2 個 partition。"
+      },
+      {
+        "name": "Yelp",
+        "ref": "hellointerview-breakdowns/yelp.md",
+        "note": "商家是靜態點：ES geo_distance + category + 評分排序；城市／社區用 polygon 或索引時預先標註 city 欄位。"
+      },
+      {
+        "name": "Tinder",
+        "ref": "hellointerview-breakdowns/tinder.md",
+        "note": "Feed 要符合最大距離：初版 SQL lat/long BETWEEN 太慢，改用含 geospatial index 的 ES 並搭配預先計算的 feed。"
+      }
+    ],
+    "sources": [
+      "domain-specific-mechanisms.md",
+      "cross-cutting-patterns.md",
+      "hellointerview-learn/deep-dives/proximity-search.md",
+      "hellointerview-learn/deep-dives/redis.md",
+      "hellointerview-breakdowns/uber.md",
+      "hellointerview-breakdowns/gopuff.md"
+    ],
+    "byAgents": false
+  },
+  {
+    "id": "counting",
+    "title": "計數與排行（Counting / Top-K）",
+    "group": "擴展",
+    "oneLiner": "決定計數要精確還是近似、在寫入時還是讀取時聚合，以及熱門 key、時間窗口與 Top-K 要怎麼扛住海量事件。",
+    "question": "影片觀看每秒幾十萬次，怎麼回答「過去 1 小時觀看數 top 100」？一定要精確嗎？",
+    "signals": [
+      "觀看數、按讚數、點擊數、評分平均",
+      "Top-K、trending、排行榜",
+      "過去 1 小時 / 1 天 / 1 月的 window 統計（tumbling vs sliding）",
+      "單一熱門 key：爆紅影片、明星貼文",
+      "UV / DAU 等去重計數",
+      "metrics / 監控 / p99"
+    ],
+    "options": [
+      {
+        "name": "精確 counter（DB 原子 UPDATE / Redis INCR）",
+        "how": "UPDATE t SET n = n + 1 單語句原子（勝過讀改寫），或 Redis INCR；讀取直接拿值，衍生值（avg_rating、review_count）寫入時同步更新。",
+        "bestWhen": "寫入量單機扛得住、需要精確的計數。",
+        "cost": "每個事件一次寫入；在 count 欄位加 index 讓每次寫入從 O(1) 變 O(log n)。",
+        "failure": "熱門 key 變成 hot row，row contention 拉高延遲；用 SELECT 再 UPDATE 的讀改寫會在併發下丟更新。",
+        "scale": "單節點 RDBMS 約 10k+ writes/s。"
+      },
+      {
+        "name": "Sharded counter（sub-key 打散）",
+        "how": "把熱 key 拆成 key#0..key#9 分散到不同 shard，寫入隨機挑一份，讀取 scatter-gather 加總；或只對偵測到的熱 key 動態拆。",
+        "bestWhen": "單一 key 熱到單 shard 扛不住，但仍要接近即時且精確。",
+        "cost": "讀放大（每次讀合併 N 份）；動態拆分要維護熱 key 清單，讀端也要知道拆了幾份。",
+        "failure": "對所有 key 一律拆會讓每次讀都付成本；以為 hash 均勻就不會有 hot key。",
+        "scale": "單一 key 超過單 shard 寫入上限時（定性）。"
+      },
+      {
+        "name": "預聚合 / 批次（stream window + 每個 window 一張預算表）",
+        "how": "Flink 依 key + tumbling window 先加總再寫（或 batcher 每 30 秒合併）；每個 window（時／日／月）維護一張帶 index 的表；sliding window 用「加上最新一分鐘、減掉 60 分鐘前那一分鐘」維護。",
+        "bestWhen": "寫遠多於讀、可容忍短延遲（如 1 分鐘）、聚合可交換（sum / count / max）。",
+        "cost": "新鮮度延遲；複雜度從讀移到寫（要寫多張表）；sliding window 每分鐘多一次讀 decrement，還要保留一個月的分鐘粒度資料。",
+        "failure": "遲到事件靠 watermark（約 30 秒），超過就漏算或需修正；batcher 對長尾低頻 key 沒好處反增開銷；Flink 原生 1 分鐘 slide 的 sliding window 記憶體 ×43,200，不可行。",
+        "scale": "Top-K：700k TPS 不批次需約 70 個 shard，批次後寫入少 2–100 倍，降到約 5–10 個 shard。"
+      },
+      {
+        "name": "分片 Top-K + heap merge（cron 預算進 cache）",
+        "how": "依 key（videoId）分片，Kafka partition = DB shard；各 shard 取 local top K 再 merge 成全域 K，cron 定期預算寫入 cache，服務只讀 cache。",
+        "bestWhen": "要精確 Top-K、K 有上限（如 1k）、回應要數十毫秒。",
+        "cost": "cron 預算 job 的維運（失敗、落後要監控）；每個 window 各一份結果。",
+        "failure": "同一 key 若散落多個 shard，local top K 合併就不保證正確；cache 過期瞬間大量 miss 打 DB 且違反 SLA（用 cron 提前暖 cache、保留 stale entry 數小時兜底）。",
+        "scale": "4B 影片 × 16 bytes ≈ 64 GB 計數表；K ≤ 1k 不需分頁。"
+      },
+      {
+        "name": "機率型結構：Count-Min Sketch（頻率）/ HyperLogLog（基數）",
+        "how": "CMS：d × w counter 陣列 + 多個 hash，取最小值當頻率估計（只高估不低估），搭配 heap 保留 top K；HLL：用 hash 前導零分佈估去重基數，可跨節點 merge。",
+        "bestWhen": "可接受近似的 trending、hot key 偵測、UV / DAU；精確解的記憶體算不下時。",
+        "cost": "引入誤差：CMS 單邊高估、Redis HLL 標準誤差約 0.81%；CMS 不能列舉 key，HLL 不能列出是誰也不能刪除。",
+        "failure": "CMS 噪音會蓋過長尾低頻 key；Redis 版 CMS 與 sorted set 可能更新不同步，從 Kafka 重建很慢；不可用於計費或廣告扣款；精確解放得下時硬用是紅旗。",
+        "scale": "CMS 可把記憶體從數百 GB 降到數百 MB；Redis HLL 每個 key 最多 12 KB。"
+      },
+      {
+        "name": "時序 DB（TSDB）",
+        "how": "append-only + LSM + delta-of-delta / XOR 壓縮 + 時間分區 + downsampling，依 tag 查單一 series 的時間範圍；retention 直接丟舊分區。",
+        "bestWhen": "metrics / 監控：低 cardinality tag、規律資料、依時間範圍查，需要細粒度短保存、粗粒度長保存。",
+        "cost": "多一套專用儲存；rollup 損失原始精度（百分位要存 histogram / sketch 才能合併）。",
+        "failure": "cardinality 爆炸：1,000 hosts × 50 metrics = 5 萬 series 沒問題，加上 10M 個 user_id tag 變約 5000 億 series → OOM；跨數十億 series 的 Top-K 等於掃全部。",
+        "scale": "50,000 metrics/s 會壓垮單台 Postgres；目標負載上約比通用 DB 好 10–100 倍；5 分鐘 rollup 比 10 秒原始資料少 288 倍。"
+      }
+    ],
+    "decisionGuide": [
+      {
+        "if": "量小、要精確",
+        "then": "原子 counter（UPDATE n = n + 1 / INCR）",
+        "why": "最簡單；先估算，常常單機就夠。"
+      },
+      {
+        "if": "單一 key 寫入過熱",
+        "then": "sharded counter，或先在 stream 聚合再寫",
+        "why": "把熱寫分散到多 shard，或把 N 次寫變成每個 window 一次。"
+      },
+      {
+        "if": "window Top-K 且結果要精確",
+        "then": "Flink tumbling window 預聚合 + 每 window 預算表 + 分片 top K merge + cron 暖 cache",
+        "why": "讀路徑變成從 cache 取 O(k)，滿足數十毫秒；每支影片只在一個 shard，merge 結果必正確。"
+      },
+      {
+        "if": "只要 trending、可接受近似",
+        "then": "Count-Min Sketch + heap",
+        "why": "記憶體與基數無關，從數百 GB 降到數百 MB。"
+      },
+      {
+        "if": "要算 UV / 去重基數",
+        "then": "HyperLogLog",
+        "why": "每 key 約 12 KB 即可估億級，且可跨節點 merge。"
+      },
+      {
+        "if": "產品要求 sliding window",
+        "then": "只有 last hour 用 sliding（increment / decrement），日、月維持 tumbling",
+        "why": "月榜變動慢，sliding 的讀放大與細粒度保存不划算。"
+      }
+    ],
+    "defaultAnswer": "事件進 Kafka，Flink 依 key 做 tumbling window 預聚合後批次寫入，每個 window 一張帶 index 的預算表，Top-K 由 cron 預算進 cache；預設精確，面試官放寬才換 Count-Min Sketch。",
+    "interviewScript": "700k TPS 直接寫 DB 大約要 70 個 shard，所以我先用 Flink 依 videoId 做 1 小時 tumbling window 聚合，寫入量能降 2 到 100 倍。查詢端每個 window 維護一張帶 index 的表，各 shard 取 top K 再 merge；因為每支影片只在一個 shard，合併結果一定正確，再由 cron 預算寫進 cache。代價是大約 1 分鐘的延遲，以及寫路徑變複雜。如果產品只要 trending、不需要精確，我會改用 Count-Min Sketch 加 heap，記憶體從數百 GB 降到數百 MB。",
+    "pitfalls": [
+      "每個事件都同步更新 DB 熱 row",
+      "用 InfluxDB / Prometheus 做跨數十億 series 的 Top-K",
+      "把 user_id 當 TSDB tag，造成 cardinality 爆炸",
+      "對各台機器的 p99 取平均（分位數不能線性合併，要合併 histogram）",
+      "精確解放得下還硬上 CMS / Bloom，或在計費場景用近似值",
+      "用 Flink 原生 1 分鐘 slide 的 sliding window（記憶體 ×43,200）"
+    ],
+    "cases": [
+      {
+        "name": "YouTube Top K",
+        "ref": "hellointerview-breakdowns/top-k.md",
+        "note": "700k TPS：Flink 批次聚合、每 window 一張預算表、分片 top K merge、cron 暖 cache；sliding 用 increment/decrement，近似版用 CMS + heap。"
+      },
+      {
+        "name": "Ad Click Aggregator",
+        "ref": "hellointerview-breakdowns/ad-click-aggregator.md",
+        "note": "click 進 Kafka，Flink 依 AdId + 分鐘聚合寫 OLAP；因為 click 等於錢，再用 S3 + Spark 每日對帳修正（Lambda）。"
+      },
+      {
+        "name": "Metrics Monitoring",
+        "ref": "hellointerview-breakdowns/metrics-monitoring.md",
+        "note": "5M points/s 寫入 TSDB：時間分區、壓縮、rollup 分層保存，並以配額控制 cardinality；百分位要用 histogram / sketch 合併（Premium 補充）。"
+      },
+      {
+        "name": "FB Post Search",
+        "ref": "hellointerview-breakdowns/fb-post-search.md",
+        "note": "100k likes/s：batcher 30 秒合併對長尾無效，改成只在 like 數過 2 的冪時更新 index，1000 likes 約 10 次寫入。"
+      },
+      {
+        "name": "Yelp",
+        "ref": "hellointerview-breakdowns/yelp.md",
+        "note": "avg_rating 與 review_count 在寫評論時增量更新，讀路徑 O(1)；熱門商家改非同步批次以避開 row contention（Premium 補充）。"
+      }
+    ],
+    "sources": [
+      "cross-cutting-patterns.md",
+      "domain-specific-mechanisms.md",
+      "hellointerview-learn/deep-dives/data-structures-for-big-data.md",
+      "hellointerview-learn/deep-dives/time-series-databases.md",
+      "hellointerview-learn/patterns/scaling-writes.md",
+      "hellointerview-breakdowns/top-k.md",
+      "hellointerview-breakdowns/metrics-monitoring.md"
+    ],
+    "byAgents": false
+  },
+  {
+    "id": "rate-limiting",
+    "title": "限流（Rate Limiting）",
+    "group": "邊界與介面",
+    "oneLiner": "決定用哪種演算法限流、限流器放在哪一層、計數狀態集中還是本地，以及限流器自己掛掉時要放行還是拒絕。",
+    "question": "每個用戶每分鐘最多 100 次請求，前面有 20 台 gateway，怎麼保證不會超放？Redis 掛了怎麼辦？",
+    "signals": [
+      "防刷、防爬、防黃牛（例：每分鐘 10 次 booking）",
+      "對外 API、開發者 API key、未認證的 per-IP 限制",
+      "超限要回 429 + Retry-After / X-RateLimit-* header",
+      "下游有硬上限（第三方 API、crawler 對單一網域 1 req/s）",
+      "多台 server 共享同一個額度",
+      "秒殺入口削峰"
+    ],
+    "options": [
+      {
+        "name": "Fixed window counter",
+        "how": "每個 client 每個固定窗口一個 counter（Redis INCR，只在回傳 1 時設 EXPIRE），超過 N 就回 429。",
+        "bestWhen": "要極簡單、能容忍邊界誤差。",
+        "cost": "記憶體極小：每 client 一個 counter + 窗口起點。",
+        "failure": "邊界突刺：12:00:59 打 100、12:01:00 再打 100 → 2 秒內放行 200（2 倍）；額度早用完的 client 會飢餓；INCR 與 EXPIRE 沒用 Lua 合併，中間 crash 會留下永不重置的 counter。",
+        "scale": "任何規模皆可，但精確度最低（定性）。"
+      },
+      {
+        "name": "Sliding window log",
+        "how": "每個 client 存請求 timestamp（Redis sorted set）：ZREMRANGEBYSCORE 清舊 → ZCARD 計數 → 未超過才 ZADD，整段用 Lua 原子化。",
+        "bestWhen": "要絕對精確、且流量或額度不大。",
+        "cost": "記憶體與請求數成正比：1000 req/min 要存 1000 個 timestamp，再乘上百萬用戶；每次都要掃 log。",
+        "failure": "高流量下記憶體爆炸、單次檢查變慢。",
+        "scale": "只適合量小的 client 或低額度 endpoint（定性）。"
+      },
+      {
+        "name": "Sliding window counter",
+        "how": "保存當前與前一窗口的計數，依目前在窗口中的進度加權（進度 30% = 前窗 70% + 當前 100%）。",
+        "bestWhen": "要比 fixed window 準、又不想付 sliding log 的記憶體。",
+        "cost": "只要兩個計數器。",
+        "failure": "是近似值，假設窗口內請求均勻分布；加權數學實作容易寫錯。",
+        "scale": "大規模皆可（定性）。"
+      },
+      {
+        "name": "Token bucket",
+        "how": "桶容量 = burst 上限，以固定速率補 token，每個請求扣 1；只存 (tokens, last_refill)，放在 Redis 並用 Lua 把讀取、補 token、扣 token 整段原子化。",
+        "bestWhen": "多數 API：允許合理突發、長期速率受控（Stripe 等公司採用）。",
+        "cost": "記憶體小；要選對容量與補充速率兩個參數；閒置 bucket 用 EXPIRE（如 3600 秒）清掉避免洩漏。",
+        "failure": "閒置 client 冷啟動即滿桶、可一次爆發；若 HMGET 在 MULTI/EXEC 之外讀取，兩個併發請求讀到同樣 token 數，一個 token 放行兩個請求。",
+        "scale": "單一 Redis 約 100k–200k ops/s，每次檢查多個操作 → 約 50k–100k checks/s；1M RPS 約需 10 個 shard。"
+      },
+      {
+        "name": "Leaky bucket",
+        "how": "請求進入有界的桶，以固定速率漏出給下游處理，桶滿就丟。",
+        "bestWhen": "下游有硬上限、必須強制勻速（例如寫入第三方或有固定吞吐上限的服務）。",
+        "cost": "記憶體小；請求在桶內等待會增加延遲。",
+        "failure": "不允許突發，合法尖峰也會被拉平或丟棄；若桶變成無界佇列，就只是把過載延後成延遲無限增長。",
+        "scale": "定性：適合吞吐固定的下游。"
+      }
+    ],
+    "decisionGuide": [
+      {
+        "if": "一般對外 API，規則只依 request 資訊（user ID / IP / API key）",
+        "then": "放在 API Gateway / LB",
+        "why": "被擋的請求根本到不了 app server，生產環境最常見；限制是只看得到 header、URL、IP、token。"
+      },
+      {
+        "if": "規則需要豐富 context（訂閱等級、帳號狀態、活動加額）",
+        "then": "獨立限流 service，或把等級編進 JWT",
+        "why": "gateway 看不到業務資料；代價是每個請求多一次網路往返、多一個 SPOF。"
+      },
+      {
+        "if": "多台 gateway 共享同一額度",
+        "then": "狀態集中在 Redis + Lua script，依 client key consistent hashing 或 Redis Cluster 分片",
+        "why": "本地計數在 5 台 server 時可能放行到數倍上限；Lua 讓 read-calculate-update 原子，同一 client 永遠落在同一 shard。"
+      },
+      {
+        "if": "只有單一 server，或可容忍誤差達 server 數倍",
+        "then": "本地 in-process counter",
+        "why": "零網路成本，但每台只知道自己的流量。"
+      },
+      {
+        "if": "集中狀態的 Redis 不可用",
+        "then": "金融／高安全，或限流故障常伴隨流量尖峰 → fail-closed；可用性優先 → fail-open 並告警",
+        "why": "fail-closed 等於讓 API 下線；fail-open 會在最需要保護時把流量全灌進後端。兩者都要先用 replica + 自動 failover 預防。"
+      },
+      {
+        "if": "合法高流量 client、或多方同時撞限後重試",
+        "then": "client-side 限流（SDK 遵守 429 header）+ 重試加 jitter，作為 server 端的補充",
+        "why": "client 不可信只能補充不能替代；jitter 避免窗口重置時所有人同步重試、只有一個成功。"
+      }
+    ],
+    "defaultAnswer": "在 API Gateway 做 token bucket，狀態集中在 Redis 並用 Lua script 原子化，依 user / IP / API key 分片；超限回 429 + Retry-After，Redis 故障時的 fail mode 依業務風險明確選擇。",
+    "interviewScript": "我選 token bucket，因為它同時控制長期速率又允許合理突發，而且每個 client 只存 tokens 和 last_refill 兩個值。限流放在 API Gateway，狀態集中在 Redis，把讀取、補 token、扣 token 整段寫成 Lua script，避免兩台 gateway 同時讀到同一個 token 數而超放。單一 Redis 大約 50k 到 100k checks/s，1M RPS 需要約 10 個 shard，用 client key 做 consistent hashing。Redis 掛掉時這題我選 fail-closed，因為限流故障常和流量尖峰同時發生，寧可短暫拒絕也不讓後端崩潰。",
+    "pitfalls": [
+      "每台 server 本地計數就宣稱是分散式限流",
+      "用 MULTI/EXEC 包寫入，但讀取在 transaction 外 → race 超放",
+      "fixed window 每次請求都 EXPIRE，持續流量讓窗口永遠不重置",
+      "超限時排隊而不是 fail fast 回 429（耗資源、引發重試、延遲不可預測）",
+      "沒有明確說限流器故障時 fail-open 還是 fail-closed",
+      "只用 IP 限流，忽略企業 NAT / 公共 WiFi 共享 IP"
+    ],
+    "cases": [
+      {
+        "name": "Distributed Rate Limiter",
+        "ref": "hellointerview-breakdowns/distributed-rate-limiter.md",
+        "note": "Gateway 層 token bucket + Redis Lua；10 shard 撐 1M RPS；選 fail-closed；hot key 用 client-side 限流、tier、自動封鎖處理；規則預設 poll（30 秒），緊急才用 push。"
+      },
+      {
+        "name": "Web Crawler",
+        "ref": "hellointerview-breakdowns/web-crawler.md",
+        "note": "Politeness：單一網域 1 req/s，Redis 集中追蹤每網域請求數（sliding window），per-domain 鎖用 SET NX + TTL；多 crawler 同步重試用 jitter 打散。"
+      },
+      {
+        "name": "Netflix 即時 graph 查詢",
+        "ref": "threads-chunhao2026/tech-blog/netflix-realtime-graph-query.md",
+        "note": "服務端的並發限流變體：adaptive concurrency limiting 健康時慢慢加（100→101），timeout 飆高時大步退（100→70），搭配每個 pool 的上限。"
+      }
+    ],
+    "sources": [
+      "cross-cutting-patterns.md",
+      "domain-specific-mechanisms.md",
+      "hellointerview-breakdowns/distributed-rate-limiter.md",
+      "hellointerview-learn/deep-dives/redis.md",
+      "hellointerview-learn/deep-dives/api-gateway.md",
+      "hellointerview-learn/core-concepts/api-design.md"
+    ],
+    "byAgents": false
+  },
+  {
+    "id": "reliability",
+    "title": "可靠性與故障隔離（Reliability）",
+    "group": "擴展",
+    "oneLiner": "決定下游變慢或掛掉時，呼叫方怎麼不被拖死、流量怎麼不被重試放大、過載時先丟什麼，以及有狀態節點掛了誰接手。",
+    "question": "你依賴的推薦服務突然變慢 10 倍，整個系統會怎樣？你怎麼防止雪崩？",
+    "signals": [
+      "面試官追問「某個服務掛了會怎樣？」",
+      "依賴第三方 API / LLM / 支付 / 地圖服務",
+      "一個請求 fan-out 呼叫多個下游",
+      "尖峰流量、retry storm、thundering herd",
+      "高可用、failover、RPO / RTO",
+      "p99 tail latency 要有上限"
+    ],
+    "options": [
+      {
+        "name": "Timeout（分層設定）",
+        "how": "每個網路呼叫都設上限，不無限等慢下游；整條呼叫鏈分層設定，上游 timeout 要比下游長。",
+        "bestWhen": "永遠要有：任何網路呼叫的第一道防線，也是 retry 與 circuit breaker 的前提。",
+        "cost": "幾乎零成本；但要調出合理值，太短會誤殺正常的慢請求。",
+        "failure": "沒設 timeout：thread 卡在等回應，請求堆積到整個 pool 被佔滿，連無關的請求都處理不了；上游比下游短：上游先放棄、下游白做。",
+        "scale": "Hystrix 預設執行 timeout 1000ms。"
+      },
+      {
+        "name": "Retry + exponential backoff + jitter",
+        "how": "只對暫時性失敗重試，間隔指數拉長並加隨機，限制次數，用完送進 DLQ。",
+        "bestWhen": "網路抖動、短暫過載等暫時性故障，且操作冪等（GET，或寫入帶 idempotency key）。",
+        "cost": "延遲拉長、放大下游流量；寫入要先做好冪等。",
+        "failure": "沒有 backoff / jitter → 所有 client 同步重試，流量翻倍把剛恢復的下游再打死（retry storm 正回饋）；非冪等寫入重試讓 $10 變 $20；in-memory timer 重試在 crash 時遺失。",
+        "scale": "Web Crawler：SQS visibility timeout（預設 30 秒、最長 12 小時）做指數退避，5 次後進 DLQ。"
+      },
+      {
+        "name": "Circuit breaker + fallback / 降級",
+        "how": "滾動視窗內失敗率超過門檻就跳 Open，直接失敗走 fallback；sleep window 後 Half-open 放一個試探請求決定恢復。fallback 依序可選：關掉非核心功能、唯讀、回快取／預設值、明確回 5xx。",
+        "bestWhen": "下游持續失敗或變慢：第三方 API、DB 連線、微服務呼叫、可能 timeout 的重運算。",
+        "cost": "要為每個依賴事先設計 fallback 並維護；門檻與視窗參數要調。",
+        "failure": "門檻太敏感會誤跳；fallback 又走網路等於把故障搬家；沒有 fallback 的 breaker 只是更快的錯誤頁。",
+        "scale": "Hystrix 預設：10 秒視窗內 ≥ 20 個請求且錯誤率 > 50% 跳 Open，短路 5 秒；實例中 200 台裡 157 台在回 fallback，影片觀看量幾乎不受影響。"
+      },
+      {
+        "name": "Bulkhead + load shedding（拒絕，不排隊）",
+        "how": "每個依賴一個獨立 thread pool / semaphore，滿了直接 reject；整體過載時依優先級丟棄或採樣低價值流量、回 429 / 503，佇列一律有界。",
+        "bestWhen": "一個服務呼叫多個依賴、單一慢依賴可能耗盡全部 thread；尖峰時要保住核心路徑。",
+        "cost": "thread 隔離有 context switch 成本（單機 60 RPS 時 p90 約 3ms、p99 約 9ms）；要事先定義哪些請求可丟、哪些絕不可丟（付款）。",
+        "failure": "用無界佇列代替拒絕 → 延遲無限增長或 OOM，整條鏈慢慢一起死且難查；semaphore 隔離只限並發、無法 timeout。",
+        "scale": "Netflix API：約 40+ 個 thread pool，每個 5–20 threads，每天 10+ 億次 Hystrix command。"
+      },
+      {
+        "name": "Replication + 自動 failover",
+        "how": "primary-replica 複製，由 Sentinel / Raft / Cluster gossip / Patroni 等偵測故障並自動 promote replica，client 或 proxy 感知拓撲變更。",
+        "bestWhen": "有狀態元件不能單點：DB、Redis（定位、限流狀態、lock）、cache。",
+        "cost": "基礎設施翻倍（1TB cache 約 16 台 primary，加 replica ≈ 32 台）；同步複製 RPO≈0 但寫入延遲增加。",
+        "failure": "非同步複製在 failover 時，已 ack 的最後一批寫入可能消失（Redis lock 可能被發給兩個人，需 fencing token）；replica lag 讓讀到舊資料。",
+        "scale": "所有需要 HA 的有狀態元件，依 RPO / RTO 決定同步或非同步（定性）。"
+      },
+      {
+        "name": "Hedged request",
+        "how": "對慢節點的讀取，向另一個副本再送一份備援請求，採用先回來的結果。",
+        "bestWhen": "讀取、冪等、有多個副本，痛點是 tail latency（p99 / pMax）而不是平均延遲。",
+        "cost": "額外的讀流量與副本負載。",
+        "failure": "用在非冪等寫入會產生重複副作用；系統整體過載時再多送請求會雪上加霜，需要搭配動態並行度控制。",
+        "scale": "Meta AI 訓練儲存：client SDK 做 hedged reads + dynamic concurrency control 以取得有界、可預期的 pMax（原文未給倍數）。"
+      }
+    ],
+    "decisionGuide": [
+      {
+        "if": "任何同步網路呼叫",
+        "then": "設 timeout，且上游比下游長",
+        "why": "不空等是其餘所有機制的前提。"
+      },
+      {
+        "if": "暫時性失敗、操作冪等",
+        "then": "retry + exponential backoff + jitter，次數上限 + DLQ",
+        "why": "避免同步重試把下游打死，毒訊息也不會卡住主佇列。"
+      },
+      {
+        "if": "下游持續失敗或變慢",
+        "then": "circuit breaker + 事先設計好的 fallback",
+        "why": "fail fast、讓下游有時間恢復，使用者看到降級而不是錯誤頁。"
+      },
+      {
+        "if": "一個服務 fan-out 到多個依賴",
+        "then": "bulkhead：每個依賴獨立 pool，滿了就 reject",
+        "why": "一個慢依賴只會榨乾自己的 pool，不拖垮整個服務。"
+      },
+      {
+        "if": "整體過載",
+        "then": "有界佇列 + load shedding 回 429，依優先級降級",
+        "why": "健康系統過載時 429 上升但 p99 有上限；壞系統沒有 429，p99 一路飆到 client timeout。"
+      },
+      {
+        "if": "有狀態元件需要 HA",
+        "then": "replica + 自動 failover；資料不可丟就用同步複製",
+        "why": "以寫延遲換 RPO≈0，或接受非同步丟最後幾筆換低延遲。"
+      }
+    ],
+    "defaultAnswer": "每個下游呼叫都設 timeout，冪等操作才 retry 並加 exponential backoff + jitter，再加 circuit breaker 與事先設計的降級路徑；有狀態元件用 replica + 自動 failover。",
+    "interviewScript": "防雪崩我會講成一整套：上游設 timeout 不空等，而且上層比下層長；retry 只用在冪等操作，搭配 exponential backoff 和 jitter，避免所有 client 同步重試把剛恢復的服務又打死。下游持續失敗時 circuit breaker 跳開，直接走 fallback，例如回快取或非個人化的熱門榜；每個依賴有獨立 thread pool，滿了就拒絕，不排隊。代價是每個依賴都要事先設計降級路徑，以及 thread 隔離大約 p99 9ms 的額外延遲。",
+    "pitfalls": [
+      "retry 沒有 backoff / jitter，或對非冪等操作 retry",
+      "上游 timeout 比下游短",
+      "用無界佇列「吸收」過載",
+      "fallback 又去打另一個網路依賴",
+      "把 timeout / retry / circuit breaker / backpressure 講成孤立名詞而不是一套",
+      "以為非同步複製的 failover 不會掉資料（Redis 不能當 system of record）"
+    ],
+    "cases": [
+      {
+        "name": "Netflix Hystrix",
+        "ref": "threads-chunhao2026/tech-blog/netflix-hystrix-circuit-breaker.md",
+        "note": "每個依賴一個 thread pool（bulkhead），pool 滿直接拒絕；10 秒 / 20 請求 / 50% / 5 秒的 breaker 預設；三種 fallback：custom、fail silent、fail fast。"
+      },
+      {
+        "name": "Web Crawler",
+        "ref": "hellointerview-breakdowns/web-crawler.md",
+        "note": "抓取失敗不用 in-memory timer，改用 SQS visibility timeout 做指數退避，5 次後進 DLQ；成功存 blob 後才刪訊息，crawler 掛了不丟 URL。"
+      },
+      {
+        "name": "Uber",
+        "ref": "hellointerview-breakdowns/uber.md",
+        "note": "Redis GEO 開 RDB/AOF + Sentinel failover；即使資料遺失，司機每 5 秒重報，影響只持續一個上報週期；Kafka 配對成功才 commit offset。"
+      },
+      {
+        "name": "Distributed Cache",
+        "ref": "hellointerview-breakdowns/distributed-cache.md",
+        "note": "每個 shard primary-replica 非同步複製 + 自動 failover，以可能丟最後幾筆寫入換低延遲（cache 可接受）。"
+      },
+      {
+        "name": "Meta AI 訓練儲存",
+        "ref": "threads-chunhao2026/tech-blog/meta-gpu-training-storage.md",
+        "note": "用 hedged reads 與動態並行度控制 tail latency，把「可接受高延遲」改成「有界、可預期的 pMax」。"
+      },
+      {
+        "name": "Netflix 即時 graph 查詢",
+        "ref": "threads-chunhao2026/tech-blog/netflix-realtime-graph-query.md",
+        "note": "thread pool 依工作型態分開（一個 pool 滿不拖垮其他），enrichment 為 opt-in 且 fail-open，外部服務掛了不擋 query。"
+      }
+    ],
+    "sources": [
+      "cross-cutting-patterns.md",
+      "hellointerview-learn/core-concepts/networking-essentials.md",
+      "threads-chunhao2026/tech-blog/netflix-hystrix-circuit-breaker.md",
+      "threads-chunhao2026/tech-blog/meta-gpu-training-storage.md",
+      "hellointerview-learn/patterns/scaling-writes.md",
+      "hellointerview-learn/deep-dives/postgres.md",
+      "hellointerview-breakdowns/distributed-cache.md"
+    ],
+    "byAgents": false
+  },
+  {
+    "id": "api-networking",
+    "title": "API 與網路（API & Networking）",
+    "group": "邊界與介面",
+    "oneLiner": "決定對外／對內用哪種 API 協定、傳輸層用 TCP 還是 UDP、LB 放 L4 還是 L7、要不要 API Gateway，以及列表怎麼分頁。",
+    "question": "你的 API 長什麼樣？為什麼用 REST 不用 GraphQL 或 gRPC？WebSocket 連線要放在什麼 LB 後面？",
+    "signals": [
+      "Delivery framework 的 API 步驟（上限約 5 分鐘）",
+      "多種 client（mobile vs web）要不同欄位 → over / under-fetching",
+      "微服務內部高頻呼叫、多語言、需要 streaming",
+      "即時影音、遊戲、可丟的大量 telemetry",
+      "持久連線（WebSocket / SSE）要怎麼負載平衡",
+      "任何會長大的列表、資料一直插入的 feed"
+    ],
+    "options": [
+      {
+        "name": "REST over HTTP（TCP）",
+        "how": "core entities 當複數名詞 resource，GET / POST / PUT / PATCH / DELETE 對應操作；path 放必要識別、query 放 filter / 排序 / 分頁、body 放 payload。",
+        "bestWhen": "預設選擇，對外 API（原文：適用 90% 情境）。",
+        "cost": "JSON 序列化效率較差；頁面需求多樣時會 over / under-fetching。",
+        "failure": "endpoint 用動詞（/bookTicket）；POST 非冪等，retry 會重複建立 → 付款、訂位要 idempotency key；信任 body 裡的 user ID 會被改 ID 越權讀取。",
+        "scale": "多數應用不會被序列化卡住（定性）。"
+      },
+      {
+        "name": "GraphQL",
+        "how": "單一 endpoint，client 用 query 指定要的欄位與關係，由 resolver 組裝回傳形狀。",
+        "bestWhen": "多種 client 需要不同資料、前端快速迭代、題目明確提到 over / under-fetching。",
+        "cost": "query parsing、schema validation、caching 較複雜；授權要做到欄位（resolver）層級。",
+        "failure": "N+1：查 100 個 events 帶 venues 變成 101 次 DB query，需要 dataloader 批次；需求固定的面試題用它常「礙事」。",
+        "scale": "定性：需求刻意不確定或強調彈性時。"
+      },
+      {
+        "name": "gRPC",
+        "how": "Protocol Buffers + HTTP/2，用 .proto 產生多語言 client / server stub；支援 streaming、deadline、client-side load balancing。",
+        "bestWhen": "微服務內部、效能關鍵、polyglot、需要 streaming：對外 REST、對內 gRPC。",
+        "cost": "binary 不好除錯、工具較不成熟；要管理 schema 演進。",
+        "failure": "瀏覽器不支援 gRPC，不適合公開 API；在處理真正瓶頸前先換協定是 premature optimization。",
+        "scale": "原文例：JSON 約 40 bytes vs protobuf 15 bytes；部分 benchmark 吞吐約 10x；Netflix 把多跳打包進單一 gRPC 呼叫，避免每跳約 10ms 的網路 overhead。"
+      },
+      {
+        "name": "UDP（取代預設的 TCP）",
+        "how": "connectionless，不保證送達與順序，沒有重傳、flow control 與 congestion control；header 8 bytes（TCP 20–60 bytes）。",
+        "bestWhen": "延遲最關鍵且可容忍丟包：直播影音、線上遊戲、VoIP、可偶爾丟的高量 telemetry；signaling 與認證仍走 TCP / HTTP。",
+        "cost": "可靠性與順序要由應用自己處理，或接受遺失。",
+        "failure": "瀏覽器除 WebRTC 外沒有廣泛 UDP 支援，沒有替代方案等於放棄 web 使用者；需要可靠送達的資料用 UDP 會遺失。",
+        "scale": "定性：TCP 是預設，通常不用特別講。"
+      },
+      {
+        "name": "L7 LB / API Gateway",
+        "how": "L7 終止進來的連線，依 URL、header、cookie 路由到後端；API Gateway 再集中做 auth、rate limiting、SSL termination 等 middleware，本身 stateless、可水平擴展。",
+        "bestWhen": "一般 HTTP 流量（含 long polling）；微服務架構需要單一入口與 request routing。",
+        "cost": "較吃 CPU、多一個 hop 與延遲；gateway 要多 instance + health check，否則是 SPOF。",
+        "failure": "簡單 monolith 或單一 client 類型加 gateway 只是多餘複雜度；auth 集中在 gateway 時它掛了整個入口就掛；面試花太多時間講 gateway 反而扣分。",
+        "scale": "硬體 LB 可到數億 requests/s。"
+      },
+      {
+        "name": "L4 LB",
+        "how": "只看 IP + port、不解析內容，讓 client 與同一台 backend 維持持久 TCP 連線，如同直連。",
+        "bestWhen": "WebSocket 等持久連線、重效能且不需要 path / header routing；搭配 Least Connections。",
+        "cost": "不能依應用資料（URL、header、cookie）路由。",
+        "failure": "持久連線若用 round robin，少數 server 會逐漸累積所有連線；路徑上任何 firewall / proxy / LB 不支援 upgrade，WebSocket 就連不上。",
+        "scale": "定性。"
+      }
+    ],
+    "decisionGuide": [
+      {
+        "if": "對外 API、沒有特殊需求",
+        "then": "REST，列 3–6 個 endpoint 就往下走",
+        "why": "API 步驟上限約 5 分鐘，時間要留給真正難的架構。"
+      },
+      {
+        "if": "多種 client 要不同資料形狀",
+        "then": "GraphQL（配 dataloader）",
+        "why": "解 over / under-fetching，但要付 caching 複雜度與 N+1 成本。"
+      },
+      {
+        "if": "service-to-service、效能關鍵或要 streaming",
+        "then": "內部用 gRPC，對外仍 REST",
+        "why": "binary + HTTP/2 + 編譯期型別安全；瀏覽器不支援所以不對外。"
+      },
+      {
+        "if": "WebSocket / 持久連線",
+        "then": "L4 LB + Least Connections；其餘 HTTP 走 L7",
+        "why": "L7 會終止連線並重新建立，持久連線需要穩定綁定，且要避免連線累積在少數 server。"
+      },
+      {
+        "if": "微服務、多個後端服務",
+        "then": "加 API Gateway 一句帶過（routing + auth + rate limit）；monolith 不加",
+        "why": "引入 gateway 的核心理由是 request routing，middleware 只是附加價值。"
+      },
+      {
+        "if": "列表會長大",
+        "then": "從第一天就分頁並限制 page size；預設 offset，即時插入或高流量資料改 cursor",
+        "why": "offset 在翻頁期間資料變動會重複或漏；cursor 穩定但不能跳到第 5 頁。"
+      }
+    ],
+    "defaultAnswer": "對外 REST over HTTPS（TCP），內部 service 之間可用 gRPC，前面放 L7 LB / API Gateway；只有持久連線才用 L4，所有會長大的列表一律分頁。",
+    "interviewScript": "我會用 REST，把 core entities 當 resources，例如 POST /events/{id}/bookings，訂位這種 POST 帶 idempotency key，讓 retry 不會重複訂位。內部服務之間呼叫很頻繁的話，可以用 gRPC 拿到 binary 序列化和型別安全，但它不適合給瀏覽器用。列表從第一天就分頁，一般用 offset，像 feed 這種資料一直插入的就用 cursor，代價是不能跳頁。WebSocket 連線我放 L4 LB 並用 least connections，其他 HTTP 走 L7。",
+    "pitfalls": [
+      "沒有理由就上 GraphQL / WebSocket / WebRTC",
+      "endpoint 用動詞，或在 200 的 body 裡包 success:false",
+      "信任 request body 裡的 user ID，而不是從 JWT / session 取",
+      "列表忘了分頁或不限 page size（?limit=100000）",
+      "API 步驟花超過 5 分鐘，細講 status code 與 versioning",
+      "WebSocket 用 L7 round robin，沒想到連線累積與中間設備是否支援 upgrade"
+    ],
+    "cases": [
+      {
+        "name": "Ticketmaster",
+        "ref": "hellointerview-breakdowns/ticketmaster.md",
+        "note": "API 設計的原文範例：/events、/events/{id}/bookings 等 resource；LB → API Gateway（auth / rate limit / routing）；webhook handler 以 bookingId 做冪等。"
+      },
+      {
+        "name": "WhatsApp",
+        "ref": "hellointerview-breakdowns/whatsapp.md",
+        "note": "Client 以 WebSocket 連到 L4 LB 後的 Chat Server；選 L4 是因為不需要 path / header routing、效能較好。"
+      },
+      {
+        "name": "FB Live Comments",
+        "ref": "hellointerview-breakdowns/fb-live-comments.md",
+        "note": "讀多寫少：寫用一般 HTTP POST，讀用 SSE 推送而非 WebSocket；用 L7 consistent hashing 把同一支影片的觀眾放同一台 server。"
+      },
+      {
+        "name": "Netflix 即時 graph 查詢",
+        "ref": "threads-chunhao2026/tech-blog/netflix-realtime-graph-query.md",
+        "note": "把多跳 traversal 打包進單一 gRPC 請求，避免 client 逐跳呼叫累積網路 overhead；單跳 P50 15–30ms、3-hop P99 100–150ms。"
+      },
+      {
+        "name": "Uber",
+        "ref": "hellointerview-breakdowns/uber.md",
+        "note": "API 身分走 session / JWT 不放 body，時間戳由 server 產生，fare 從 DB 取而非信任 client 傳入。"
+      }
+    ],
+    "sources": [
+      "hellointerview-learn/core-concepts/api-design.md",
+      "hellointerview-learn/core-concepts/networking-essentials.md",
+      "hellointerview-learn/deep-dives/api-gateway.md",
+      "hellointerview-learn/deep-dives/elasticsearch.md",
+      "hellointerview-breakdowns/whatsapp.md",
+      "threads-chunhao2026/tech-blog/netflix-realtime-graph-query.md"
+    ],
+    "byAgents": false
+  }
+]

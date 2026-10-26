@@ -1,0 +1,515 @@
+{
+ "mechanisms": [
+  {
+   "id": "multiwindow-burn-rate",
+   "domain": "observability",
+   "apps": [
+    "Google SRE"
+   ],
+   "title": "Multi-window multi-burn-rate 告警：用 error budget 消耗速度決定要不要 page",
+   "naive": "直覺做法：error rate 超過 SLO 門檻就告警，或加一個 for: N 分鐘 的 duration。",
+   "breaks": "門檻告警 recall 高但 precision 低：0.1% error rate 持續 10 分鐘只燒掉 0.02% 月預算卻會響，可能一天響 144 次還符合 SLO。duration 參數不隨嚴重度縮放（100% 全掛與 0.2% 輕微錯誤都要等同樣久）。拉長視窗（36h）則事故結束後 alert 還會繼續響 36 小時。",
+   "trick": "Google SRE Workbook 的做法：每條 alert 同時要求「長視窗」（衡量預算消耗）與「短視窗」（確認現在還在燒，約為長視窗 1/12）都超過 burn rate 才觸發。快燒 page、慢燒開 ticket。",
+   "cost": "規則數量變多（3 條 / SLO）、要理解 burn rate 概念；burn rate 與視窗是針對某個 SLO 與 30 天週期調出來的，SLO 或週期改了要重算。低流量服務 error rate 噪音大，仍需另外處理。",
+   "alternatives": [
+    {
+     "name": "單一門檻 + duration",
+     "pickIf": "原型期、流量大且 SLO 寬鬆，先求簡單"
+    },
+    {
+     "name": "單一長視窗 burn rate",
+     "pickIf": "可接受事故結束後 alert 殘留，只想降低噪音"
+    }
+   ],
+   "numbers": [
+    "99.9% SLO 的建議值：1h/5m 視窗 burn rate 14.4（消耗 2% 預算，page）",
+    "6h/30m 視窗 burn rate 6（消耗 5%，page）",
+    "3d/6h 視窗 burn rate 1（消耗 10%，ticket）"
+   ],
+   "interviewUse": "被問「怎麼設 alert 才不吵又不漏」時提：以 error budget 消耗速度告警，長短視窗並用，重點是 reset time 從小時降到分鐘。",
+   "sources": [
+    {
+     "title": "Google SRE Workbook: Alerting on SLOs",
+     "url": "https://sre.google/workbook/alerting-on-slos/"
+    }
+   ],
+   "topics": [
+    "reliability"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "error-budget-release-gate",
+   "domain": "observability",
+   "apps": [
+    "Google SRE"
+   ],
+   "title": "Error budget：把可靠度變成可花的預算，用它管發布速度",
+   "naive": "直覺做法：目標 100% 可用，開發團隊想快、SRE 想穩，靠協商或誰官大決定能不能上線。",
+   "breaks": "100% 不切實際且極貴；開發與 SRE 激勵對立，每次發布都要政治談判。",
+   "trick": "Error budget = 1 - SLO。預算還有剩就可以發布，花光就放慢或凍結發布直到可靠度恢復；也可做漸進式節流。預算由雙方共同負責，產品團隊自己會約束冒險行為。",
+   "cost": "需要可信的 SLI 量測與預算帳；SLO 設太鬆預算永遠花不完、設太緊永遠凍結；SLO 要少而精，不影響決策的 SLO 該刪。",
+   "alternatives": [
+    {
+     "name": "固定發布窗口 / 人工審核",
+     "pickIf": "組織小、變更頻率低，不值得建 SLO 基礎設施"
+    },
+    {
+     "name": "SLA 罰則驅動",
+     "pickIf": "對外合約要求；但 SLA 應比內部 SLO 寬，留安全邊際"
+    }
+   ],
+   "numbers": [
+    "例：99.999% 季度 SLO 容許 0.001% 失敗；事故讓 0.0002% 請求失敗即消耗該季 20% 預算",
+    "SRE 手冊：約 70% 的 outage 來自線上系統變更"
+   ],
+   "interviewUse": "被問「怎麼平衡功能速度與穩定性」時提 error budget；順帶區分 SLI（量測）、SLO（目標）、SLA（有後果的合約）。",
+   "sources": [
+    {
+     "title": "SRE Book: Embracing Risk",
+     "url": "https://sre.google/sre-book/embracing-risk/"
+    },
+    {
+     "title": "SRE Book: Service Level Objectives",
+     "url": "https://sre.google/sre-book/service-level-objectives/"
+    },
+    {
+     "title": "SRE Book: Introduction",
+     "url": "https://sre.google/sre-book/introduction/"
+    }
+   ],
+   "topics": [
+    "reliability"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "symptom-based-alerting",
+   "domain": "observability",
+   "apps": [
+    "Google SRE",
+    "Borgmon"
+   ],
+   "title": "用症狀告警、不用原因告警：Four Golden Signals + black-box 探測",
+   "naive": "直覺做法：對每個內部元件（CPU、DB 連線數、queue 長度）設門檻 page on-call。",
+   "breaks": "原因類告警大量誤報（內部異常但使用者沒感覺）造成 alert fatigue，同時漏掉沒預料到的故障模式。",
+   "trick": "page 只針對使用者可見的症狀（例：serve HTTP 錯誤），原因（DB 拒絕連線）留給 dashboard 與 white-box 診斷。user-facing 系統最少量測 latency、traffic、errors、saturation 四項；white-box 為主，再搭配少量但關鍵的 black-box 探測（從外部模擬使用者，即 synthetic monitoring 的概念）。latency 要區分成功與失敗請求。",
+   "cost": "症狀告警觸發時往往已有使用者受影響，偵測較晚；原因類訊號仍需保留做預警與 debug，要維護兩套訊號。black-box 探測只覆蓋你預先寫好的路徑。",
+   "alternatives": [
+    {
+     "name": "原因 / 資源告警（只開 ticket 級）",
+     "pickIf": "能預見的容量類問題（磁碟將滿），無須叫醒人"
+    },
+    {
+     "name": "純 white-box",
+     "pickIf": "內部系統、沒有外部使用者路徑可探測"
+    }
+   ],
+   "numbers": [
+    "Four Golden Signals：latency, traffic, errors, saturation"
+   ],
+   "interviewUse": "設計監控與告警時說：我 page 在症狀（SLO burn）而非原因，原因進 dashboard；並提 black-box 探測抓 white-box 看不到的外部可達性問題。",
+   "sources": [
+    {
+     "title": "SRE Book: Monitoring Distributed Systems",
+     "url": "https://sre.google/sre-book/monitoring-distributed-systems/"
+    },
+    {
+     "title": "SRE Book: Practical Alerting from Time-Series Data (Borgmon)",
+     "url": "https://sre.google/sre-book/practical-alerting/"
+    }
+   ],
+   "topics": [
+    "reliability"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "dapper-sampled-tracing",
+   "domain": "observability",
+   "apps": [
+    "Google Dapper"
+   ],
+   "title": "Dapper：低開銷、對應用透明的分散式追蹤，靠取樣與少量共用 library 插樁",
+   "naive": "直覺做法：每個請求都完整記錄 trace，並要求每個服務團隊自己加埋點。",
+   "breaks": "高度優化的服務連小小的監控開銷都明顯，團隊會因此關掉追蹤；全量收集也撐不住儲存與頻寬；靠各團隊手動埋點則覆蓋率不均。",
+   "trick": "Dapper 把插樁限縮在少數共用的 library（threading、control flow、RPC），讓應用層無需改碼；只記錄一部分 trace（取樣）並用 adaptive sampling 調整；trace 資料以 out-of-band 方式收集，不走請求本身的路徑。",
+   "cost": "取樣會漏掉罕見的壞請求（head-based 在請求開始就決定）；只能追到有插樁的 library 的流量；跨非標準通訊（自製 queue、批次）的因果需額外處理。",
+   "alternatives": [
+    {
+     "name": "全量追蹤",
+     "pickIf": "流量小或關鍵交易（金流）需完整可稽核"
+    },
+    {
+     "name": "tail-based sampling",
+     "pickIf": "要保證保留錯誤 / 慢請求的 trace，見 head-vs-tail-sampling"
+    }
+   ],
+   "numbers": [
+    "來源只說「幾千個請求中取樣一個」就足夠有用，未在本條引用具體百分比"
+   ],
+   "interviewUse": "被問「怎麼定位跨 20 個服務的慢請求」時提 trace id 傳遞 + span 樹；被問開銷時提取樣 + 只在共用 library 插樁 + 非同步收集。",
+   "sources": [
+    {
+     "title": "Dapper, a Large-Scale Distributed Systems Tracing Infrastructure (Google Research, 2010)",
+     "url": "https://static.googleusercontent.com/media/research.google.com/en//archive/papers/dapper-2010-1.pdf"
+    },
+    {
+     "title": "Google Research: Dapper 論文頁",
+     "url": "https://research.google/pubs/dapper-a-large-scale-distributed-systems-tracing-infrastructure/"
+    }
+   ],
+   "topics": [
+    "api-networking"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "head-vs-tail-sampling",
+   "domain": "observability",
+   "apps": [
+    "OpenTelemetry",
+    "Honeycomb"
+   ],
+   "title": "Head-based vs tail-based sampling：什麼時候決定保留這條 trace",
+   "naive": "直覺做法：在請求入口以固定機率（例 1%）決定要不要追蹤，全鏈路沿用此決定。",
+   "breaks": "head sampling 看不到整條 trace，無法保證錯誤或高延遲的 trace 被保留；最需要的罕見壞請求大多被丟掉。",
+   "trick": "tail sampling 等 trace 的全部（或大部分）span 到齊後，依錯誤、延遲、屬性決定保留；Honeycomb 的 Refinery 類做法：100% 保留有 error 的 trace，其餘用 dynamic sampling（依 key 的出現頻率調整取樣率，常見的 200 輕取樣、404 重保留）。取樣率要記錄在事件上，查詢時 reweight 才能得到正確計數。",
+   "cost": "tail sampling 需要有狀態的緩衝基礎設施（OTel 文件提到大流量可能要數十個運算節點）、設定與維護複雜、同一 trace 的 span 必須匯集到同處（此為我的推論，OTel 頁面未明說）；head sampling 簡單便宜但盲目。",
+   "alternatives": [
+    {
+     "name": "head probabilistic sampling",
+     "pickIf": "只要統計代表性、流量大、預算有限"
+    },
+    {
+     "name": "兩者混用",
+     "pickIf": "邊緣先 head 粗篩降量，再對保留下來的做 tail 規則（我的建議）"
+    }
+   ],
+   "numbers": [],
+   "interviewUse": "設計 tracing pipeline 時主動說：預設 head sampling 控成本，但為了保住錯誤與 p99 的 trace 在 collector 層加 tail sampling，代價是有狀態緩衝。",
+   "sources": [
+    {
+     "title": "OpenTelemetry: Sampling",
+     "url": "https://opentelemetry.io/docs/concepts/sampling/"
+    },
+    {
+     "title": "Honeycomb Docs: Sampling",
+     "url": "https://docs.honeycomb.io/manage-data-volume/sample/"
+    }
+   ],
+   "topics": [
+    "streaming"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "wide-events-high-cardinality",
+   "domain": "observability",
+   "apps": [
+    "Honeycomb"
+   ],
+   "title": "Wide events：用一筆寬事件取代三大支柱，高 cardinality 不再是成本炸彈",
+   "naive": "直覺做法：metrics、logs、traces 各一套工具；metrics 在寫入時就預先聚合。",
+   "breaks": "metrics 的每個 tag 組合是一條 time series，user_id、request_id 這類高 cardinality 維度會讓 series 數與成本爆炸，所以只好丟掉；預先聚合後上下文遺失，出事時無法切到單一使用者或單次請求。同一份資料還被存成多種格式，成本倍增。",
+   "trick": "Honeycomb 主張 Observability 2.0：以任意寬的 structured log event 作為單一事實來源，每筆事件帶數百至數千個維度（常附 trace / span id），聚合延後到查詢時才做。同一份資料只存一次。",
+   "cost": "原始事件量大，儲存與查詢成本隨事件數而非 series 數增長，需要配合取樣（見 head-vs-tail-sampling）；需要支援任意維度 group-by 的 columnar 查詢引擎；這是廠商立場的論述，成本結論要與你的流量實際比較。",
+   "alternatives": [
+    {
+     "name": "metrics 做 SLO / 告警 + 事件做 debug",
+     "pickIf": "要便宜的長期趨勢與穩定告警，同時保留一份寬事件供探索（實務上常見的折衷）"
+    },
+    {
+     "name": "傳統三支柱分離工具",
+     "pickIf": "團隊已有成熟 Prometheus / ELK，維度可事先預期"
+    }
+   ],
+   "numbers": [],
+   "interviewUse": "被問「為什麼 metrics 查不出是哪個客戶出問題」時：metrics 不能帶高 cardinality 標籤；改用 wide events 在查詢時切維度。",
+   "sources": [
+    {
+     "title": "Honeycomb: Time to version observability (Observability 2.0)",
+     "url": "https://www.honeycomb.io/blog/time-to-version-observability-signs-point-to-yes"
+    }
+   ],
+   "topics": [
+    "search"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "gorilla-tsdb-compression",
+   "domain": "observability",
+   "apps": [
+    "Meta Gorilla (ODS)"
+   ],
+   "title": "Gorilla：delta-of-delta 時間戳 + XOR 浮點值壓縮，把近期資料全放記憶體",
+   "naive": "直覺做法：每個資料點存 16 bytes（8B timestamp + 8B double）到磁碟型資料庫。",
+   "breaks": "Meta 規模每秒約 1,200 萬點、一天超過 1 兆點；磁碟型 HBase 類儲存無法同時滿足高寫入吞吐與低延遲查詢，事故時最需要看最近資料。",
+   "trick": "Gorilla 是 ODS 的 write-through in-memory cache（最近 26 小時）。時間戳存 delta-of-delta（固定 60 秒抓取時差值多為 0，用極少 bit）；浮點值與前一個值 XOR，相鄰值常相近所以大量 bit 為 0，只存有意義的 bit。平均由 16 bytes 壓到 1.37 bytes。",
+   "cost": "只對「規律間隔、緩慢變化」的資料有效，值跳動大時壓縮率差；26 小時外要靠磁碟儲存；為換取可用性，設計上接受區域故障時可降級（以資料可用性優先於強一致）；資料放記憶體需要複製到多區域。",
+   "alternatives": [
+    {
+     "name": "磁碟 TSDB（如 HBase / Cassandra）",
+     "pickIf": "長期保存與冷查詢，與記憶體層搭配"
+    },
+    {
+     "name": "M3TSZ / Prometheus TSDB",
+     "pickIf": "要開源可用的 Gorilla 風格壓縮實作"
+    }
+   ],
+   "numbers": [
+    "12 million data points / 秒",
+    "超過 1 trillion points / 天",
+    "16 bytes -> 平均 1.37 bytes，約 12x",
+    "26 小時資料約 1.3TB RAM（分散在 20 台）"
+   ],
+   "interviewUse": "被問「時序資料庫怎麼省空間」：講 delta-of-delta 與 XOR 兩招並給出 16B -> 1.37B 的量級，再補近期放記憶體、舊資料降級。",
+   "sources": [
+    {
+     "title": "Gorilla: A Fast, Scalable, In-Memory Time Series Database (VLDB 2015)",
+     "url": "https://www.vldb.org/pvldb/vol8/p1816-teller.pdf"
+    }
+   ],
+   "topics": [
+    "storage-choice"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "m3-downsample-at-ingest",
+   "domain": "observability",
+   "apps": [
+    "Uber M3"
+   ],
+   "title": "Uber M3：取代 Graphite/Cassandra，在收集當下就 downsample 與 rollup",
+   "naive": "直覺做法：原始資料全部寫入一般 KV / 搜尋引擎（Cassandra + ElasticSearch），事後再 compaction 降採樣。",
+   "breaks": "Uber 舊的 Graphite/Whisper/Carbon 需手動 resharding 且無複寫，磁碟壞掉就永久遺失資料；Cassandra 的 compaction 吃掉大量 CPU / memory / disk I/O，ElasticSearch 也成為維運負擔。",
+   "trick": "M3DB 是專用的分散式時序儲存加 reverse index，以 quorum 寫入三副本；M3TSZ 是 Gorilla 的改良壓縮。M3 Aggregator / Coordinator 依存於 etcd 的 rollup 規則，在收集當下 downsample，而非寫入後 compaction；storage policy 可設不同 retention 與解析度。",
+   "cost": "自建並維運整套 metrics 平台（只有規模夠大才划算）；rollup 規則要事先決定，原始解析度過期後無法復原；以 Prometheus 為介面時要處理 sidecar 的查詢聯邦。",
+   "alternatives": [
+    {
+     "name": "Prometheus + Thanos/Cortex 類方案",
+     "pickIf": "規模較小或想用現成開源，不想自建儲存引擎"
+    },
+    {
+     "name": "託管 SaaS（Datadog 等）",
+     "pickIf": "團隊小，工程時間比帳單貴"
+    }
+   ],
+   "numbers": [
+    "6.6 billion time series（2018）",
+    "彙總 500 million metrics / 秒，持久化 20 million metrics / 秒",
+    "retention 從 2 天到 5 年、解析度從 1 秒到 1 小時"
+   ],
+   "interviewUse": "設計 metrics 平台時提：不要用通用 KV 存時序；寫入時 downsample、依 retention 分層，取捨是失去舊資料的細節。",
+   "sources": [
+    {
+     "title": "Uber Engineering: M3, Uber's Open Source, Large-scale Metrics Platform",
+     "url": "https://www.uber.com/blog/m3/"
+    }
+   ],
+   "topics": [
+    "scaling-writes",
+    "storage-choice"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "mergeable-percentile-sketch",
+   "domain": "observability",
+   "apps": [
+    "Datadog",
+    "Prometheus"
+   ],
+   "title": "百分位不能平均：用 histogram / DDSketch 做可合併的分位數",
+   "naive": "直覺做法：每台機器算好自己的 p99，再取平均當全站 p99；或用平均延遲做 SLO。",
+   "breaks": "各分割的 p99 不足以推出全域 p99，平均 quantile 在統計上沒有意義（Prometheus summary 即有此限制）；平均值會掩蓋尾端延遲，1,000 req/s、平均 100ms 的服務仍可能有 1% 請求要 5 秒。",
+   "trick": "上傳可合併的分佈而非分位數。Prometheus histogram 用 bucket 計數，伺服端合併後再算 quantile，誤差受 bucket 寬度限制。Datadog 的 DDSketch 保證相對誤差（例 2%），sketch 合併只需加總對應計數而不損失精度。",
+   "cost": "classic histogram 的 bucket 邊界要事先選，過粗會讓 quantile 偏差很大（Prometheus 文件範例：真實約 220ms，粗 bucket 可估到 295ms）；sketch 需要協定與儲存格式支援；仍然是近似值。",
+   "alternatives": [
+    {
+     "name": "t-digest / HDR histogram",
+     "pickIf": "已有函式庫，需要高動態範圍或針對尾端精準（我的補充，未在本條來源中查證）"
+    },
+    {
+     "name": "Prometheus summary",
+     "pickIf": "只看單一實例、不需跨實例聚合"
+    },
+    {
+     "name": "保留全部原始值",
+     "pickIf": "資料量很小，需要精確值"
+    }
+   ],
+   "numbers": [
+    "DDSketch：2% 相對誤差下 275 buckets 可涵蓋 1ms 到 1 分鐘",
+    "802 buckets 涵蓋 1ns 到 1 天",
+    "約 2KB 記憶體",
+    "ingest 比 Greenwald-Khanna 快 10 倍"
+   ],
+   "interviewUse": "被問「全站 p99 怎麼算」：不能平均各機器 p99，要送 histogram / sketch 到後端合併，並說明誤差保證。",
+   "sources": [
+    {
+     "title": "Datadog: Computing accurate percentiles with DDSketch",
+     "url": "https://www.datadoghq.com/blog/engineering/computing-accurate-percentiles-with-ddsketch/"
+    },
+    {
+     "title": "Prometheus: Histograms and summaries",
+     "url": "https://prometheus.io/docs/practices/histograms/"
+    },
+    {
+     "title": "SRE Book: Monitoring Distributed Systems",
+     "url": "https://sre.google/sre-book/monitoring-distributed-systems/"
+    }
+   ],
+   "topics": [
+    "counting"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "atlas-in-memory-tiering",
+   "domain": "observability",
+   "apps": [
+    "Netflix Atlas"
+   ],
+   "title": "Netflix Atlas：維度化時序 + 近期全記憶體、舊資料逐層 rollup",
+   "naive": "直覺做法：所有 metrics 都用同樣解析度與維度長期保存，維度編在 metric 名稱裡。",
+   "breaks": "把維度寫進名稱（如 com.netflix...uiversion.x）難以切片；series 數從數百萬長到數十億時成本與索引失控；auto-scaling 造成的 instance churn 讓索引膨脹。",
+   "trick": "Atlas 用 key-value tag 維度模型；理念是資料越舊越不重要、恢復服務比防止資料遺失重要、要優雅降級。分層：6 小時內全記憶體多區複寫，4 天內 rollup（丟掉部分 node 維度），16 天內重度 rollup 單副本，更舊的封存到 S3 並選擇性存取。",
+   "cost": "接受近期以外的資料遺失 / 低解析度；深度歷史查詢需走封存路徑、較慢；rollup 後無法再按被丟掉的維度（如單一 node）查詢。",
+   "alternatives": [
+    {
+     "name": "全量長期保存（Thanos / Mimir 類）",
+     "pickIf": "合規或容量規劃需要長期原始細節"
+    },
+    {
+     "name": "Gorilla 式單一記憶體層",
+     "pickIf": "只需一天左右近期資料，其餘交給另一套系統"
+    }
+   ],
+   "numbers": [
+    "時間序列從約 2M 成長到數十億",
+    "分層：<6h、<4d、<16d、更舊封存到 S3"
+   ],
+   "interviewUse": "設計 metrics 儲存時引用：近期高維度全記憶體、越舊越 rollup，並說明為何犧牲舊資料的細節是合理的。",
+   "sources": [
+    {
+     "title": "Atlas Docs: Overview / Design",
+     "url": "https://netflix.github.io/atlas-docs/overview/"
+    }
+   ],
+   "topics": [
+    "storage-choice",
+    "caching"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "continuous-profiling-gwp",
+   "domain": "observability",
+   "apps": [
+    "Google Google-Wide Profiling"
+   ],
+   "title": "Continuous profiling：Google-Wide Profiling 持續取樣整個機群",
+   "naive": "直覺做法：效能有問題時才手動在單機上掛 profiler 重現。",
+   "breaks": "問題常只在特定機器、負載或硬體組合下出現，事後重現困難；單點 profile 無法看到整個機群哪段程式最耗 CPU。",
+   "trick": "GWP 在資料中心持續低頻取樣所有執行中的應用，匯整成機群級 profile，開銷低到可長期在 production 開啟。可做應用與平台親和性、特定硬體 microarchitecture 怪癖等分析。",
+   "cost": "取樣為統計近似，稀有的短暫尖峰可能漏掉；需要符號化與儲存管線；來源只說開銷 negligible，未給具體百分比，勿編造。",
+   "alternatives": [
+    {
+     "name": "按需 profiling",
+     "pickIf": "問題可穩定重現的單一服務"
+    },
+    {
+     "name": "tracing 找慢 span",
+     "pickIf": "問題在跨服務呼叫鏈而非單機程式碼"
+    }
+   ],
+   "numbers": [],
+   "interviewUse": "被問「CPU 花在哪」時補充第四個訊號：continuous profiling，與 trace 互補，從服務層下鑽到函式層。",
+   "sources": [
+    {
+     "title": "Google-Wide Profiling: A Continuous Profiling Infrastructure for Data Centers",
+     "url": "https://research.google/pubs/google-wide-profiling-a-continuous-profiling-infrastructure-for-data-centers/"
+    }
+   ],
+   "topics": [],
+   "byAgents": true
+  },
+  {
+   "id": "blameless-postmortem",
+   "domain": "observability",
+   "apps": [
+    "Google SRE"
+   ],
+   "title": "Blameless postmortem 與 playbook：縮短 MTTR 的組織機制",
+   "naive": "直覺做法：事故結束後找出犯錯的人處理，或根本沒有紀錄。",
+   "breaks": "責備文化讓人隱匿問題，風險反而累積；沒有資深審閱的 postmortem 失去學習價值；頻繁寫 postmortem 被當成負面訊號會降低通報意願。",
+   "trick": "假設每個人當下都盡力、做了合理判斷，聚焦系統性缺口。事先定義觸發條件（使用者可見停機超過門檻、任何資料遺失、需 on-call 介入如 rollback、解決時間過長、需手動發現的監控失效）。事前把處置寫成 playbook。",
+   "cost": "寫與審閱花時間；若缺少 action item 追蹤只是儀式；blameless 不等於無責任，需要明確的改善負責人（我的補充）。",
+   "alternatives": [
+    {
+     "name": "輕量事後檢討（5 whys 小會）",
+     "pickIf": "低嚴重度、不符合 postmortem 觸發條件的事件"
+    }
+   ],
+   "numbers": [
+    "SRE 書：把最佳作法預先寫成 playbook 約使 MTTR 改善 3 倍"
+   ],
+   "interviewUse": "被問可靠性文化時提：預先定義觸發條件、blameless、有 action item，並用 playbook 縮短 MTTR。",
+   "sources": [
+    {
+     "title": "SRE Book: Postmortem Culture",
+     "url": "https://sre.google/sre-book/postmortem-culture/"
+    },
+    {
+     "title": "SRE Book: Introduction",
+     "url": "https://sre.google/sre-book/introduction/"
+    }
+   ],
+   "topics": [
+    "reliability"
+   ],
+   "byAgents": true
+  }
+ ],
+ "quiz": [
+  {
+   "q": "全站 p99 latency 能不能把各機器的 p99 取平均？如果不行，該送什麼到後端？",
+   "a": "不行，各分割 p99 無法推出全域 p99。應送可合併的分佈（Prometheus histogram bucket 計數或 DDSketch），由後端合併後再算 quantile；代價是近似誤差（bucket 寬度或 sketch 的相對誤差）。",
+   "topic": "observability",
+   "kind": "取捨"
+  },
+  {
+   "q": "流量 99.9% SLO 服務，為什麼不用「error rate > 0.1% 持續 10 分鐘就 page」？multi-window burn-rate 解決了什麼？",
+   "a": "門檻加 duration 噪音大（0.1% 持續 10 分鐘僅燒 0.02% 月預算）、且不隨嚴重度縮放。長視窗確保預算消耗夠顯著，短視窗（約 1/12）確認仍在燒，故事件結束後 alert 數分鐘內就 reset，不像單一長視窗會殘留數十小時。",
+   "topic": "observability",
+   "kind": "情境"
+  },
+  {
+   "q": "你要為 20 個微服務加 tracing，流量極大。head sampling 與 tail sampling 如何選？",
+   "a": "預設 head sampling：簡單便宜，但看不到整條 trace，可能丟掉錯誤與慢請求。需要保證保留錯誤 / p99 trace 時加 tail sampling（collector 緩衝整條 trace 再決定），代價是有狀態的基礎設施與維護成本；常見折衷是 100% 保留 error 再對其他流量取樣，並在事件上記錄 sample rate 以便 reweight 計數。",
+   "topic": "observability",
+   "kind": "取捨"
+  },
+  {
+   "q": "Gorilla 如何把每個資料點從 16 bytes 壓到約 1.37 bytes？什麼情況下壓縮會變差？",
+   "a": "時間戳用 delta-of-delta（固定間隔抓取時多為 0），浮點值與前一值做 XOR 只存有意義的 bit。若資料間隔不規律或數值劇烈跳動，XOR 結果的有效 bit 多，壓縮率下降。",
+   "topic": "observability",
+   "kind": "數字"
+  },
+  {
+   "q": "資料量大、想查「是哪個 customer_id 的請求變慢」，用 Prometheus metrics 加 customer_id 標籤為什麼是壞主意？替代方案是什麼？",
+   "a": "每個標籤組合是一條 time series，高 cardinality 會讓 series 數與成本爆炸（寫入時預先聚合也讓上下文消失）。改用 wide structured events（Honeycomb 風格）在查詢時按任意維度 group-by，搭配取樣控制成本；或 metrics 只做 SLO，debug 走事件 / trace。",
+   "topic": "observability",
+   "kind": "情境"
+  },
+  {
+   "q": "On-call 被 CPU 90% 的 alert 吵醒但使用者沒受影響，這違反了哪個原則？該怎麼改？",
+   "a": "違反「用症狀告警而非原因告警」。page 應綁在使用者可見症狀（SLO burn rate、錯誤率、延遲），CPU 這類原因改成 dashboard 或 ticket 級告警，降低 alert fatigue，並保留 black-box 探測抓真實使用者路徑。",
+   "topic": "observability",
+   "kind": "情境"
+  }
+ ]
+}

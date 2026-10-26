@@ -1,0 +1,3170 @@
+[
+ {
+  "id": "ad-click-aggregator",
+  "title": "Ad Click Aggregator",
+  "kind": "面試題",
+  "source": "HelloInterview",
+  "file": "hellointerview-breakdowns/ad-click-aggregator.md",
+  "origin": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/ad-click-aggregator",
+  "core": "寫入量遠大於讀取量的聚合題：要在 10k clicks/s 下同時兼顧低延遲查詢、不掉 click、不重複計數，三者互相拉扯。",
+  "scaleNumbers": [
+   "10M active ads",
+   "peak 10k clicks/s（約 10x 平均 1k/s）",
+   "約 100M clicks/day",
+   "Kinesis 每 shard 上限 1MB/s 或 1000 records/s",
+   "dedup cache 100M × 16B = 1.6GB"
+  ],
+  "decisions": [
+   {
+    "decision": "廣告主 metrics 怎麼算與查",
+    "chosen": "click 進 Kafka/Kinesis，Flink 以 event time + watermark 按 AdId+分鐘預聚合，每幾秒 flush 到 OLAP（columnar）",
+    "rejected": [
+     {
+      "option": "同一 DB 存 raw event 直接 GROUP BY",
+      "why": "10k/s 下 DB 成為瓶頸，查詢慢，違反 sub-second 查詢"
+     },
+     {
+      "option": "Cassandra 存 raw + Spark 每 N 分鐘 batch 聚合",
+      "why": "資料永遠落後數分鐘；尖峰時下一批更大，可能跑得比 interval 還久，延遲連鎖惡化；Spark 不可能每幾秒跑一次"
+     },
+     {
+      "option": "普通 Kafka consumer 在記憶體計數",
+      "why": "亂序、watermark、exactly-once、state recovery 要自己做，易錯；Flink 現成提供"
+     }
+    ],
+    "tradeoff": "Flink 增加維運與複雜度，當前分鐘資料先不完整；換到近即時。OLAP 不選 TSDB 是因 ad ID 高 cardinality 且要多維度切，若只需單一 metric 時間範圍查詢 TSDB 也合理。"
+   },
+   {
+    "decision": "click 的 redirect 與追蹤方式",
+    "chosen": "Server side redirect：click 先打我們 server，記錄後回 302 導向廣告主",
+    "rejected": [
+     {
+      "option": "Client side redirect + 平行 POST /click",
+      "why": "使用者可直接拿 URL 繞過追蹤（如 extension），造成數據落差"
+     }
+    ],
+    "tradeoff": "多一跳可能拖慢體驗，click processor 必須夠快、能水平擴展；換到每個 click 都被追蹤，且可附加追蹤參數。"
+   },
+   {
+    "decision": "如何去重（idempotency）",
+    "chosen": "Ad Placement Service 為每次展示產生 impression ID 並用 HMAC 簽名；click processor 驗簽後查 Redis cache，不存在才『先寫 stream、後寫 cache』",
+    "rejected": [
+     {
+      "option": "payload 加 userId，用 userId+adId 去重",
+      "why": "要求登入；且 retargeting 會刻意對同人多次展示同廣告，語意錯誤（要的是每個 ad instance 一次）"
+     },
+     {
+      "option": "在 Flink 內去重",
+      "why": "跨 window 邊界的重複在 Flink 內無法去重，必須在進 stream 前做"
+     }
+    ],
+    "tradeoff": "先寫 stream 再寫 cache：cache 失敗頂多多一筆重複（reconciliation 抓），掉 click 則無法恢復。代價是複雜度與 cache 可能成瓶頸（用 Redis Cluster+replica+persistence）。"
+   },
+   {
+    "decision": "hot ad 造成 hot shard 怎麼辦",
+    "chosen": "只對熱門 ad 的 partition key 加隨機後綴 AdId:0..N，Flink 寫 OLAP 前剝除後綴，用原 AdId upsert + SUM",
+    "rejected": [
+     {
+      "option": "單純以 AdId 當 partition key",
+      "why": "新廣告爆紅（Nike LeBron）時所有 click 打同一 shard，延遲上升甚至資料遺失"
+     },
+     {
+      "option": "保留 sub-key，query time 再聚合",
+      "why": "查詢效能較差，可行但不如寫入前合併"
+     }
+    ],
+    "tradeoff": "需判斷哪些 ad 算熱門（ad spend 或歷史 click 量）；平常沿用 AdId key 維持簡單。"
+   },
+   {
+    "decision": "如何保證不掉 click 與正確性",
+    "chosen": "stream 多副本+retention（如 7 天）可重放，並用 Kafka Connect/Firehose 把 raw 存 S3，每日 Spark 對帳修正 OLAP（Lambda architecture）",
+    "rejected": [
+     {
+      "option": "Flink checkpointing 到 S3",
+      "why": "window 只有 1 分鐘，最多損失一分鐘聚合，stream 有保留即可從已知 timestamp replay；對天/週大 window 才有價值"
+     },
+     {
+      "option": "只信 speed layer 不對帳",
+      "why": "click 等於錢，低延遲與正確性常衝突，需要 batch layer 當 source of truth"
+     }
+    ],
+    "tradeoff": "多維護一條 batch 管線；換到可偵測並修正 stream 結果的偏差。"
+   }
+  ],
+  "topics": [
+   "scaling-writes",
+   "streaming",
+   "idempotency",
+   "counting",
+   "reliability",
+   "sharding"
+  ],
+  "followUps": [
+   "為什麼不用 Kafka consumer 記憶體計數？可行但 watermark/exactly-once/狀態恢復要自己做。",
+   "查一年資料怎麼保持快？夜間 cron 建 daily/weekly 預聚合表，必要時 drill down。",
+   "Cache 掛了怎麼辦？replica 接手並開 persistence，偶發重複由 reconciliation 修正。"
+  ]
+ },
+ {
+  "id": "bitly",
+  "title": "Bitly（URL Shortener）",
+  "kind": "面試題",
+  "source": "HelloInterview",
+  "file": "hellointerview-breakdowns/bitly.md",
+  "origin": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/bitly",
+  "core": "極度偏讀（約 1000:1）的 key-value 映射：難在產生唯一且夠短的 code，以及把 redirect 壓到 <100ms。",
+  "scaleNumbers": [
+   "1B 筆 URL、100M DAU",
+   "讀寫比約 1000:1",
+   "500M redirect/天 ≈ 5,787 RPS，尖峰約 600k RPS",
+   "1B × 500B = 500GB",
+   "8 字元 base62 ≈ 218 兆",
+   "redirect <100ms、可用性 99.99%"
+  ],
+  "decisions": [
+   {
+    "decision": "short code 怎麼產生才唯一",
+    "chosen": "Redis 全域 counter（原子 INCR）+ Base62，各 Write Service 以 batch（如 1000）領號",
+    "rejected": [
+     {
+      "option": "取 long URL 前 N 字元",
+      "why": "共用前綴的 URL 會撞同一個 code，違反唯一性"
+     },
+     {
+      "option": "Hash（SHA-256→base62→取前 N 字）",
+      "why": "碰撞機率隨量增長，降低碰撞就得加長 code；碰撞偵測要額外查 DB（需 UNIQUE constraint + 有上限重試 3-5 次）"
+     }
+    ],
+    "tradeoff": "counter 無碰撞但需單一真相來源（Redis Sentinel/Cluster HA）且序號可預測（可用 XOR secret 可逆轉換或接受）；多區域用不重疊區間。hash 方案較簡單且天然 dedup。DB UNIQUE 是最後防線。"
+   },
+   {
+    "decision": "redirect 要多快、用哪一層加速",
+    "chosen": "short code 當 primary key（B-tree index）→ Redis cache（TTL ≤ URL 過期時間）→ 必要時 CDN/Edge",
+    "rejected": [
+     {
+      "option": "不優化（full table scan）",
+      "why": "無法接受"
+     },
+     {
+      "option": "只靠 DB index",
+      "why": "SSD 約 100k IOPS，尖峰約 600k 讀/秒單 DB 撐不住且拖累寫入"
+     },
+     {
+      "option": "一開始就上 CDN + edge computing",
+      "why": "跨節點 invalidation、edge 執行限制、除錯與成本複雜度高；視成本與流量型態再決定"
+     }
+    ],
+    "tradeoff": "cache 有冷啟動與 eviction 管理；URL 很少變更所以 invalidation 影響小。CDN 用成本與複雜度換效能。"
+   },
+   {
+    "decision": "HTTP redirect 用 301 還是 302",
+    "chosen": "302 Found",
+    "rejected": [
+     {
+      "option": "301 Permanent",
+      "why": "瀏覽器永久 cache，之後繞過我們，無法更新/過期/追蹤點擊"
+     }
+    ],
+    "tradeoff": "每次都經過 server，流量較多；換到可更新/過期連結與可追蹤。過期回 410 Gone。"
+   },
+   {
+    "decision": "如何擴展服務與儲存",
+    "chosen": "讀寫服務分離（Read Service / Write Service）各自水平擴展；單顆 SSD 放 500GB，DB 選 Postgres 即可 + replica/backup",
+    "rejected": [
+     {
+      "option": "單一 Primary Server 同時處理讀寫",
+      "why": "讀寫比 1000:1，無法各自獨立擴展"
+     },
+     {
+      "option": "一開始就 shard DB",
+      "why": "500GB 單顆現代 SSD 可容納，寫入僅約 1 row/s，不需要"
+     }
+    ],
+    "tradeoff": "多一個服務邊界；Write Service 需協調 counter，故用 batching 降低 Redis 呼叫。"
+   },
+   {
+    "decision": "自訂 alias 與是否 dedup",
+    "chosen": "alias 先檢查不存在再直接當 code，產生碼加 alias 不能用的前綴/分 namespace；不強制 dedup",
+    "rejected": [
+     {
+      "option": "同一 long URL 一律回既有 code",
+      "why": "不同使用者要各自的過期時間、分析、alias，dedup 是用儲存效率換這些功能"
+     }
+    ],
+    "tradeoff": "允許重複 URL 多佔儲存，換取功能彈性。"
+   }
+  ],
+  "topics": [
+   "scaling-reads",
+   "caching",
+   "id-generation",
+   "api-networking",
+   "storage-choice"
+  ],
+  "followUps": [
+   "為什麼 302 不用 301？301 被瀏覽器 cache 繞過我們。",
+   "Hash 碰撞怎麼辦？UNIQUE constraint 偵測，加隨機 salt 重試並設上限。",
+   "Counter 可被猜嗎？可預測，用 XOR secret 可逆轉換或接受。",
+   "Redis counter 掛了？Sentinel/Cluster failover，只需唯一不需連續。"
+  ]
+ },
+ {
+  "id": "camelcamelcamel",
+  "title": "Price Tracking Service（CamelCamelCamel）",
+  "kind": "面試題",
+  "source": "HelloInterview Premium（補充）",
+  "file": "hellointerview-breakdowns/camelcamelcamel.md",
+  "origin": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/camelcamelcamel",
+  "core": "對 Amazon 要 polite 地蒐集 5 億商品價格、防範 extension 眾包的惡意資料，並把降價事件 fan-out 給訂閱者。",
+  "scaleNumbers": [
+   "500M 商品",
+   "Chrome extension 1M 活躍用戶",
+   "價格歷史查詢 <500ms",
+   "降價通知 1 小時內",
+   "全量每天刷新一次約 5.8k req/s",
+   "熱門 1%（5M）每小時刷新約 1.4k req/s"
+  ],
+  "decisions": [
+   {
+    "decision": "如何發現並追蹤 5 億商品價格",
+    "chosen": "Crawler + extension 眾包混合：熱門商品靠 extension 順帶回報，crawler 只補長尾與久未更新",
+    "rejected": [
+     {
+      "option": "單一 cron 全量輪詢",
+      "why": "每天一次約 5.8k req/s 打 Amazon 必被封鎖，且冷門商品沒人看"
+     },
+     {
+      "option": "只做熱度分級 crawler（priority queue + proxy）",
+      "why": "可行但成本高、仍有被封風險；眾包能近乎免費取得熱門資料"
+     }
+    ],
+    "tradeoff": "眾包省成本擴散快但引入資料可信度問題；crawler 可靠但貴。"
+   },
+   {
+    "decision": "如何處理 extension 的惡意價格",
+    "chosen": "多來源 quorum（N 位獨立用戶近似價格）+ 用戶信譽加權，可疑值派 crawler 驗證",
+    "rejected": [
+     {
+      "option": "直接信任 extension 傳來的價格",
+      "why": "任何人可把價格改成 $0.01 觸發全站通知或污染歷史"
+     },
+     {
+      "option": "只做 sanity check + per-user rate limit",
+      "why": "能擋明顯離譜值，但擋不住小幅、協同的操縱"
+     }
+    ],
+    "tradeoff": "quorum 增加延遲，冷門商品湊不到 N 人要 fallback 到 crawler。"
+   },
+   {
+    "decision": "價格變動如何通知訂閱者",
+    "chosen": "僅價格真的變動時發 event 到 Kafka（key=asin）；訂閱以 asin 分區並按 threshold 排序，只取 threshold >= newPrice 的區段，批次發送並記 last_notified 防重複",
+    "rejected": [
+     {
+      "option": "每次更新掃全部 Subscription 比對",
+      "why": "O(訂閱數)，不可行"
+     },
+     {
+      "option": "逐筆即時 streaming 通知",
+      "why": "SLA 是 1 小時，批次/微批足夠且更便宜"
+     }
+    ],
+    "tradeoff": "放寬 SLA 換批次成本優勢；需處理跨越門檻才通知的去重。"
+   },
+   {
+    "decision": "如何快速提供價格歷史圖",
+    "chosen": "只存價格變動點（asin PK、ts SK）+ 預算 1m/3m/1y downsampled 視圖 + CDN/Redis 快取熱門商品",
+    "rejected": [
+     {
+      "option": "每次請求從 raw 資料即時掃描聚合",
+      "why": "無法穩定在 500ms 內"
+     },
+     {
+      "option": "每次抓取都存一筆",
+      "why": "資料量遠大於只存變動點"
+     }
+    ],
+    "tradeoff": "預聚合多存一份且需維護，換穩定 <500ms。"
+   }
+  ],
+  "topics": [
+   "scaling-reads",
+   "fanout",
+   "async-jobs",
+   "storage-choice",
+   "rate-limiting",
+   "caching"
+  ],
+  "followUps": [
+   "被 Amazon 封鎖？降頻、proxy 池、提高眾包比重。",
+   "重複通知？記 last_notified_price，通知 key 做 idempotency。",
+   "歷史最低價？寫入時維護 per-asin min/max。"
+  ]
+ },
+ {
+  "id": "chatgpt",
+  "title": "ChatGPT",
+  "kind": "面試題",
+  "source": "HelloInterview Premium（補充）",
+  "file": "hellointerview-breakdowns/chatgpt.md",
+  "origin": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/chatgpt",
+  "core": "LLM 當黑盒，難在 serving：快速串流 token、調度昂貴有限的 GPU、控制對話變長的成本；首 token 延遲優先。",
+  "scaleNumbers": [
+   "200M+ DAU",
+   "峰值約 20k prompts/s",
+   "同時約 120k 個串流",
+   "120k 串流 × 50 tokens/s ≈ 6M tokens/s（補充估算）"
+  ],
+  "decisions": [
+   {
+    "decision": "token 怎麼串流回 client",
+    "chosen": "SSE，token 先寫 Redis Stream/PubSub 的 per-run channel，由 gateway 轉發",
+    "rejected": [
+     {
+      "option": "Client 輪詢等完整回覆",
+      "why": "延遲高、浪費請求，空白畫面像壞掉"
+     },
+     {
+      "option": "WebSocket",
+      "why": "雙向能力用不到，有狀態連線成本高，LB/代理較難處理"
+     }
+    ],
+    "tradeoff": "SSE 簡單且可穿 HTTP infra 但不雙向；多一層 buffer 換解耦 worker 與連線節點。"
+   },
+   {
+    "decision": "重連與部署時如何不中斷",
+    "chosen": "run 為 durable 一等公民（run_id/status/offset），token 持久寫入 buffer，client 帶 Last-Event-ID resume，部署採 connection draining",
+    "rejected": [
+     {
+      "option": "串流與連線節點綁死",
+      "why": "斷線或部署重啟整個生成作廢，浪費已付費 GPU"
+     }
+    ],
+    "tradeoff": "額外 buffer 與寫入成本，換可恢復串流。"
+   },
+   {
+    "decision": "GPU worker 如何路由調度",
+    "chosen": "queue + worker pull；continuous batching（vLLM 類）、KV cache 親和路由、依模型分池、依 queue depth autoscale",
+    "rejected": [
+     {
+      "option": "Round-robin 隨機打 GPU",
+      "why": "不管負載，出現長尾與 OOM"
+     }
+    ],
+    "tradeoff": "大 batch 提升吞吐但增加單請求延遲，與首 token 目標需權衡。"
+   },
+   {
+    "decision": "防重度用戶霸佔 GPU 並區分付費層",
+    "chosen": "weighted fair queuing + 付費層預留容量 + 入口 admission control",
+    "rejected": [
+     {
+      "option": "單一 FIFO",
+      "why": "一個用戶或腳本灌爆 queue 拖慢所有人"
+     },
+     {
+      "option": "只做 per-user rate limit + 嚴格優先級",
+      "why": "嚴格優先級可能餓死 free 用戶，需保底配額/aging"
+     }
+    ],
+    "tradeoff": "free 層尖峰時降級（小模型/排隊），換整體公平與付費體驗。"
+   },
+   {
+    "decision": "對話變長時如何控制成本",
+    "chosen": "舊訊息摘要 + 保留近期原文 + prefix/KV cache 重用，必要時 RAG",
+    "rejected": [
+     {
+      "option": "每次送完整歷史",
+      "why": "成本隨長度二次增長，終究超過 context window"
+     },
+     {
+      "option": "純滑動視窗只留最近 N 則",
+      "why": "助理會顯得健忘"
+     }
+    ],
+    "tradeoff": "摘要有資訊損失；KV cache 佔 GPU 記憶體。"
+   }
+  ],
+  "topics": [
+   "streaming",
+   "realtime",
+   "async-jobs",
+   "rate-limiting",
+   "reliability",
+   "caching"
+  ],
+  "followUps": [
+   "首 token 延遲怎麼降？prefix caching、避免排隊（admission control）、就近部署。",
+   "GPU 掛了？重新排程，從 buffer 已生成處 resume 或重生成。",
+   "取消 run？設旗標，worker 每個 decode step 檢查並釋放資源。"
+  ]
+ },
+ {
+  "id": "distributed-cache",
+  "title": "Distributed Cache",
+  "kind": "面試題",
+  "source": "HelloInterview Premium（補充）",
+  "file": "hellointerview-breakdowns/distributed-cache.md",
+  "origin": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/distributed-cache",
+  "core": "跨機器記憶體 KV：難在 key 分布、增減節點的搬移成本、以及熱 key 讀/寫。",
+  "scaleNumbers": [
+   "1TB 資料",
+   "peak 100k requests/s",
+   "get/set <10ms",
+   "每節點約 64GB → 約 16 台 primary（含 replica 約 32 台）"
+  ],
+  "decisions": [
+   {
+    "decision": "如何擴展與分片",
+    "chosen": "Consistent hashing（virtual nodes）或固定 slot（如 Redis 16384）",
+    "rejected": [
+     {
+      "option": "單機垂直擴展",
+      "why": "1TB/100k rps 單機吃力"
+     },
+     {
+      "option": "hash(key) % N",
+      "why": "增減節點幾乎全部 key 重新映射，造成大量 cache miss"
+     }
+    ],
+    "tradeoff": "路由由 client library、proxy 或 gossip 節點負責，各有維運複雜度；容量才是主約束（100k/16 台≈6k rps/台）。"
+   },
+   {
+    "decision": "高可用與容錯",
+    "chosen": "每個 shard primary-replica 非同步複製 + 自動 failover，可跨 AZ",
+    "rejected": [
+     {
+      "option": "單節點無備援",
+      "why": "掛掉整份資料消失，請求全打回 DB"
+     },
+     {
+      "option": "同步複製",
+      "why": "寫延遲增加；本題 availability > consistency"
+     }
+    ],
+    "tradeoff": "非同步可能丟最後幾筆寫入，cache 可接受。"
+   },
+   {
+    "decision": "key 如何均勻分布",
+    "chosen": "virtual nodes + 良好 hash（murmur/xxhash），或固定 slot 以 slot 為單位再平衡",
+    "rejected": [
+     {
+      "option": "節點在環上單點",
+      "why": "分布不均，某節點負擔過大"
+     }
+    ],
+    "tradeoff": "slot 再平衡簡單可觀測；vnode 彈性高但 metadata 較大。"
+   },
+   {
+    "decision": "熱 key 讀寫",
+    "chosen": "讀：client near cache（短 TTL）+ 偵測後複製成 key#1..k；寫：key:0..k 拆分 sharded counter + 寫入合併",
+    "rejected": [
+     {
+      "option": "忽略",
+      "why": "單節點被打爆連鎖失敗"
+     },
+     {
+      "option": "所有寫入打同一 primary",
+      "why": "序列化瓶頸"
+     }
+    ],
+    "tradeoff": "本地快取/多副本短暫不一致；寫拆分造成讀放大；本地累積增加資料遺失窗口。"
+   },
+   {
+    "decision": "效能優化與淘汰策略",
+    "chosen": "連線池+pipelining、單線程事件迴圈、client 直連正確節點、近似 LRU（取樣）",
+    "rejected": [
+     {
+      "option": "每請求新建連線、同步序列化重物件",
+      "why": "延遲浪費"
+     },
+     {
+      "option": "精確 LRU",
+      "why": "metadata 成本高；近似 LRU 省記憶體與 CPU"
+     }
+    ],
+    "tradeoff": "近似 LRU 命中率略降；壓縮換 CPU。"
+   }
+  ],
+  "topics": [
+   "caching",
+   "sharding",
+   "scaling-reads",
+   "reliability",
+   "consistency"
+  ],
+  "followUps": [
+   "Cache stampede？single-flight、TTL jitter、提前刷新。",
+   "節點新增冷啟動？以 slot 逐步遷移、預熱或雙寫。",
+   "LRU 怎麼實作？HashMap + doubly linked list，O(1)。"
+  ]
+ },
+ {
+  "id": "distributed-rate-limiter",
+  "title": "Distributed Rate Limiter",
+  "kind": "面試題",
+  "source": "HelloInterview",
+  "file": "hellointerview-breakdowns/distributed-rate-limiter.md",
+  "origin": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/distributed-rate-limiter",
+  "core": "在 1M RPS 下做低延遲、跨節點正確的限流：難在狀態集中與原子性、shard、以及限流器自己掛掉時的 failure mode。",
+  "scaleNumbers": [
+   "1M requests/s、100M DAU",
+   "檢查 <10ms",
+   "單 Redis 約 100k-200k ops/s，實際 50k-100k checks/s",
+   "約 10 個 shard",
+   "Redis Cluster 16,384 slots",
+   "TCP handshake 20-50ms"
+  ],
+  "decisions": [
+   {
+    "decision": "限流器放哪裡",
+    "chosen": "API Gateway / Load Balancer",
+    "rejected": [
+     {
+      "option": "In-process 本地計數",
+      "why": "每台只知道自己的流量，LB 路由改變就失準（可能超放 server 數倍）"
+     },
+     {
+      "option": "獨立 dedicated service",
+      "why": "每請求多一次網路往返、新單點故障、維運複雜；優點是能帶豐富 context"
+     }
+    ],
+    "tradeoff": "gateway 只能看到 request 本身資訊（付費額度需編進 JWT），且狀態需外部儲存；換來被擋的請求到不了 app server。"
+   },
+   {
+    "decision": "限流演算法與狀態儲存",
+    "chosen": "Token Bucket，狀態 (tokens,last_refill) 放 Redis，整個 read-calculate-update 用 Lua script 原子化",
+    "rejected": [
+     {
+      "option": "Fixed Window Counter",
+      "why": "邊界效應：窗口交界 2 秒內可放 200"
+     },
+     {
+      "option": "Sliding Window Log",
+      "why": "每 client 存大量 timestamp，記憶體與掃描成本高"
+     },
+     {
+      "option": "Sliding Window Counter",
+      "why": "是近似，假設均勻分布，數學易錯"
+     },
+     {
+      "option": "MULTI/EXEC 只包住寫入",
+      "why": "HMGET 在 transaction 外，併發請求讀到同樣 token 數，1 個 token 放行 2 請求"
+     }
+    ],
+    "tradeoff": "需選對容量/速率，idle client 冷啟動滿桶；Lua 擴大 atomic boundary。"
+   },
+   {
+    "decision": "如何擴展到 1M RPS",
+    "chosen": "以 client key（user ID/IP/API key）consistent hashing 分片，約 10 個 shard，生產用 Redis Cluster",
+    "rejected": [
+     {
+      "option": "單一 Redis",
+      "why": "約 50k-100k checks/s 即瓶頸"
+     },
+     {
+      "option": "任意分散同 client 的請求",
+      "why": "同一 client 狀態被切碎"
+     }
+    ],
+    "tradeoff": "gateway 需路由邏輯（Cluster 自動處理）；成本隨 shard 增加。"
+   },
+   {
+    "decision": "限流器故障時 fail-open 還是 fail-closed",
+    "chosen": "Fail-closed + master-replica 自動 failover + 告警",
+    "rejected": [
+     {
+      "option": "Fail-open",
+      "why": "Redis 掛常因高負載，全部流量湧入後端可能整體崩潰；適合可用性優先的場景"
+     }
+    ],
+    "tradeoff": "fail-closed 等同讓 API 下線且用戶重試加重負載，需靠 replica 降低觸發機率；兩者皆『好解』依業務風險選。"
+   },
+   {
+    "decision": "超限回應與規則更新",
+    "chosen": "fail fast 回 429 + X-RateLimit-* header；規則預設 poll（~30 秒），極快需求才用 ZooKeeper push",
+    "rejected": [
+     {
+      "option": "超限請求排隊",
+      "why": "耗資源、用戶重試加重負載、回應時間不可預測"
+     },
+     {
+      "option": "一開始就 push-based 設定",
+      "why": "複雜（連線失敗、部分更新失敗），僅安全事件等才值得"
+     }
+    ],
+    "tradeoff": "poll 有最多 30 秒的更新延遲。"
+   }
+  ],
+  "topics": [
+   "rate-limiting",
+   "contention",
+   "sharding",
+   "reliability",
+   "api-networking",
+   "scaling-writes"
+  ],
+  "followUps": [
+   "多 gateway 同時處理同用戶？狀態集中 Redis + Lua 原子。",
+   "Hot key？client-side 限流、批次、premium tier、自動封鎖、DDoS 服務。",
+   "延遲怎麼降？連線池、多 region 部署。"
+  ]
+ },
+ {
+  "id": "dropbox",
+  "title": "Dropbox",
+  "kind": "面試題",
+  "source": "HelloInterview",
+  "file": "hellointerview-breakdowns/dropbox.md",
+  "origin": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/dropbox",
+  "core": "control plane（metadata+presigned URL）與 data plane（bytes 走 S3/CDN）分離；重點是 50GB 大檔的 chunking、續傳與 delta sync。",
+  "scaleNumbers": [
+   "最大 50GB 檔案",
+   "100Mbps 傳 50GB ≈ 4000 秒 ≈ 1.11 小時",
+   "chunk 5-10MB",
+   "API Gateway payload 限制 10MB",
+   "signed URL 範例 5 分鐘"
+  ],
+  "decisions": [
+   {
+    "decision": "檔案如何上傳",
+    "chosen": "presigned URL 讓 client 直傳 S3，S3 notification 更新 metadata status",
+    "rejected": [
+     {
+      "option": "上傳到 File Service 本地檔案系統",
+      "why": "無法擴展，server 掛了就失去檔案"
+     },
+     {
+      "option": "client→backend→S3",
+      "why": "檔案傳兩次，且 metadata 與檔案可能不一致"
+     }
+    ],
+    "tradeoff": "需處理 uploading/uploaded 狀態；File Service 只簽章不碰 bytes。"
+   },
+   {
+    "decision": "50GB 大檔怎麼傳",
+    "chosen": "client 端切 5-10MB chunk + S3 multipart upload，chunk 狀態存 metadata，client 回報 ETag、backend 用 ListParts 驗證",
+    "rejected": [
+     {
+      "option": "單一 POST",
+      "why": "timeout、10MB payload 限制、斷線從頭來、無進度"
+     },
+     {
+      "option": "server 端切塊",
+      "why": "仍須先整份上傳，失去意義"
+     },
+     {
+      "option": "只信 client PATCH 回報",
+      "why": "惡意可全標 uploaded，造成難除錯的不一致"
+     }
+    ],
+    "tradeoff": "S3 event 不會為單一 part 觸發，故須 trust-but-verify，多一些 API 呼叫。"
+   },
+   {
+    "decision": "下載與分享",
+    "chosen": "CDN + 短時效 signed URL；分享用獨立 SharedFiles 表（userId PK, fileId SK）",
+    "rejected": [
+     {
+      "option": "S3→backend→client",
+      "why": "傳兩次又慢又貴"
+     },
+     {
+      "option": "metadata 內放 sharelist",
+      "why": "列出『分享給我的檔案』要掃全部"
+     },
+     {
+      "option": "反向 mapping 快取",
+      "why": "需與 sharelist 同步雙寫"
+     }
+    ],
+    "tradeoff": "CDN 貴，只快取熱門檔；SharedFiles 查詢走索引稍慢但免同步。signed URL 是 bearer token，只降低外流風險。"
+   },
+   {
+    "decision": "跨裝置 sync 與 delta",
+    "chosen": "WebSocket/SSE 推播 + 定期 since=timestamp polling 兜底；delta sync 用 Content-Defined Chunking（rolling hash）",
+    "rejected": [
+     {
+      "option": "純 polling",
+      "why": "偵測慢、浪費頻寬"
+     },
+     {
+      "option": "固定大小 chunk",
+      "why": "開頭插入 1 byte 後所有 chunk 邊界位移，fingerprint 全變，delta 失效"
+     }
+    ],
+    "tradeoff": "混合方案較複雜；衝突採 last write wins。"
+   },
+   {
+    "decision": "檔案識別與壓縮",
+    "chosen": "內容雜湊 fingerprint（SHA-256）識別/去重；client 端依檔案型別壓縮，先壓縮再加密",
+    "rejected": [
+     {
+      "option": "用檔名識別",
+      "why": "不同使用者可同名"
+     },
+     {
+      "option": "先加密再壓縮",
+      "why": "加密產生隨機性難以壓縮"
+     }
+    ],
+    "tradeoff": "壓縮換 CPU，圖片/影片不值得。"
+   }
+  ],
+  "topics": [
+   "blobs",
+   "async-jobs",
+   "consistency",
+   "auth",
+   "api-networking",
+   "storage-choice"
+  ],
+  "followUps": [
+   "S3 event 能追蹤每個 part 嗎？不能，用 ListParts+ETag。",
+   "連結被轉貼？短時效 signed URL，高安全加 IP binding。",
+   "衝突？last write wins，實務新增版本。"
+  ]
+ },
+ {
+  "id": "fb-live-comments",
+  "title": "FB Live Comments",
+  "kind": "面試題",
+  "source": "HelloInterview",
+  "file": "hellointerview-breakdowns/fb-live-comments.md",
+  "origin": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/fb-live-comments",
+  "core": "讀寫極度不對稱的即時廣播：多 server 間要把留言送到正確觀眾，且 mega-stream 下需求本身要改變。",
+  "scaleNumbers": [
+   "端到端 <200ms",
+   "單 server 約 100k 量級連線",
+   "mega-stream 5,000 comments/s × 4 字",
+   "抽樣 100/s→50%、5,000/s→1-2%",
+   "ring buffer 100-200 則、snapshot 每秒",
+   "切換門檻 100,000 觀眾或 500 comments/s",
+   "補送上限 5 分鐘"
+  ],
+  "decisions": [
+   {
+    "decision": "新留言怎麼推給觀眾",
+    "chosen": "SSE（寫入用普通 HTTP POST）",
+    "rejected": [
+     {
+      "option": "Polling",
+      "why": "要近即時得每幾毫秒輪詢，壓垮 DB"
+     },
+     {
+      "option": "WebSocket",
+      "why": "讀寫失衡，為每個只讀 viewer 維持雙向連線不值得；適合聊天室"
+     }
+    ],
+    "tradeoff": "proxy/LB 可能 buffering、瀏覽器同網域連線數有限、長連線除錯複雜。"
+   },
+   {
+    "decision": "多 server 如何協調推送",
+    "chosen": "獨立 Realtime Messaging Servers + 分片 pub/sub（hash(liveVideoId)%N）+ L7 LB consistent hashing 讓同影片觀眾同 server",
+    "rejected": [
+     {
+      "option": "Naive pub/sub（每台處理所有留言）",
+      "why": "每台處理全部影片留言，浪費運算，FB 規模不可行"
+     },
+     {
+      "option": "Dispatcher Service",
+      "why": "也可行，路由集中可做 load-based，但爆紅時 mapping 更新與多實例 cache invalidation 較難；pub/sub 邊角案例較少"
+     }
+    ],
+    "tradeoff": "LB 路由與訂閱需協調，server 擴縮時要同步；Redis pub/sub fire-and-forget 可接受因留言已持久化。Kafka 不擅長動態訂閱。"
+   },
+   {
+    "decision": "歷史留言分頁",
+    "chosen": "Cursor pagination（commentId < cursor, Limit）",
+    "rejected": [
+     {
+      "option": "Offset pagination",
+      "why": "需數過前面所有 row 且滾動時新增刪除造成錯位重複漏掉"
+     }
+    ],
+    "tradeoff": "每頁仍需一次 DB 查詢。"
+   },
+   {
+    "decision": "mega-stream（數億觀眾）怎麼辦",
+    "chosen": "CDN + 每秒 snapshot（ring buffer）+ client polling 動畫分散顯示，過門檻自動切換並加 hysteresis",
+    "rejected": [
+     {
+      "option": "維持逐則 SSE 推送",
+      "why": "5,000/s 人讀不了，需求其實是『氛圍』"
+     },
+     {
+      "option": "抽樣 subset",
+      "why": "可行但仍維持百萬 SSE 連線，成本高"
+     }
+    ],
+    "tradeoff": "延遲 1-2 秒；自己的留言用 optimistic insert；需防 flapping。"
+   },
+   {
+    "decision": "斷線重連不漏留言",
+    "chosen": "SSE Last-Event-ID + client 追蹤 + HTTP catch-up，共享 Redis 近期留言，補送有上限",
+    "rejected": [
+     {
+      "option": "忽略斷線",
+      "why": "行動網路不穩體驗差"
+     }
+    ],
+    "tradeoff": "重連可能打到不同 server，需共享 cache 並依 ID 去重合併。"
+   }
+  ],
+  "topics": [
+   "realtime",
+   "fanout",
+   "scaling-reads",
+   "streaming",
+   "caching"
+  ],
+  "followUps": [
+   "為什麼不用 WebSocket？讀寫失衡。",
+   "Kafka 還是 Redis pub/sub？Redis 動態訂閱友善，漏的由 DB 補。",
+   "斷線一小時？有界補送，更久優雅降級。"
+  ]
+ },
+ {
+  "id": "fb-news-feed",
+  "title": "FB News Feed",
+  "kind": "面試題",
+  "source": "HelloInterview",
+  "file": "hellointerview-breakdowns/fb-news-feed.md",
+  "origin": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/fb-news-feed",
+  "core": "經典 fan-out 題：追蹤很多人的讀取扇出、追蹤者百萬的大帳號寫入放大、viral post 的 hot key，三個瓶頸要用不同解。",
+  "scaleNumbers": [
+   "2B users",
+   "容忍 post 延遲 1 分鐘、API <500ms",
+   "PrecomputedFeed 約 200 postIds × 10B = 2KB/user，2B → 4TB",
+   "Facebook 好友上限 5,000",
+   "Justin Bieber 9,000 萬+ followers"
+  ],
+  "decisions": [
+   {
+    "decision": "feed 怎麼產生",
+    "chosen": "Fan-out on write：發文時預算 PrecomputedFeed（每人只存約 200 個 postId）",
+    "rejected": [
+     {
+      "option": "Fan-out on read（查 Follow→查各人 Post→排序）",
+      "why": "追蹤上千人時一次讀取扇出成大量請求，對低延遲服務罕見可行"
+     }
+    ],
+    "tradeoff": "只存 200 筆，翻深頁退回 naive 查詢；2KB/user 成本極低。新問題是大帳號發文寫入放大。"
+   },
+   {
+    "decision": "大帳號（百萬追蹤者）發文怎麼處理",
+    "chosen": "Async workers + queue（SQS）+ per-account hybrid：大帳號不預算，讀取時 merge 其近期 posts",
+    "rejected": [
+     {
+      "option": "Post Service 一次對所有 feed 發寫入（blast）",
+      "why": "連線與延遲撐不住，負載不均"
+     },
+     {
+      "option": "只用 async workers + queue",
+      "why": "每個 queue 項目工作量差異極大（1M vs 1k followers），大帳號仍壓垮 worker，需拆任務"
+     }
+    ],
+    "tradeoff": "Feed Service 讀取時要做 merge，運算變多；預算門檻可調。不 one-size-fits-all。"
+   },
+   {
+    "decision": "viral post 的 hot key",
+    "chosen": "Redundant（replicated）Post cache：多個完整副本 + LB，不分片",
+    "rejected": [
+     {
+      "option": "分散式（sharded）Redis Post cache",
+      "why": "viral post 只落在單一 shard，cache 本身出現 hot key，其他 host 閒置"
+     }
+    ],
+    "tradeoff": "冷啟動時 N 個 instance 各 miss 一次（N 次 DB 請求而非 1 次，遠小於無 cache）；可容納的不同 post 數較少。"
+   },
+   {
+    "decision": "Follow 關係怎麼存",
+    "chosen": "DynamoDB KV：PK userFollowing、SK userFollowed，GSI 反向",
+    "rejected": [
+     {
+      "option": "Graph DB（Neo4j）",
+      "why": "只做簡單查詢不需 traversal，避免『怎麼擴展 Neo4j』問題"
+     }
+    ],
+    "tradeoff": "多一個 GSI 要維護；簡單可擴展。"
+   },
+   {
+    "decision": "先調整產品還是技術",
+    "chosen": "先問能否用產品限制縮小問題（如限制好友數 5,000、容忍數分鐘延遲）",
+    "rejected": [
+     {
+      "option": "一律用技術硬扛無限追蹤",
+      "why": "成本高，使用者通常不在意數分鐘延遲"
+     }
+    ],
+    "tradeoff": "需要面試官同意產品調整。"
+   }
+  ],
+  "topics": [
+   "fanout",
+   "scaling-reads",
+   "caching",
+   "async-jobs",
+   "storage-choice"
+  ],
+  "followUps": [
+   "使用者翻到第 100 頁？多數系統不支援，200 筆上限可調。",
+   "為何 follow 用 PUT？idempotent。",
+   "名人發文？不 fan-out，讀取時 merge。"
+  ]
+ },
+ {
+  "id": "fb-post-search",
+  "title": "FB Post Search",
+  "kind": "面試題",
+  "source": "HelloInterview",
+  "file": "hellointerview-breakdowns/fb-post-search.md",
+  "origin": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/fb-post-search",
+  "core": "禁用 Elasticsearch 下自建 Redis inverted index；估算後發現是 write-heavy（likes 100k/s）且儲存達 PB 級，需降低 like 寫入放大並控制儲存。",
+  "scaleNumbers": [
+   "10k posts/s",
+   "100k likes/s",
+   "10k searches/s（可能 burst 10x）",
+   "3.6T posts、3.6 PB（1KB/post，10 年）",
+   "一個 post 觸發 10-1,000 次 keyword 寫入",
+   "median 查詢 <500ms、新 post 1 分鐘內可搜尋",
+   "index cap 1k-10k items/keyword"
+  ],
+  "decisions": [
+   {
+    "decision": "keyword 搜尋與排序用什麼結構",
+    "chosen": "Redis inverted index：keyword→creation list（recency）+ likes sorted set（score=likes）兩份預排序 index",
+    "rejected": [
+     {
+      "option": "未建索引 DB LIKE '%kw%'",
+      "why": "PB 級掃描不可行，shard 只是 N/M"
+     },
+     {
+      "option": "Request-time sorting",
+      "why": "常見字上千萬結果，取回後逐一查 like 數排序，payload 數百 MB"
+     }
+    ],
+    "tradeoff": "儲存翻倍、每個 like 要更新 score；用空間換讀取延遲。"
+   },
+   {
+    "decision": "如何承擔大量請求",
+    "chosen": "Redis result cache（TTL <1 分鐘）+ CDN 邊緣快取（cache-control）",
+    "rejected": [
+     {
+      "option": "只有分散式 cache",
+      "why": "經 gateway→search service→cache 仍需數百毫秒，CDN 命中僅數十毫秒"
+     }
+    ],
+    "tradeoff": "前提是無個人化且容忍 1 分鐘陳舊；TTL 必須 <1 分鐘以符合新 post SLA。"
+   },
+   {
+    "decision": "多字片語查詢",
+    "chosen": "Bigrams/Shingles：為相鄰字對建立 token，直接查片語",
+    "rejected": [
+     {
+      "option": "Intersection and Filter",
+      "why": "各字 postId 集合可能數百萬筆，傳輸與交集難達 500ms，且需抓內容確認片語"
+     }
+    ],
+    "tradeoff": "index 暴增（10m→100m+ keys）；只索引可能被搜尋的 bigram，無 entry 退回 intersection，可用 count-min sketch 估頻。"
+   },
+   {
+    "decision": "like 寫入放大",
+    "chosen": "Two-stage：只在 like 數過對數里程碑（1,2,4…）時更新 index，查詢取 top N×2 再向 Like Service 查最新值重排",
+    "rejected": [
+     {
+      "option": "每次 like 都更新所有 index",
+      "why": "100k likes/s × 多個 index 不可行"
+     },
+     {
+      "option": "30 秒窗口批次合併 like",
+      "why": "只對 viral post 有效，大多數 post 每分鐘 1 個 like，批次無益還多開銷"
+     }
+    ],
+    "tradeoff": "index 是近似但順序大致正確；複雜度高，欄位宜命名 approxLikes。"
+   },
+   {
+    "decision": "post 寫入與儲存",
+    "chosen": "Kafka 緩衝 + keyword sharding；每 keyword index 設上限；冷 keyword 搬到 S3/R2",
+    "rejected": [
+     {
+      "option": "保留每個 keyword 的全部 postId",
+      "why": "如 'Mark' 有 10M posts，儲存爆炸，且多數 keyword 很少被搜尋"
+     }
+    ],
+    "tradeoff": "冷資料查詢多一次延遲（NFR 允許舊文更慢）；cap 讓非常舊的結果被截掉。"
+   }
+  ],
+  "topics": [
+   "search",
+   "counting",
+   "caching",
+   "scaling-writes",
+   "sharding",
+   "storage-choice"
+  ],
+  "followUps": [
+   "為什麼不用 Elasticsearch？題目禁止，考 indexing 基礎。",
+   "Like 排序不精確？取 top 2N 後向 Like Service 重排。",
+   "Redis 遺失？MemoryDB 等持久版本。"
+  ]
+ },
+ {
+  "id": "flash-sale",
+  "title": "Flash Sale（限量搶購）",
+  "kind": "面試題",
+  "source": "HelloInterview Premium（補充）",
+  "file": "hellointerview-breakdowns/flash-sale.md",
+  "origin": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/flash-sale",
+  "core": "極端競爭下賣有限庫存且絕不超賣：慢速付款與庫存扣減要拆開，熱點要靠 Redis 原子操作與排隊削峰。",
+  "scaleNumbers": [
+   "10,000 件庫存",
+   "數千萬使用者幾秒內湧入",
+   "假設 1,000 萬人 10 秒 ≈ 100 萬 req/s（補充）",
+   "單 Redis 約 10 萬 ops/s（補充）",
+   "Reservation TTL 5-10 分鐘（補充）"
+  ],
+  "decisions": [
+   {
+    "decision": "庫存扣減如何不超賣",
+    "chosen": "Redis Lua 原子 DECR（>0 才扣並寫 reservation key 含 TTL），成功者才寫 DB；DB 以 stock>0 條件更新為最終防線",
+    "rejected": [
+     {
+      "option": "先 SELECT stock 再 UPDATE",
+      "why": "race condition 超賣"
+     },
+     {
+      "option": "DB 原子條件更新 / row lock / optimistic lock",
+      "why": "所有請求搶同一 row，鎖競爭使吞吐崩潰"
+     }
+    ],
+    "tradeoff": "Redis 與 DB 需最終一致（事件落地+對帳，Redis 掛了以 DB 重建）；可再把庫存分段，需處理最後少量庫存再平衡。"
+   },
+   {
+    "decision": "慢速付款怎麼處理",
+    "chosen": "Reservation：先保留單位（held, expiresAt），付款成功才 confirmed，失敗/逾時釋放",
+    "rejected": [
+     {
+      "option": "付款期間占著 DB transaction",
+      "why": "付款走第三方需數秒，鎖持有太久"
+     }
+    ],
+    "tradeoff": "需處理付款與逾時競態（以狀態 CAS，held→confirmed 或 held→expired 擇一）、payment_pending 延長 TTL、付款 idempotency key。"
+   },
+   {
+    "decision": "逾時 reservation 怎麼釋放",
+    "chosen": "Redis sorted set（score=expiresAt）或 delay queue，worker ZRANGEBYSCORE 取到期並 Lua 原子釋放；DB 對帳兜底",
+    "rejected": [
+     {
+      "option": "cron 每分鐘掃全表",
+      "why": "延遲高、全表掃"
+     },
+     {
+      "option": "Redis key TTL + keyspace notification",
+      "why": "通知不保證送達"
+     }
+    ],
+    "tradeoff": "多一套 worker 與對帳 job。"
+   },
+   {
+    "decision": "數千萬使用者同時湧入",
+    "chosen": "Virtual waiting room：Redis 計數+簽名 token，只放行與庫存相配的流量，WebSocket/SSE 推播進度，edge 檢查 sold-out flag",
+    "rejected": [
+     {
+      "option": "全部請求直達 app/DB",
+      "why": "全面崩潰"
+     },
+     {
+      "option": "只靠 CDN + 限流 + auto scale",
+      "why": "auto scale 反應不及，無法保證公平與削峰"
+     }
+    ],
+    "tradeoff": "增加排隊系統複雜度與使用者等待體驗。"
+   },
+   {
+    "decision": "如何公平",
+    "chosen": "開賣前報名、隨機抽籤決定放行順序，搭配限購與 bot 偵測，簽名 token 控 admission",
+    "rejected": [
+     {
+      "option": "先到先搶",
+      "why": "網路快、機器人者得利"
+     },
+     {
+      "option": "公平 FIFO + CAPTCHA",
+      "why": "可行但仍有延遲/機器人優勢"
+     }
+    ],
+    "tradeoff": "抽籤公平但體驗不同於 FIFO，需產品決策。"
+   }
+  ],
+  "topics": [
+   "contention",
+   "realtime",
+   "scaling-writes",
+   "multistep",
+   "idempotency",
+   "async-jobs"
+  ],
+  "followUps": [
+   "Redis 掛了會超賣嗎？DB stock>0 為最終防線，降級走 DB + 嚴格限流。",
+   "付款到一半過期？payment_pending 延長 TTL 或退款。",
+   "exactly-once 扣款？idempotency key + webhook 去重 + 狀態機。"
+  ]
+ },
+ {
+  "id": "google-docs",
+  "title": "Google Docs（協作文件編輯器）",
+  "kind": "面試題",
+  "source": "HelloInterview Premium（補充）",
+  "file": "hellointerview-breakdowns/google-docs.md",
+  "origin": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/google-docs",
+  "core": "多人同時編輯同一份文件：並發編輯合併（OT/CRDT）加上 WebSocket 長連線擴展（同文件要路由到同一台）。",
+  "scaleNumbers": [
+   "數百萬 WebSocket 連線（原文大綱）",
+   "單台約 10 萬級連線，百萬連線約 10-20 台（補充）",
+   "每文件約 5-10 ops/s（補充）",
+   "純文字文件約 100KB（補充）"
+  ],
+  "decisions": [
+   {
+    "decision": "並發編輯如何合併",
+    "chosen": "OT：中央 server 排序 ops，client op 帶 baseRevision，server transform 後 apply 並廣播",
+    "rejected": [
+     {
+      "option": "整份 last-write-wins",
+      "why": "互相覆蓋"
+     },
+     {
+      "option": "悲觀鎖",
+      "why": "不是即時協作，體驗差"
+     },
+     {
+      "option": "CRDT（Yjs/Automerge）",
+      "why": "metadata 膨脹（tombstone）；適合 offline-first/P2P，有中央 server 時 OT 較省且好講"
+     }
+    ],
+    "tradeoff": "OT 需單一 authority per document 且實作複雜。"
+   },
+   {
+    "decision": "WebSocket 如何擴展到百萬連線",
+    "chosen": "以 docId consistent hashing sticky 路由，同文件所有連線落同一台 Document Server，記憶體持有狀態與 op 序列",
+    "rejected": [
+     {
+      "option": "任意 server 接任意連線 + DB polling",
+      "why": "延遲高、DB 被打爆"
+     },
+     {
+      "option": "Pub/Sub 以 docId 為 channel 廣播",
+      "why": "可行，但同文件 op 排序仍需單一寫入者，否則 transform 順序不一致"
+     }
+    ],
+    "tradeoff": "熱門文件（上千人同編）單台是上限，需限制編輯者並讓只讀觀眾走 fan-out；一台掛了由 hash ring 重指派、client 重連補 ops。"
+   },
+   {
+    "decision": "儲存如何不無限成長",
+    "chosen": "定期 snapshot + 只留其後的 op log，背景 compaction，client 批次合併 op",
+    "rejected": [
+     {
+      "option": "每個按鍵存一筆 op 永遠保留",
+      "why": "儲存與重放成本線性成長"
+     }
+    ],
+    "tradeoff": "snapshot 頻率 vs 載入重放時間 vs 寫入放大；CRDT 還需 tombstone GC。"
+   },
+   {
+    "decision": "游標與 presence",
+    "chosen": "同一條 WebSocket 傳 ephemeral 訊息，不持久化，記憶體/Redis 限頻廣播，heartbeat timeout 判離線",
+    "rejected": [
+     {
+      "option": "與編輯 op 一樣持久化",
+      "why": "無價值且增加寫入與儲存"
+     }
+    ],
+    "tradeoff": "斷線後 presence 可能短暫不準。"
+   },
+   {
+    "decision": "載入文件與不漏編輯",
+    "chosen": "載入最近 snapshot+revision，再從該 revision 之後訂閱 ops",
+    "rejected": [
+     {
+      "option": "先訂閱再載入或只載入",
+      "why": "載入與訂閱之間會漏事件"
+     }
+    ],
+    "tradeoff": "需維護 revision；斷線落後太多則重載 snapshot。"
+   }
+  ],
+  "topics": [
+   "realtime",
+   "consistency",
+   "contention",
+   "sharding",
+   "storage-choice"
+  ],
+  "followUps": [
+   "OT 和 CRDT 怎麼選？中央 server 簡單需求用 OT，offline-first 用 CRDT。",
+   "斷線重連？帶最後確認 revision 補 ops，落後太多重載 snapshot。",
+   "op 不遺失？先 append durable log 再 ack，pending op 帶 id 去重。"
+  ]
+ },
+ {
+  "id": "google-news",
+  "title": "Google News（新聞聚合器）",
+  "kind": "面試題",
+  "source": "HelloInterview Premium（補充）",
+  "file": "hellointerview-breakdowns/google-news.md",
+  "origin": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/google-news",
+  "core": "讀多寫少的聚合 feed：如何讓全球使用者在 <200ms 看到、並維持 30 分鐘新鮮度，且突發新聞不打垮 origin。",
+  "scaleNumbers": [
+   "feed <200ms",
+   "文章發佈後 30 分鐘內出現",
+   "假設 1 億 DAU × 10 次/天 ≈ 1.2 萬 QPS，高峰約 10 萬 QPS（補充）",
+   "寫入約 33 crawl/s（補充）",
+   "讀寫比 >1000:1（補充）"
+  ],
+  "decisions": [
+   {
+    "decision": "無限捲動如何分頁",
+    "chosen": "Keyset/cursor 分頁 (publishedAt,id)，opaque token，可帶 snapshot version",
+    "rejected": [
+     {
+      "option": "OFFSET/LIMIT",
+      "why": "新文章插入導致重複/遺漏，offset 愈大愈慢"
+     }
+    ],
+    "tradeoff": "快照 vs 新鮮度；cursor 不依賴 server 狀態故穩定。"
+   },
+   {
+    "decision": "feed 如何 <200ms",
+    "chosen": "背景預算 feed 寫入 Redis sorted set（score=publishedAt）+ CDN 邊緣快取第一頁（30-60 秒 TTL）",
+    "rejected": [
+     {
+      "option": "每次 query DB 並 join publisher",
+      "why": "延遲與負載不可控"
+     },
+     {
+      "option": "只用 Redis 快取 article id list",
+      "why": "可行，但未用 CDN 吸收大量第一頁流量"
+     }
+    ],
+    "tradeoff": "AP 取向接受 stale，快取一致性放寬。"
+   },
+   {
+    "decision": "如何保證 30 分鐘內可見",
+    "chosen": "RSS push/WebSub/sitemap ping 優先，fallback 依 publisher 活躍度自適應輪詢；queue+worker pool；寫入後主動更新 feed cache",
+    "rejected": [
+     {
+      "option": "每小時全量爬所有 publisher",
+      "why": "無法滿足 30 分鐘 SLA"
+     },
+     {
+      "option": "固定頻率輪詢",
+      "why": "大站太慢、小站浪費"
+     }
+    ],
+    "tradeoff": "需遵守 robots.txt 與 rate limit，並監控 publish→visible 延遲。"
+   },
+   {
+    "decision": "圖片/影片處理",
+    "chosen": "抓取時下載縮圖到 S3，多尺寸/格式（WebP/AVIF），CDN 分發，影片只存 poster+外連",
+    "rejected": [
+     {
+      "option": "直接 hotlink publisher 圖片",
+      "why": "慢、打爆對方站、可能失效"
+     }
+    ],
+    "tradeoff": "儲存成本 vs 速度與可靠度。"
+   },
+   {
+    "decision": "突發新聞流量",
+    "chosen": "CDN+多層快取，預熱 + request coalescing（singleflight）+ 限流降級（回稍舊 feed）+ stale-while-revalidate",
+    "rejected": [
+     {
+      "option": "靠 origin 自動擴容",
+      "why": "反應不及，DB 被打垮"
+     }
+    ],
+    "tradeoff": "使用者可能看到稍舊內容；feed 無個人化所以 hit rate 高。"
+   }
+  ],
+  "topics": [
+   "scaling-reads",
+   "caching",
+   "async-jobs",
+   "api-networking",
+   "blobs"
+  ],
+  "followUps": [
+   "重複文章？canonical URL + simhash/MinHash 聚類。",
+   "cursor 失效？只含時間與 id，天然穩定。",
+   "個人化 feed？candidate generation + ranking，難以 CDN。"
+  ]
+ },
+ {
+  "id": "gopuff",
+  "title": "Gopuff（Local Delivery Service）",
+  "kind": "面試題",
+  "source": "HelloInterview",
+  "file": "hellointerview-breakdowns/gopuff.md",
+  "origin": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/gopuff",
+  "core": "兩條路徑兩種一致性：availability 讀多可過期，order 必須強一致不可 double booking。",
+  "scaleNumbers": [
+   "500+ micro DCs（NFR 10k DCs、100k items）",
+   "10M orders/day",
+   "availability 約 20k QPS（10M/100k × 10 / 0.05）",
+   "availability <100ms",
+   "cache TTL 例 1 分鐘",
+   "預篩半徑例 60 英里",
+   "region ID = zipcode 前 3 碼"
+  ],
+  "decisions": [
+   {
+    "decision": "下單如何避免 double booking",
+    "chosen": "orders 與 inventory 放同一 Postgres，單一 SERIALIZABLE transaction 原子檢查、扣庫存、建訂單",
+    "rejected": [
+     {
+      "option": "兩個 data store + distributed lock",
+      "why": "建立 order 後、扣庫存前 crash 會留下半完成狀態；重疊商品（A+B）互鎖死結"
+     }
+    ],
+    "tradeoff": "inventory 與 orders 擴展耦合，無法各選最佳 store；任一商品缺貨整筆失敗，需給明確錯誤。"
+   },
+   {
+    "decision": "如何判斷 1 小時內可送達的 DC",
+    "chosen": "先用固定半徑（60 英里）預篩候選，再只對候選呼叫 Travel Time Service",
+    "rejected": [
+     {
+      "option": "SQL 直線距離（Euclidean/Haversine）",
+      "why": "不考慮路況與道路，隔河/國界誤判"
+     },
+     {
+      "option": "對全部 DC 呼叫 Travel Time Service",
+      "why": "查詢次數太多，大多數 DC 不可能 1 小時內到達"
+     }
+    ],
+    "tradeoff": "DC 定期（約 5 分鐘）同步進記憶體；半徑是保守上界。"
+   },
+   {
+    "decision": "availability 如何擴到 20k QPS",
+    "chosen": "Redis 短 TTL cache + Postgres read replica + 依 zipcode 前 3 碼分區 inventory",
+    "rejected": [
+     {
+      "option": "全部打單一 leader DB",
+      "why": "20k QPS 讀壓力拖累寫入"
+     }
+    ],
+    "tradeoff": "cache 需在 Order 寫 inventory 時失效；replica 規模與分區均衡需調整；availability 可容忍小幅不一致，下單仍打 leader 不會超賣。"
+   },
+   {
+    "decision": "實體建模",
+    "chosen": "Item（class）與 Inventory（instance）分離，Inventory 屬於某個 DC",
+    "rejected": [
+     {
+      "option": "只用商品數量欄位",
+      "why": "無法表達跨 DC 實體庫存與逐件狀態（ordered）"
+     }
+    ],
+    "tradeoff": "表較多，需 join 或聚合；catalog 與 inventory 實務常分庫並加 search index。"
+   }
+  ],
+  "topics": [
+   "contention",
+   "scaling-reads",
+   "geo",
+   "consistency",
+   "caching",
+   "sharding"
+  ],
+  "followUps": [
+   "為何不用 distributed lock？crash 半完成與死結。",
+   "Cache 過期造成超賣嗎？不會，下單在 leader 檢查。",
+   "一件缺貨？整筆失敗。"
+  ]
+ },
+ {
+  "id": "instagram",
+  "title": "Instagram",
+  "kind": "面試題",
+  "source": "HelloInterview Premium（補充）",
+  "file": "hellointerview-breakdowns/instagram.md",
+  "origin": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/instagram",
+  "core": "metadata 與 media 分離（直傳 S3 + 非同步轉檔 + CDN），feed 用 fan-out on write/read 混合支撐 500M DAU。",
+  "scaleNumbers": [
+   "500M DAU",
+   "1 億貼文/天",
+   "照片最大 8MB、影片最大 4GB",
+   "feed <500ms",
+   "約 200TB/天（假設平均 2MB，補充）",
+   "feed cache 約 2TB（補充）"
+  ],
+  "decisions": [
+   {
+    "decision": "feed 如何 <500ms",
+    "chosen": "混合：一般使用者 fan-out on write（Kafka+worker 寫 Redis，只存最近 500-1000 個 postId）；名人不 fan-out，讀取時 merge",
+    "rejected": [
+     {
+      "option": "Fan-out on read（JOIN follows 與 posts）",
+      "why": "追蹤 500 人就掃 500 個時間線"
+     },
+     {
+      "option": "全部 fan-out on write",
+      "why": "大V（千萬粉絲）發文寫放大"
+     }
+    ],
+    "tradeoff": "寫放大 vs 讀延遲；不活躍使用者可 lazy 重建；feed 只存 id，hydrate 時批次查。"
+   },
+   {
+    "decision": "媒體如何上傳（最大 4GB）",
+    "chosen": "presigned URL 直傳 S3 + multipart/resumable，S3 event 觸發非同步處理",
+    "rejected": [
+     {
+      "option": "經過 app server 轉存",
+      "why": "頻寬/記憶體瓶頸，4GB 超時"
+     }
+    ],
+    "tradeoff": "需處理 uploading→processing→ready 狀態機。"
+   },
+   {
+    "decision": "媒體即時顯示",
+    "chosen": "非同步轉檔 pipeline 產多尺寸圖與 HLS/DASH 多碼率，CDN 邊緣快取，ready 前不進 feed 或顯示 placeholder",
+    "rejected": [
+     {
+      "option": "同步處理或直接服務原檔",
+      "why": "阻塞上傳、4GB 原檔無法即時播放"
+     }
+    ],
+    "tradeoff": "轉檔成本與延遲、多版本儲存。"
+   },
+   {
+    "decision": "追蹤關係的儲存",
+    "chosen": "兩個方向都可查（兩張表，follower/followee 各為 partition key）",
+    "rejected": [
+     {
+      "option": "單向存放",
+      "why": "建 feed 要查 followees，fan-out 要查 followers，單向另一方向需掃描"
+     }
+    ],
+    "tradeoff": "雙寫維護。"
+   },
+   {
+    "decision": "擴展到 500M DAU",
+    "chosen": "Post/Follow 水平分片、Feed cache Redis cluster、Kafka 按 followerId 分區、CDN 吸收媒體流量、冷媒體分層",
+    "rejected": [
+     {
+      "option": "單一 SQL",
+      "why": "撐不住"
+     }
+    ],
+    "tradeoff": "各層獨立擴展，運維複雜；媒體頻寬是成本大宗。"
+   }
+  ],
+  "topics": [
+   "fanout",
+   "blobs",
+   "scaling-reads",
+   "async-jobs",
+   "sharding",
+   "caching"
+  ],
+  "followUps": [
+   "名人發文？不 fan-out，讀時 merge。",
+   "追蹤/取消？追蹤時回填最近 N 筆，取消讀時過濾。",
+   "刪除貼文？soft delete + 非同步清 cache、CDN purge。"
+  ]
+ },
+ {
+  "id": "job-scheduler",
+  "title": "Job Scheduler（任務排程器）",
+  "kind": "面試題",
+  "source": "HelloInterview Premium（補充）",
+  "file": "hellointerview-breakdowns/job-scheduler.md",
+  "origin": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/job-scheduler",
+  "core": "準時（2 秒內）、10k jobs/s 水平擴展、at-least-once 不丟 job，三者同時成立。",
+  "scaleNumbers": [
+   "10k jobs/s",
+   "2 秒內執行",
+   "10k/s ≈ 8.6 億 jobs/天、約 0.86TB/天（補充）"
+  ],
+  "decisions": [
+   {
+    "decision": "如何在 2 秒內準時執行",
+    "chosen": "兩階段：定期把未來 5-10 分鐘的 job 從 DB 撈進 delay queue/Redis ZSET，近期 job 由記憶體 timer 精準觸發",
+    "rejected": [
+     {
+      "option": "每秒全表 poll executeAt<=now",
+      "why": "全表掃，延遲取決於 poll 間隔"
+     },
+     {
+      "option": "只加 index 定期查詢",
+      "why": "熱路徑仍打 DB"
+     }
+    ],
+    "tradeoff": "提前載入需處理期間新增/修改 job（buffer window 與 version）。"
+   },
+   {
+    "decision": "如何擴展到 10k jobs/s",
+    "chosen": "Scheduler 也分片（hash(jobId)%N + 租約/leader election），NoSQL 以時間桶+shard 為 partition key，Worker 依類型分 pool",
+    "rejected": [
+     {
+      "option": "單一 Scheduler + 單一 DB",
+      "why": "單點瓶頸"
+     },
+     {
+      "option": "只分片 DB 與 queue",
+      "why": "Scheduler 仍單點，且需避免重複觸發"
+     }
+    ],
+    "tradeoff": "需 ZooKeeper/etcd 管租約，TTL 清舊紀錄。"
+   },
+   {
+    "decision": "如何 at-least-once",
+    "chosen": "Visibility timeout + ack、heartbeat/lease 延長、exponential backoff + DLQ、Task idempotent",
+    "rejected": [
+     {
+      "option": "Worker 取出即刪 message",
+      "why": "worker 崩潰後 job 遺失"
+     }
+    ],
+    "tradeoff": "exactly-once 難達成，靠 at-least-once + idempotency（jobId+runId）。"
+   },
+   {
+    "decision": "DB 狀態與 queue 發送一致",
+    "chosen": "Transactional outbox",
+    "rejected": [
+     {
+      "option": "先改 DB 狀態再送 queue（無保證）",
+      "why": "DB 已更新但沒送出，job 卡在 QUEUED"
+     }
+    ],
+    "tradeoff": "多一個 outbox 表與 relay。"
+   },
+   {
+    "decision": "避免重複觸發",
+    "chosen": "UPDATE ... WHERE status='pending' 條件更新（CAS）或分片租約",
+    "rejected": [
+     {
+      "option": "多個 Scheduler 無協調撈取",
+      "why": "同一 job 被觸發多次"
+     }
+    ],
+    "tradeoff": "CAS 失敗者要重試其他 job。"
+   }
+  ],
+  "topics": [
+   "async-jobs",
+   "reliability",
+   "idempotency",
+   "sharding",
+   "contention"
+  ],
+  "followUps": [
+   "週期性 job 避免漂移？依排定時間計算下次，錯過看策略補跑或跳過。",
+   "兩個 Scheduler 撈到同一 job？CAS。",
+   "優先級？多 queue 加權輪詢。"
+  ]
+ },
+ {
+  "id": "leetcode",
+  "title": "LeetCode（線上判題 + 競賽排行榜）",
+  "kind": "面試題",
+  "source": "HelloInterview",
+  "file": "hellointerview-breakdowns/leetcode.md",
+  "origin": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/leetcode",
+  "core": "小規模系統：重點是安全隔離執行不受信任的程式碼（queue+非同步取結果）與用 Redis Sorted Set 做競賽即時排行榜，並避免 over-engineering。",
+  "scaleNumbers": [
+   "數十萬用戶、約 4,000 題",
+   "競賽 90 分鐘、10 題、最多 100k 人",
+   "提交 5 秒內回傳",
+   "尖峰 10k 提交 × 100 case × 100ms = 100,000 秒，約需 1,667 cores 才能一分鐘跑完",
+   "排行榜 polling 5 秒、提交結果 polling 1 秒"
+  ],
+  "decisions": [
+   {
+    "decision": "使用者程式碼在哪裡執行",
+    "chosen": "Container（Docker，每語言一種，可重用）+ read-only FS、CPU/memory 限制、timeout、關網路、seccomp",
+    "rejected": [
+     {
+      "option": "直接在 API Server 跑",
+      "why": "惡意程式、無限迴圈、同 process 崩潰拖垮整個 server，安全/效能/隔離皆不可行"
+     },
+     {
+      "option": "VM",
+      "why": "隔離強但資源重、啟動慢、生命週期管理麻煩"
+     },
+     {
+      "option": "Serverless function",
+      "why": "可行但有 cold start 與資源上限；本題提交量變異不大，作者選 container"
+     }
+    ],
+    "tradeoff": "container 共享 kernel，隔離較弱，需正確設定防逃逸與資源限制。"
+   },
+   {
+    "decision": "如何擴展程式執行並處理尖峰",
+    "chosen": "水平擴展（auto-scaling）+ SQS queue，非同步化，client 每秒 polling /check/:id",
+    "rejected": [
+     {
+      "option": "Vertical scaling",
+      "why": "需約 1,667 cores，最大 instance 也僅數百 vCPU，平時閒置浪費"
+     },
+     {
+      "option": "只做 auto-scaling 不加 queue",
+      "why": "尖峰時提交會丟失、容器失敗無法 retry"
+     }
+    ],
+    "tradeoff": "小規模下可能 over-engineering（報名競賽可預測尖峰預先擴容），仍選 queue 為了緩衝與 retry。"
+   },
+   {
+    "decision": "即時排行榜",
+    "chosen": "Redis Sorted Set（ZADD/ZRANGE REV），提交處理後同步更新，client 每 5 秒 polling，先回 top 1,000",
+    "rejected": [
+     {
+      "option": "Polling + DB GROUP BY 排序",
+      "why": "每次輪詢查並排序大量資料，DB 負載飆升"
+     },
+     {
+      "option": "Redis cache + 每 30 秒從 DB 重算",
+      "why": "新鮮度受限 30 秒，適合小規模"
+     },
+     {
+      "option": "WebSocket 推送",
+      "why": "此規模與 5 秒可接受延遲下 overkill"
+     }
+    ],
+    "tradeoff": "最多 5 秒延遲；可做漸進式 polling（最後幾分鐘 2 秒）。"
+   },
+   {
+    "decision": "提交結果如何回給 client",
+    "chosen": "非同步：API 立刻回 submission id，client 每秒 polling 狀態（processing / 結果）",
+    "rejected": [
+     {
+      "option": "同步等待執行完成",
+      "why": "尖峰時連線占用，且無法靠 queue 緩衝與 retry"
+     },
+     {
+      "option": "WebSocket",
+      "why": "1 秒 polling 已足夠，persistent connection 增加複雜度（LeetCode 實際也是 polling）"
+     }
+    ],
+    "tradeoff": "最多 1 秒的額外延遲。"
+   },
+   {
+    "decision": "同一題如何跑多語言測試",
+    "chosen": "每題一套語言無關測試 + 標準化序列化格式 + 每語言 test harness（如 tree 用 BFS 陣列）",
+    "rejected": [
+     {
+      "option": "每題每語言各寫一套測試",
+      "why": "維護成本爆炸"
+     }
+    ],
+    "tradeoff": "每種資料結構都需定義序列化策略。"
+   }
+  ],
+  "topics": [
+   "async-jobs",
+   "realtime",
+   "caching",
+   "scaling-reads"
+  ],
+  "followUps": [
+   "為什麼選 container 不選 VM/Lambda？較輕量，避開 cold start，需加固。",
+   "無限迴圈？timeout + CPU/memory 上限殺掉。",
+   "Container 失敗？queue 重新入列。"
+  ]
+ },
+ {
+  "id": "metrics-monitoring",
+  "title": "Metrics Monitoring（Datadog 類）",
+  "kind": "面試題",
+  "source": "HelloInterview Premium（補充）",
+  "file": "hellointerview-breakdowns/metrics-monitoring.md",
+  "origin": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/metrics-monitoring",
+  "core": "每秒 500 萬點（約 1GB/s）的寫入，加上跨週查詢要在數秒內回應、告警 <1 分鐘，以及 cardinality 控制。",
+  "scaleNumbers": [
+   "500k servers",
+   "5M points/s（每台每 10s 100 點）",
+   "每點 100-200B → 約 0.5-1GB/s",
+   "告警 <1 分鐘",
+   "約 86TB/天原始量（補充）",
+   "agent 批次後約 50k 請求/s（補充）"
+  ],
+  "decisions": [
+   {
+    "decision": "跨數週 dashboard 查詢如何低延遲",
+    "chosen": "TSDB 按時間分區 + 壓縮 + 多解析度 rollup（1m/1h/1d，存 min/max/sum/count）+ 依範圍自動選解析度 + 冷熱分層 + 查詢結果快取",
+    "rejected": [
+     {
+      "option": "每次掃 raw 資料",
+      "why": "數週範圍要讀數百 TB"
+     },
+     {
+      "option": "只做時間分區與壓縮",
+      "why": "縮小掃描但仍無法在長範圍查詢中達到數秒"
+     }
+    ],
+    "tradeoff": "rollup 損失原始精度（百分位需 histogram/t-digest 才能合併），多存一份資料。"
+   },
+   {
+    "decision": "告警如何 <1 分鐘",
+    "chosen": "混合：關鍵規則走 stream（Flink/Kafka Streams）視窗聚合，一般規則走共享的週期查詢；watermark + allowed lateness",
+    "rejected": [
+     {
+      "option": "Evaluator 週期對 TSDB 跑重查詢",
+      "why": "要等資料落盤+查詢開銷，每條規則獨立打 DB"
+     },
+     {
+      "option": "全部走 streaming",
+      "why": "狀態管理複雜；原文也提醒面試不必過度堆疊 streaming"
+     }
+    ],
+    "tradeoff": "串流評估快但複雜，週期查詢簡單但延遲較高。"
+   },
+   {
+    "decision": "尖峰與故障下的高可用",
+    "chosen": "Kafka 緩衝 + agent 本地緩衝重試，寫查路徑隔離，TSDB 跨 AZ 副本，evaluator 多副本互備，告警路徑優先於 dashboard",
+    "rejected": [
+     {
+      "option": "Agent 直接寫 TSDB",
+      "why": "後端抖動就丟資料或拖垮 agent"
+     }
+    ],
+    "tradeoff": "緩衝增加延遲與成本；監控系統自身要被更簡單的系統監控。"
+   },
+   {
+    "decision": "cardinality 爆炸",
+    "chosen": "per-tenant/per-metric series 配額 + 攝取時偵測高基數 label 告警/降級 + 預聚合掉高基數維度",
+    "rejected": [
+     {
+      "option": "允許任意 label（user_id、request_id）",
+      "why": "series 數量爆增，索引與記憶體崩潰"
+     },
+     {
+      "option": "只限制 label 數量",
+      "why": "仍無法防止單一 label 值域過大"
+     }
+    ],
+    "tradeoff": "限制維度降低可觀測細緻度，需用 logs/traces 補足。"
+   }
+  ],
+  "topics": [
+   "scaling-writes",
+   "streaming",
+   "storage-choice",
+   "counting",
+   "reliability"
+  ],
+  "followUps": [
+   "Push 還是 pull？大規模多用 agent push。",
+   "百分位跨主機聚合？不能平均 p99，用 histogram/t-digest。",
+   "告警風暴？去重、分組、抑制、for-duration。"
+  ]
+ },
+ {
+  "id": "notification-system",
+  "title": "Notification System",
+  "kind": "面試題",
+  "source": "HelloInterview Premium（補充）",
+  "file": "hellointerview-breakdowns/notification-system.md",
+  "origin": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/notification-system",
+  "core": "平均流量很低但 campaign 造成約 50x 尖峰：重點是不丟訊息、高優先級不被 campaign 擠壓、at-least-once 下去重。",
+  "scaleNumbers": [
+   "每日 1000 萬則（平均約 100/s）",
+   "campaign 1M 在 5 分鐘內，超過 3,000/s",
+   "設計尖峰 5,000/s（約 50x）",
+   "高優先級 5 秒內送達"
+  ],
+  "decisions": [
+   {
+    "decision": "已接受的通知如何保證不丟",
+    "chosen": "Durable queue（Kafka/SQS）或 transactional outbox 作為接受點，成功才 commit offset，指數退避重試 + DLQ",
+    "rejected": [
+     {
+      "option": "記憶體 queue / 直接呼叫 provider",
+      "why": "服務重啟即遺失"
+     },
+     {
+      "option": "先寫 DB 再回 202 非同步處理",
+      "why": "可行，但 DB 與 queue 發布不原子時仍可能不一致，outbox 更穩"
+     }
+    ],
+    "tradeoff": "at-least-once 保證不丟但可能重複，需靠去重補上。"
+   },
+   {
+    "decision": "campaign 期間如何保住高優先級 5 秒",
+    "chosen": "獨立 topic + 獨立 consumer pool 資源隔離，high 池保留容量；campaign 走受限速 low 通道",
+    "rejected": [
+     {
+      "option": "單一 queue",
+      "why": "OTP 排在 100 萬筆 campaign 後面等好幾分鐘"
+     },
+     {
+      "option": "單純 priority queue 排序",
+      "why": "飽和時仍有 head-of-line blocking"
+     }
+    ],
+    "tradeoff": "隔離浪費些許閒置容量，換確定性延遲；campaign 限速也保護下游 provider。"
+   },
+   {
+    "decision": "at-least-once 下避免重複",
+    "chosen": "idempotency key + 去重表原子 claim（SETNX），provider 支援時傳冪等 key",
+    "rejected": [
+     {
+      "option": "假設不會重複",
+      "why": "重試時使用者收到兩次 OTP"
+     },
+     {
+      "option": "追求 exactly-once",
+      "why": "外部 provider 非 transactional，不可能；claim 與送出之間仍有窗口"
+     }
+    ],
+    "tradeoff": "去重表需 TTL 清理，只能縮小重複窗口。"
+   },
+   {
+    "decision": "campaign 大量 fan-out",
+    "chosen": "分批 cursor 讀 segment、分批寫 queue、可暫停、記錄進度可續跑",
+    "rejected": [
+     {
+      "option": "單一巨大工作展開 100 萬筆",
+      "why": "難限速、難續跑、失敗全部重來"
+     }
+    ],
+    "tradeoff": "實作進度追蹤的複雜度。"
+   }
+  ],
+  "topics": [
+   "async-jobs",
+   "reliability",
+   "idempotency",
+   "fanout",
+   "rate-limiting",
+   "multistep"
+  ],
+  "followUps": [
+   "排程通知？時間索引或 delay queue。",
+   "Provider 當機？circuit breaker + 備援 + 退避。",
+   "Quiet hours？延後，安全告警旁路。"
+  ]
+ },
+ {
+  "id": "online-auction",
+  "title": "Online Auction（線上拍賣）",
+  "kind": "面試題",
+  "source": "HelloInterview Premium（補充）",
+  "file": "hellointerview-breakdowns/online-auction.md",
+  "origin": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/online-auction",
+  "core": "每個拍賣的出價必須強一致序列化，同時把最高價即時推播給觀看者，並擴展到 1000 萬並行拍賣。",
+  "scaleNumbers": [
+   "1000 萬並行拍賣",
+   "約 2,800 bids/s（假設每拍賣每小時 1 次，補充）",
+   "Auction 約 1KB × 1000 萬 ≈ 10GB（補充）"
+  ],
+  "decisions": [
+   {
+    "decision": "出價如何強一致",
+    "chosen": "以 auctionId 分區，同一拍賣出價序列化給單一 writer（Kafka partition / Redis Lua / actor）",
+    "rejected": [
+     {
+      "option": "讀 currentMaxBid→app 比較→寫",
+      "why": "併發出價都通過，較低的蓋掉較高的"
+     },
+     {
+      "option": "DB CAS / optimistic lock / SELECT FOR UPDATE",
+      "why": "可行，但熱門拍賣鎖競爭高、重試風暴"
+     }
+    ],
+    "tradeoff": "單一拍賣吞吐上限（單分區），通常足夠；條件更新仍當最終防線。"
+   },
+   {
+    "decision": "如何不丟出價",
+    "chosen": "先 append 到 Kafka（replication 3, acks=all），Bid 表 append-only 為 source of truth，currentMaxBid 為衍生",
+    "rejected": [
+     {
+      "option": "僅存記憶體/單機 DB",
+      "why": "掛了就丟出價"
+     },
+     {
+      "option": "DB 多 AZ 同步複製",
+      "why": "耐久但不如 log 可重放、可重建衍生狀態"
+     }
+    ],
+    "tradeoff": "多一層 log 增加數十 ms 延遲；處理需 idempotent（bidId 去重）。"
+   },
+   {
+    "decision": "最高價如何即時顯示",
+    "chosen": "Bid Processor 發布事件到 Pub/Sub，SSE/WebSocket Gateway 依 auctionId 訂閱推送，新連線先 GET 再訂閱，更新節流 100-200ms",
+    "rejected": [
+     {
+      "option": "每秒 polling",
+      "why": "大量無效請求"
+     },
+     {
+      "option": "Long polling/SSE 從 DB 讀變化",
+      "why": "DB 負載大，熱門拍賣放大"
+     }
+    ],
+    "tradeoff": "顯示稍晚可接受，但接受與否必須以強一致寫入端為準。"
+   },
+   {
+    "decision": "擴展到 1000 萬拍賣",
+    "chosen": "Auction/Bid 以 auctionId 分片，Kafka 依 auctionId 分區，WebSocket 層 consistent hash，已結束資料冷存",
+    "rejected": [
+     {
+      "option": "單一 DB 單一服務",
+      "why": "無法擴展"
+     }
+    ],
+    "tradeoff": "總量不難（難點是單一熱門拍賣的序列化與 fan-out）；長尾拍賣零成本。"
+   },
+   {
+    "decision": "結束時間與狙擊",
+    "chosen": "序列化器以 server 時間檢查 endTime，結算由 delay queue 觸發並條件更新；anti-sniping 延長放在同一原子操作內",
+    "rejected": [
+     {
+      "option": "client 時間或事後掃描",
+      "why": "不準確且可作弊"
+     }
+    ],
+    "tradeoff": "延長規則增加原子操作的複雜度。"
+   }
+  ],
+  "topics": [
+   "contention",
+   "realtime",
+   "consistency",
+   "fanout",
+   "sharding",
+   "reliability"
+  ],
+  "followUps": [
+   "同毫秒同金額？嚴格大於，先進序列者勝。",
+   "得標後付款失敗？順延第二高，需保留完整 Bid 歷史。",
+   "分區熱點？Redis 原子操作取代 Kafka。"
+  ]
+ },
+ {
+  "id": "online-chess",
+  "title": "Online Chess",
+  "kind": "面試題",
+  "source": "HelloInterview Premium（補充）",
+  "file": "hellointerview-breakdowns/online-chess.md",
+  "origin": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/online-chess",
+  "core": "避免重複配對、500K 並行對局的有狀態 game server 擴展、跨延遲的公平時鐘，以及 10M 玩家排行榜。",
+  "scaleNumbers": [
+   "10M 註冊玩家",
+   "峰值 500K 並行對局、1M 並行連線",
+   "約 55K moves/s 全域（補充）",
+   "每台 10-20K 局 ≈ 25-50 台（補充）",
+   "3 分鐘 blitz"
+  ],
+  "decisions": [
+   {
+    "decision": "如何避免玩家被配對進兩場對局",
+    "chosen": "以玩家狀態為單一真相，原子 CAS 把兩人同時標記 in_game；規模大時 Redis sorted set（依 rating）+ Lua 原子 pop，或依 rating 區間分片 matchmaker",
+    "rejected": [
+     {
+      "option": "多個 matcher 各自讀取、各自建立 Game",
+      "why": "併發選中同一位玩家"
+     },
+     {
+      "option": "SELECT FOR UPDATE SKIP LOCKED",
+      "why": "簡單但悲觀鎖吞吐有限、規模超過 Postgres 時撐不住"
+     }
+    ],
+    "tradeoff": "玩家狀態仍需持久備援以便崩潰恢復。"
+   },
+   {
+    "decision": "game server 如何擴展到 500K 局",
+    "chosen": "一局 pin 在單一 game server（棋盤與時鐘在記憶體），Game Allocator + registry，走法日誌/checkpoint 供故障重建",
+    "rejected": [
+     {
+      "option": "無狀態 server 每步讀寫 DB",
+      "why": "延遲高，需分散式鎖"
+     }
+    ],
+    "tradeoff": "有狀態需處理故障轉移與部署 draining。"
+   },
+   {
+    "decision": "時鐘如何公平",
+    "chosen": "Server 權威時鐘（monotonic）+ 有上限的延遲補償，client 僅顯示預測，超時由 server flag",
+    "rejected": [
+     {
+      "option": "以 client 回報時間為準",
+      "why": "易作弊且受網路抖動影響"
+     },
+     {
+      "option": "純 server 收到時間不補償",
+      "why": "高延遲玩家吃虧"
+     }
+    ],
+    "tradeoff": "補償越多越公平但可被濫用，需設上限。"
+   },
+   {
+    "decision": "10M 玩家排行榜",
+    "chosen": "Redis Sorted Set（ZADD/ZREVRANK/ZREVRANGE），由結果事件（Kafka）驅動，以 game_id 去重",
+    "rejected": [
+     {
+      "option": "ORDER BY rating 全表排序，COUNT(*) 計 rank",
+      "why": "太慢"
+     },
+     {
+      "option": "DB 索引 + COUNT",
+      "why": "top N 可行，但個人 rank 計算仍慢"
+     }
+    ],
+    "tradeoff": "DB 為真相來源 Redis 可重建；超大可分桶合併；需「短時間內更新」非同步足夠。"
+   }
+  ],
+  "topics": [
+   "contention",
+   "realtime",
+   "consistency",
+   "counting",
+   "sharding",
+   "geo"
+  ],
+  "followUps": [
+   "Game server 當機？從走法日誌重建並補償時鐘。",
+   "玩家斷線？重連寬限期，時鐘持續走。",
+   "部署新版？draining。"
+  ]
+ },
+ {
+  "id": "payment-system",
+  "title": "Payment System（Stripe 類支付系統）",
+  "kind": "面試題",
+  "source": "HelloInterview Premium（補充）",
+  "file": "hellointerview-breakdowns/payment-system.md",
+  "origin": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/payment-system",
+  "core": "對非同步外部 card network 做授權，核心是不丟、不重、可稽核：idempotency、持久化狀態機、append-only ledger、對帳。",
+  "scaleNumbers": [
+   "10,000+ TPS 高峰",
+   "每筆約 10KB 事件 → 約 100MB/s Kafka 寫入（補充）",
+   "授權往返外部網路 1-3 秒（補充）"
+  ],
+  "decisions": [
+   {
+    "decision": "如何保證高度安全",
+    "chosen": "Client-side tokenization，卡號只進隔離的 Card Vault，其他服務只看 token，縮小 PCI 範圍；TLS、欄位級加密、HMAC 簽章",
+    "rejected": [
+     {
+      "option": "商家伺服器接收並轉送卡號",
+      "why": "商家與我們都擴大 PCI 範圍"
+     }
+    ],
+    "tradeoff": "需維運獨立 vault（HSM、網路隔離）。"
+   },
+   {
+    "decision": "如何持久且可稽核",
+    "chosen": "Append-only ledger（事件溯源/複式記帳），事件先寫 durable log（Kafka RF3, acks=all），CDC 同步，日終與 acquirer 對帳",
+    "rejected": [
+     {
+      "option": "只存最新狀態直接 UPDATE 覆蓋",
+      "why": "無歷史，出錯無法追查"
+     },
+     {
+      "option": "僅 ACID DB + 多 AZ 複製",
+      "why": "耐久但缺稽核歷史與補償機制"
+     }
+    ],
+    "tradeoff": "儲存量大需分區歸檔；用補償分錄取代回滾。"
+   },
+   {
+    "decision": "外部非同步網路下如何保證不重複扣款",
+    "chosen": "Idempotency key + 持久化狀態機；逾時進 unknown，用 reference id 查詢或等 webhook，絕不盲目重送；transactional outbox",
+    "rejected": [
+     {
+      "option": "呼叫外部 API 逾時就重送",
+      "why": "可能重複扣款"
+     },
+     {
+      "option": "2PC 跨外部網路",
+      "why": "外部系統不支援；改用 saga + 補償 + 對帳"
+     }
+    ],
+    "tradeoff": "狀態機與對帳 job 的複雜度；key 綁定 request hash，內容不同回 422。"
+   },
+   {
+    "decision": "如何擴展到 10k TPS",
+    "chosen": "無狀態 API 水平擴展，Kafka 以 paymentId 為 partition key，DB 依 merchantId/paymentId 分片，單筆在單一 shard 完成，跨實體走 saga",
+    "rejected": [
+     {
+      "option": "單機 Postgres",
+      "why": "10k TPS 吃緊"
+     }
+    ],
+    "tradeoff": "分片後跨 shard 交易困難；大商家熱點需更細 key。"
+   },
+   {
+    "decision": "Webhook 通知商家",
+    "chosen": "事件進 Kafka，Dispatcher 簽章 POST，exponential backoff 重試 + DLQ，商家以 event id 去重，每商家隔離限流",
+    "rejected": [
+     {
+      "option": "同步通知或不重試",
+      "why": "商家不可用時丟事件或拖垮系統"
+     }
+    ],
+    "tradeoff": "at-least-once 投遞，亂序需以 GET 最新狀態為準。"
+   }
+  ],
+  "topics": [
+   "idempotency",
+   "multistep",
+   "reliability",
+   "consistency",
+   "auth",
+   "async-jobs"
+  ],
+  "followUps": [
+   "外部呼叫逾時？標 unknown，查詢不重送。",
+   "如何帳平？複式記帳 + 每日對帳。",
+   "為何不用 2PC？外部不支援，用 saga。"
+  ]
+ },
+ {
+  "id": "robinhood",
+  "title": "Robinhood",
+  "kind": "面試題",
+  "source": "HelloInterview Premium（補充）",
+  "file": "hellointerview-breakdowns/robinhood.md",
+  "origin": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/robinhood",
+  "core": "broker 而非 exchange：難在把即時股價 fan-out 給大量用戶、追蹤訂單狀態，以及與外部 exchange 的訂單一致性。",
+  "scaleNumbers": [
+   "全市場約 8k symbols，熱門 symbol 每秒數百 tick（補充）",
+   "假設 10M 用戶、1M 同時在線、每人訂閱約 10 symbol（補充）",
+   "約 20 台 push 節點（補充）"
+  ],
+  "decisions": [
+   {
+    "decision": "即時股價如何擴展",
+    "chosen": "Exchange feed 由少數 ingest 節點訂閱一次，Pub/Sub 按 symbol 分 channel，Push 節點只訂閱其連線關心的 symbols，熱門 symbol 做 conflation（100-250ms 推最新價）",
+    "rejected": [
+     {
+      "option": "Client 輪詢 REST",
+      "why": "N 用戶 × 頻率打爆後端"
+     },
+     {
+      "option": "WebSocket/SSE + Redis 單純轉發",
+      "why": "可行但未解熱門 symbol 的 tick 洪流與訂閱過濾"
+     }
+    ],
+    "tradeoff": "conflation 犧牲每筆 tick 完整性（散戶 app 可接受）。"
+   },
+   {
+    "decision": "訂單更新如何追蹤",
+    "chosen": "trade feed 進 Kafka（exchange_order_id 為 partition key），Updater 冪等（fill id 去重）更新 DB，再 per-user channel 推送",
+    "rejected": [
+     {
+      "option": "Client 輪詢訂單",
+      "why": "浪費且延遲"
+     },
+     {
+      "option": "每個 Order Service 實例各自訂閱 feed",
+      "why": "重複處理"
+     }
+    ],
+    "tradeoff": "多一層 stream 增加延遲但可靠可重放；部分成交需聚合 fill。"
+   },
+   {
+    "decision": "訂單一致性（與外部 exchange）",
+    "chosen": "先寫 DB（pending）再呼叫 exchange；idempotency key + 狀態機 + client_order_id 當 exchange 端冪等鍵；逾時查詢狀態對帳不盲重試；outbox",
+    "rejected": [
+     {
+      "option": "先呼叫 exchange 再寫 DB",
+      "why": "中間崩潰造成幽靈訂單或重複下單"
+     }
+    ],
+    "tradeoff": "嚴格序列化犧牲少許吞吐，換金融正確性；與價格推送的最終一致不同。"
+   },
+   {
+    "decision": "不同資料的一致性分級",
+    "chosen": "價格最終一致、訂單強一致",
+    "rejected": [
+     {
+      "option": "全部強一致",
+      "why": "價格推送量大，強一致不必要且昂貴"
+     }
+    ],
+    "tradeoff": "需明確區分兩條路徑。"
+   }
+  ],
+  "topics": [
+   "realtime",
+   "fanout",
+   "idempotency",
+   "multistep",
+   "consistency"
+  ],
+  "followUps": [
+   "下單逾時？用 client_order_id 查詢狀態。",
+   "取消與成交同時？以 exchange 回報為準。",
+   "斷線錯過更新？重連 REST 拉快照再接推送。"
+  ]
+ },
+ {
+  "id": "strava",
+  "title": "Strava（運動追蹤）",
+  "kind": "面試題",
+  "source": "HelloInterview Premium（補充）",
+  "file": "hellointerview-breakdowns/strava.md",
+  "origin": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/strava",
+  "core": "離線優先（client 為 source of truth）+ 把連續 GPS 串流改成事件以降低寫入 + 好友即時分享與排行榜。",
+  "scaleNumbers": [
+   "1000 萬同時進行的活動",
+   "GPS 每 4 秒一點 → 即時上傳約 250 萬 writes/s（補充）",
+   "批次 60 秒約 17 萬 requests/s（補充）",
+   "1 小時活動約 18KB（補充）"
+  ],
+  "decisions": [
+   {
+    "decision": "如何離線追蹤",
+    "chosen": "本地 SQLite 為 source of truth，統計在 device 計算；以 client 生成的 activityId 做 idempotent 上傳，斷點續傳",
+    "rejected": [
+     {
+      "option": "每個 GPS 點即時送 server",
+      "why": "無網路就全丟"
+     },
+     {
+      "option": "本地 buffer 但 server 為真相",
+      "why": "仍無法在離線時提供準確即時統計"
+     }
+    ],
+    "tradeoff": "電量（取樣頻率、批次大小）、本地儲存上限、時鐘漂移。"
+   },
+   {
+    "decision": "如何擴展到 1000 萬並發活動的寫入",
+    "chosen": "統計在本地算，活動結束時才上傳一次（連續串流變完成事件）；需要即時分享才開串流；NoSQL 依 userId 分區，GPS blob 放 S3",
+    "rejected": [
+     {
+      "option": "每點一個 request 寫 RDBMS",
+      "why": "約 250 萬 writes/s 撐不住"
+     },
+     {
+      "option": "client 批次 30-60 秒 + Kafka 緩衝",
+      "why": "降 1-2 個量級但仍需持續寫入，非必要"
+     }
+    ],
+    "tradeoff": "好友即時分享與伺服器端即時資料需額外 opt-in 通道。"
+   },
+   {
+    "decision": "好友即時分享",
+    "chosen": "opt-in Live 模式，Pub/Sub 訂閱制只對正在觀看的好友 fan-out；大 V 只 pull 或延遲 CDN 快取",
+    "rejected": [
+     {
+      "option": "好友 polling GET",
+      "why": "浪費且延遲高"
+     },
+     {
+      "option": "推給所有好友",
+      "why": "大量無人觀看的推送浪費"
+     }
+    ],
+    "tradeoff": "最終一致即可（available >> consistent）。"
+   },
+   {
+    "decision": "排行榜",
+    "chosen": "Redis Sorted Set（ZINCRBY leaderboard:{week}:{segment}），完成事件經 Kafka 更新，依時間窗與區域分 key，舊 key TTL",
+    "rejected": [
+     {
+      "option": "ORDER BY distance 全表掃",
+      "why": "每次太慢"
+     },
+     {
+      "option": "DB 索引 + cron 預算",
+      "why": "不即時"
+     }
+    ],
+    "tradeoff": "記憶體成本，需可由 DB 重建；大規模 shard 後合併 top-K。"
+   }
+  ],
+  "topics": [
+   "scaling-writes",
+   "realtime",
+   "fanout",
+   "storage-choice",
+   "idempotency",
+   "counting"
+  ],
+  "followUps": [
+   "重複上傳？(activityId, seq) 去重。",
+   "防作弊？速度異常偵測，非同步離線。",
+   "Segment 排行榜？geohash 預索引，完成後非同步比對。"
+  ]
+ },
+ {
+  "id": "ticketmaster",
+  "title": "Ticketmaster",
+  "kind": "面試題",
+  "source": "HelloInterview",
+  "file": "hellointerview-breakdowns/ticketmaster.md",
+  "origin": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/ticketmaster",
+  "core": "讀多寫少的瀏覽/搜尋 + 絕不能重複賣票的訂票流程：難在結帳期間暫時鎖票、千萬人搶同一場、搜尋低延遲。",
+  "scaleNumbers": [
+   "10 million users 搶同一個 event",
+   "讀寫比 100:1",
+   "搜尋 <500ms",
+   "預留 TTL 範例 10 分鐘",
+   "搜尋 cache TTL 範例 24 小時"
+  ],
+  "decisions": [
+   {
+    "decision": "結帳期間如何鎖票（reservation）",
+    "chosen": "Redis distributed lock + TTL（SET NX EX，ticketId 為 key），付款完成後 DB 設 booked 並釋放；DB OCC/row lock 為最終防線",
+    "rejected": [
+     {
+      "option": "SELECT FOR UPDATE 長時間 DB lock",
+      "why": "長 transaction 耗資源、lock contention 與 deadlock，crash 時鎖狀態不明，無法擴展"
+     },
+     {
+      "option": "status + expiration + cron 釋放",
+      "why": "cron 延遲使過期票仍不可買，cron 失敗造成票全看似不可用"
+     },
+     {
+      "option": "Implicit status（可用=AVAILABLE 或 RESERVED 已過期）",
+      "why": "可行且不靠 cron，但讀取要多過濾條件、表格較不直觀"
+     }
+    ],
+    "tradeoff": "Redis 掛了只是體驗降級（付款後才發現被搶），DB 仍保證不 double booking；TTL 在付款中過期時 DB transaction 只讓一人成功，失敗者由 Stripe 退款，故 TTL 設寬鬆並於付款時延長。"
+   },
+   {
+    "decision": "seat map 如何顯示 Redis 的保留座位",
+    "chosen": "sorted set（score=過期時間），只計未過期者，ZREMRANGEBYSCORE 惰性清除",
+    "rejected": [
+     {
+      "option": "Redis Set",
+      "why": "key 過期但 set member 不過期，留下幽靈成員"
+     },
+     {
+      "option": "取鎖時 write-through 狀態到 DB 並定期清掃",
+      "why": "可行替代，但增加 DB 寫入與清掃"
+     }
+    ],
+    "tradeoff": "讀路徑變複雜。"
+   },
+   {
+    "decision": "熱門活動百萬人湧入體驗",
+    "chosen": "Virtual Waiting Queue（Redis sorted set + admitted set），SSE 推送隊列位置，Booking Service 檢查 admitted",
+    "rejected": [
+     {
+      "option": "僅 SSE 即時推送座位變化",
+      "why": "Taylor Swift 級座位秒被搶光，使用者看座位秒消失體驗仍差"
+     }
+    ],
+    "tradeoff": "等待過久使用者挫折，靠位置與預估等待時間緩解；原文觀點：有時最佳解是跳出技術限制解決商業問題。"
+   },
+   {
+    "decision": "搜尋如何低延遲",
+    "chosen": "Elasticsearch（inverted index）+ CDC 從 Postgres 近即時同步，支援 fuzzy",
+    "rejected": [
+     {
+      "option": "LIKE '%x%'",
+      "why": "full table scan"
+     },
+     {
+      "option": "索引 + SQL 優化",
+      "why": "對部分字串匹配效果有限，索引增加寫入成本"
+     },
+     {
+      "option": "Postgres tsvector/GIN full-text",
+      "why": "額外儲存與維護、查詢可能較慢，也不支援容錯式模糊搜尋"
+     }
+    ],
+    "tradeoff": "同步一致性複雜、叢集維運成本。"
+   },
+   {
+    "decision": "View 與搜尋如何擴展",
+    "chosen": "事件資料 read-through cache（Redis）+ TTL，Event Service 無狀態水平擴展；搜尋結果 Redis 或 ES cache + CDN（非個人化）",
+    "rejected": [
+     {
+      "option": "每次直接查 DB",
+      "why": "千萬級並發讀取打爆 DB"
+     }
+    ],
+    "tradeoff": "cache 與 DB 一致性（活動資料不常更新）；新活動公布時搜尋結果失效困難。"
+   }
+  ],
+  "topics": [
+   "contention",
+   "scaling-reads",
+   "realtime",
+   "search",
+   "caching",
+   "consistency"
+  ],
+  "followUps": [
+   "Redis 掛了會 double booking 嗎？不會，DB OCC 保證。",
+   "Stripe webhook 重送？handler idempotent，bookingId 為 key。",
+   "為何不用 SELECT FOR UPDATE 鎖到付款完成？長 transaction。"
+  ]
+ },
+ {
+  "id": "tinder",
+  "title": "Tinder（Dating App）",
+  "kind": "面試題",
+  "source": "HelloInterview",
+  "file": "hellointerview-breakdowns/tinder.md",
+  "origin": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/tinder",
+  "core": "兩人同時右滑時 match 不能漏：要把雙向 swipe 路由到同一 key/partition 做原子『寫自己+讀對方』，只對這一條路徑用強一致，feed 可 stale。",
+  "scaleNumbers": [
+   "20M DAU",
+   "約 100 swipes/user/day → 2B swipes/day（原文另處 200/day 得 4B，不一致）",
+   "約 200GB/day swipe 資料",
+   "載入 stack <300ms",
+   "feed cache TTL <1 小時"
+  ],
+  "decisions": [
+   {
+    "decision": "如何確保 match 不漏（strong consistency）",
+    "chosen": "Redis Lua script，key=swipes:{smaller}:{larger}，HSET 自己再 HGET 對方，同一原子步驟；Cassandra 為 durable 層",
+    "rejected": [
+     {
+      "option": "DB polling 找互相右滑",
+      "why": "延遲高、無即時回饋、輪詢負載"
+     },
+     {
+      "option": "Cassandra LWT / transaction（以 swiping_user 分區）",
+      "why": "LWT 只支援單 partition，雙方 swipe 在不同 partition；Paxos 多輪開銷"
+     },
+     {
+      "option": "以 user_pair 為 partition key 的 Cassandra 單 partition batch",
+      "why": "可行，但 partition 隨歷史變大、活躍使用者 hot partition，需清理策略"
+     }
+    ],
+    "tradeoff": "需維運 Redis cluster；Redis 可積極 expire，遺失只讓近期 swipe 偵測不到 match，歷史在 Cassandra。也可選 availability + 對帳 job。"
+   },
+   {
+    "decision": "feed / stack 如何 <300ms",
+    "chosen": "預先計算 + 快取 feed，快用完時背景由 Elasticsearch（geo index，CDC 同步）刷新",
+    "rejected": [
+     {
+      "option": "SQL age/lat/long 範圍查詢",
+      "why": "太慢，尤其地理查詢"
+     },
+     {
+      "option": "只預算快取",
+      "why": "重度使用者耗盡 cache，資料 stale，用完還是要跑昂貴 query"
+     },
+     {
+      "option": "只用即時 ES 查詢",
+      "why": "每次請求都付出查詢延遲"
+     }
+    ],
+    "tradeoff": "stale feed 以 TTL<1h、只 warm 活躍使用者、filter/位置變動觸發刷新處理，這些為可調參數。"
+   },
+   {
+    "decision": "不重複顯示已滑過的 profile",
+    "chosen": "client 端 cache 最近 K 筆 swipe；歷史龐大者用 Bloom filter cache",
+    "rejected": [
+     {
+      "option": "feed builder 查 swipe DB contains check",
+      "why": "可用性優先 DB 尚未同步 replica 會漏掉剛滑的；歷史長時越來越貴"
+     }
+    ],
+    "tradeoff": "Bloom filter 有 false positive（少數 profile 永遠不被顯示）、零 false negative；需隨 swipe 更新、cache 掛了重建昂貴，原文稱略 over-engineered。"
+   },
+   {
+    "decision": "swipe 資料存哪裡",
+    "chosen": "獨立 Swipe Service + Cassandra（寫入優化）",
+    "rejected": [
+     {
+      "option": "與 profile 共用 DB",
+      "why": "swipe 寫入遠多於 profile 變更，需獨立擴展"
+     }
+    ],
+    "tradeoff": "eventual consistency，由上面的原子層補強。"
+   },
+   {
+    "decision": "先滑者如何得知 match",
+    "chosen": "後滑者在 swipe 回應立即看到；先滑者透過 APNS/FCM push",
+    "rejected": [
+     {
+      "option": "讓先滑者輪詢",
+      "why": "可能是數週前的 swipe，輪詢浪費"
+     }
+    ],
+    "tradeoff": "依賴推播通道。"
+   }
+  ],
+  "topics": [
+   "contention",
+   "consistency",
+   "scaling-reads",
+   "geo",
+   "search",
+   "caching"
+  ],
+  "followUps": [
+   "為什麼不用 Cassandra LWT？只支援單 partition。",
+   "Redis 掛了會漏 match 嗎？只漏近期，歷史在 Cassandra，可對帳補。",
+   "Bloom filter 代價？false positive 與重建成本。"
+  ]
+ },
+ {
+  "id": "top-k",
+  "title": "YouTube Top K",
+  "kind": "面試題",
+  "source": "HelloInterview",
+  "file": "hellointerview-breakdowns/top-k.md",
+  "origin": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/top-k",
+  "core": "對巨量 view stream 精確回答 1 小時/日/月/all-time 的 top K，且查詢數十毫秒：解法是把複雜度從讀移到寫（precompute、shard、批次聚合）。",
+  "scaleNumbers": [
+   "70B views/day → 約 700k TPS（以 100k 秒/天）",
+   "單節點 RDBMS 約 10k+ writes/s → 不批次需約 70 shard，批次後約 5-10",
+   "約 4B 影片，計數表 64GB",
+   "K 上限 1k、延遲容忍 1 分鐘、回應數十 ms",
+   "Flink watermark 約 30 秒",
+   "Flink sliding 1 分鐘 slide 記憶體乘 43,200 倍"
+  ],
+  "decisions": [
+   {
+    "decision": "如何讓查詢達數十毫秒",
+    "chosen": "cron 預算每個 window 的 top K 並暖 cache（Redis），Top-K Service 只讀 cache，保留舊 entry 數小時作 stale fallback",
+    "rejected": [
+     {
+      "option": "每次查 DB",
+      "why": "掃描數十億列太慢"
+     },
+     {
+      "option": "只做 miss 時計算的 cache",
+      "why": "過期時湧入大量 DB 請求且這些請求違反 SLA；request coalescing 解 (a) 不解 (b)"
+     }
+    ],
+    "tradeoff": "cron 失敗要監控，靠 stale 資料兜底。"
+   },
+   {
+    "decision": "如何處理 700k TPS 寫入",
+    "chosen": "Kafka 依 videoId 分區對應 DB shard，Flink 以 watermark（約 30 秒）按小時 tumbling window 批次聚合再寫，寫入量降 2-100 倍",
+    "rejected": [
+     {
+      "option": "每個 view 寫一次到單一 Postgres",
+      "why": "遠超單節點 10k+ writes/s"
+     },
+     {
+      "option": "只 shard 不批次",
+      "why": "需約 70 個 shard"
+     }
+    ],
+    "tradeoff": "各 shard 取 top K 再 merge 數學上保證含全域 top K（每影片只在一 shard）；Flink 依賴知識。"
+   },
+   {
+    "decision": "window 查詢如何優化",
+    "chosen": "每個 window 一張聚合表（含 views index），Flink 小時結束時改寫各表，top-K 走 index 為 O(k)",
+    "rejected": [
+     {
+      "option": "查詢時 SUM 小時粒度 GROUP BY",
+      "why": "處理數百 GB，分鐘到小時級"
+     },
+     {
+      "option": "粗粒度（日）聚合 + cron",
+      "why": "增加 DB 負載、延遲鏈長"
+     },
+     {
+      "option": "全在 Flink 記憶體內聚合（取消 Postgres）",
+      "why": "高度依賴 Flink 知識，易變成 low-level 面試，原文不建議"
+     }
+    ],
+    "tradeoff": "複雜度從讀移到寫，要維護 4 張表。"
+   },
+   {
+    "decision": "sliding window 還是 tumbling",
+    "chosen": "Tumbling（可提議僅最近一小時用 sliding）",
+    "rejected": [
+     {
+      "option": "Sliding window（increment/decrement）",
+      "why": "需讀取遞減、保留一個月分鐘粒度資料，放大 DB 壓力"
+     },
+     {
+      "option": "Flink 原生 sliding window",
+      "why": "1 分鐘 slide 記憶體乘 43,200 倍不可行"
+     }
+    ],
+    "tradeoff": "月榜變動慢，tumbling 對產品體驗足夠。"
+   },
+   {
+    "decision": "是否使用近似與專用 DB",
+    "chosen": "預設精確；若放寬則 Count-Min Sketch + heap（Flink state 優於 Redis）",
+    "rejected": [
+     {
+      "option": "InfluxDB/Prometheus",
+      "why": "數十億 series 高基數，top() 要掃全部"
+     },
+     {
+      "option": "Redis CMS + sorted set",
+      "why": "durability 問題：CMS 與 sorted set 可能不一致，重建慢"
+     },
+     {
+      "option": "TimescaleDB / Druid / Pinot / ClickHouse",
+      "why": "可行但與自建很像，仍需 cache 與 shard，大規模有穩定性問題"
+     }
+    ],
+    "tradeoff": "簡單 primitives 優於累積不熟的專用技術。"
+   }
+  ],
+  "topics": [
+   "counting",
+   "scaling-writes",
+   "scaling-reads",
+   "streaming",
+   "sharding",
+   "caching"
+  ],
+  "followUps": [
+   "為什麼 shard 後 top K 能 merge？每影片只屬一 shard。",
+   "Thundering herd？request coalescing + cron 預算。",
+   "遲到事件？bounded out-of-orderness watermark。"
+  ]
+ },
+ {
+  "id": "uber",
+  "title": "Uber",
+  "kind": "面試題",
+  "source": "HelloInterview",
+  "file": "hellointerview-breakdowns/uber.md",
+  "origin": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/uber",
+  "core": "高頻司機定位寫入 + 地理鄰近搜尋，加上派單時每位司機同一時間只能收到一個請求的一致性問題。",
+  "scaleNumbers": [
+   "約 10M 司機、每 5 秒上報 → 約 2M updates/s",
+   "DynamoDB 2M 寫/s、100B 每筆，約 $1.25/百萬 WRU，超過 $200k/天",
+   "司機接受視窗 10 秒",
+   "配對 <1 分鐘",
+   "陳舊定位清除門檻 30 秒",
+   "同一地點 100k requests",
+   "Redis geohash 52-bit score"
+  ],
+  "decisions": [
+   {
+    "decision": "高頻定位寫入與鄰近搜尋",
+    "chosen": "Redis in-memory geo（GEOADD/GEOSEARCH）+ 時間戳 companion sorted set 清除陳舊（30 秒）",
+    "rejected": [
+     {
+      "option": "每筆直接寫 DB 並對 raw 查詢",
+      "why": "2M 寫/秒撐不住或成本過高，B-tree 不適合多維資料"
+     },
+     {
+      "option": "批次寫入 + 專用 geospatial DB（quad-tree/PostGIS）",
+      "why": "批次間隔造成資料延遲，配對不佳"
+     }
+    ],
+    "tradeoff": "durability：RDB/AOF + Sentinel；資料遺失影響小，因每 5 秒重報。"
+   },
+   {
+    "decision": "降低定位更新負載",
+    "chosen": "Adaptive location update intervals（client 依速度、方向、距離、狀態調整頻率）",
+    "rejected": [
+     {
+      "option": "固定高頻上報",
+      "why": "浪費寫入與電量"
+     }
+    ],
+    "tradeoff": "演算法設計與測試複雜。"
+   },
+   {
+    "decision": "防止司機同時收到多個請求",
+    "chosen": "Redis distributed lock + TTL（driverId 為 key，TTL=10 秒）",
+    "rejected": [
+     {
+      "option": "application-level locking + 手動 timeout",
+      "why": "多實例無協調、race、crash 後 lock 殘留"
+     },
+     {
+      "option": "DB 狀態更新 + in-memory timer",
+      "why": "服務 crash/重啟 timer 消失，lock 永久殘留；補 cron 增加複雜度與延遲"
+     }
+    ],
+    "tradeoff": "依賴 Redis 可用性；鎖短暫恢復容易。與 Ticketmaster 同構。"
+   },
+   {
+    "decision": "尖峰不掉單",
+    "chosen": "Queue（Kafka 成功配對後才 commit offset）+ 動態擴縮，可依地區切分、priority queue",
+    "rejected": [
+     {
+      "option": "無 queue 先來先處理",
+      "why": "無法快速擴容，實例掛掉請求遺失"
+     }
+    ],
+    "tradeoff": "FIFO 可能 head-of-line blocking，可用 priority queue。"
+   },
+   {
+    "decision": "司機沒回應如何處理",
+    "chosen": "Durable execution（Temporal / Step Functions）建模配對 workflow，10 秒 timeout 後換下一位",
+    "rejected": [
+     {
+      "option": "Delay queue",
+      "why": "需管理多個延遲訊息、取消與 race 協調"
+     }
+    ],
+    "tradeoff": "orchestration 系統的學習與維運成本，對任務關鍵系統通常值得。"
+   }
+  ],
+  "topics": [
+   "geo",
+   "contention",
+   "realtime",
+   "multistep",
+   "async-jobs",
+   "sharding"
+  ],
+  "followUps": [
+   "為何不用 DynamoDB 存定位？2M 寫/秒成本 >$200k/天。",
+   "為何 in-memory timer 不行？crash 即消失。",
+   "跨 shard 邊界搜尋？scatter-gather。"
+  ]
+ },
+ {
+  "id": "web-crawler",
+  "title": "Web Crawler",
+  "kind": "面試題",
+  "source": "HelloInterview",
+  "file": "hellointerview-breakdowns/web-crawler.md",
+  "origin": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/web-crawler",
+  "core": "10B 頁 5 天爬完的資料處理 pipeline：fault tolerance、politeness（robots.txt/rate limit）與頻寬/DNS 的容量估算。",
+  "scaleNumbers": [
+   "10B 頁、平均 2MB（純 HTML 約 30KB）、5 天",
+   "單機 200 Gbps → 理論 12,500 pages/s，用 30% → 3,750/s",
+   "單機 30.9 天，8 台約 3.9 天",
+   "單網域 1 req/s",
+   "5 次重試後視為離線（DLQ）",
+   "depth 上限 15-20",
+   "DNS 佔 thread 時間最高 70%（Mercator）"
+  ],
+  "decisions": [
+   {
+    "decision": "如何 fault tolerant 不丟進度",
+    "chosen": "多階段 pipeline（URL Fetcher → Text & URL Extraction）以 queue 串接，HTML 存 blob，queue 只傳 URL id，Metadata DB 記錄狀態",
+    "rejected": [
+     {
+      "option": "單一 crawler 做完所有事",
+      "why": "任一環失敗進度全失"
+     },
+     {
+      "option": "把原始 HTML 放進 queue",
+      "why": "queue 不適合大 payload 且貴"
+     }
+    ],
+    "tradeoff": "隔離失敗、獨立擴展，代價是多元件。"
+   },
+   {
+    "decision": "抓取失敗如何重試",
+    "chosen": "SQS + visibility timeout，用 ChangeMessageVisibility 與 ApproximateReceiveCount 做指數退避，超過 maxReceiveCount 進 DLQ",
+    "rejected": [
+     {
+      "option": "in-memory timer",
+      "why": "crash 就丟，幾秒內多半不會成功"
+     },
+     {
+      "option": "Kafka + 手動指數退避（retry topic/服務）",
+      "why": "可行但實作與維運複雜"
+     }
+    ],
+    "tradeoff": "SQS 無內建退避，靠 primitives 組合。"
+   },
+   {
+    "decision": "politeness",
+    "chosen": "解析並存 robots.txt（Disallow 則 ack 跳過），Crawl-delay 用 ChangeMessageVisibility 延後；Redis SET NX + TTL per-domain lock；sliding window 1 req/s + jitter",
+    "rejected": [
+     {
+      "option": "不協調多個 crawler",
+      "why": "多 crawler 同時拿到同網域 URL，看到過期的最後爬取時間，race"
+     }
+    ],
+    "tradeoff": "jitter 防同步重試；DelaySeconds 只對新訊息有效。"
+   },
+   {
+    "decision": "如何在 5 天爬完 10B 頁",
+    "chosen": "頻寬估算：約 8 台 crawler，parser workers 依 queue 積壓動態擴縮；DNS caching + 多 DNS 供應商 round-robin",
+    "rejected": [
+     {
+      "option": "單機爬",
+      "why": "需約 30.9 天"
+     },
+     {
+      "option": "忽略 DNS",
+      "why": "規模下 DNS 成為真正瓶頸"
+     }
+    ],
+    "tradeoff": "估算假設多（30% 利用率），需 load test；面試重點是推理。"
+   },
+   {
+    "decision": "去重與 crawler trap",
+    "chosen": "URL-level（Metadata DB 查）+ content hash（欄位 index）；depth 上限 15-20",
+    "rejected": [
+     {
+      "option": "Bloom filter 為主",
+      "why": "此處偏 overkill，index 更實際；有 false positive"
+     },
+     {
+      "option": "不去重/不限 depth",
+      "why": "重複工作、被 trap 困住"
+     }
+    ],
+    "tradeoff": "hash index 變大拖慢寫入的擔憂過度悲觀。"
+   }
+  ],
+  "topics": [
+   "async-jobs",
+   "rate-limiting",
+   "reliability",
+   "blobs",
+   "storage-choice",
+   "scaling-writes"
+  ],
+  "followUps": [
+   "crawler 掛了？訊息保留在 queue，HTML 存 blob 後才刪。",
+   "需要幾台？頻寬 ÷ 2MB × 30% → 8 台。",
+   "定期重爬？URL Scheduler。"
+  ]
+ },
+ {
+  "id": "whatsapp",
+  "title": "WhatsApp（Messaging App）",
+  "kind": "面試題",
+  "source": "HelloInterview",
+  "file": "hellointerview-breakdowns/whatsapp.md",
+  "origin": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/whatsapp",
+  "core": "把『即時』與『可靠』拆開：先 durable 寫 Message + Inbox，再用 at-most-once 的 Redis Pub/Sub 推送；漏掉的靠 ACK、heartbeat+sequence、reconnect sync 補回。",
+  "scaleNumbers": [
+   "10 億 user、2 億同時在線",
+   "每人每天約 20 則 → 約 40K msg/s，含 Inbox 約 100K writes/s",
+   "單機 1-2M 連線 → 數百台 Chat Server",
+   "per-user Kafka topic：50KB × 10 億 = 50TB+",
+   "heartbeat 2 億/10s = 2000 萬 ping/pong/s",
+   "polling 2 億/30s ≈ 700 萬 QPS",
+   "延遲 <500ms、離線最長 30 天、群聊上限 100"
+  ],
+  "decisions": [
+   {
+    "decision": "跨 Chat Server 路由訊息",
+    "chosen": "Redis Pub/Sub（以 userId 分 channel）；先寫 Message+Inbox 再 publish（best-effort）",
+    "rejected": [
+     {
+      "option": "LB 後單純水平擴充",
+      "why": "server 沒有目標連線，送不到"
+     },
+     {
+      "option": "每個 user 一個 Kafka topic",
+      "why": "每 topic 約 50KB overhead，10 億 user 50TB+，Kafka 不是為億級 topic 設計"
+     },
+     {
+      "option": "Consistent hashing + ZooKeeper/etcd",
+      "why": "Chat Server 需互連（機器大數量少），擴縮容要避免 thundering herd 與雙寫"
+     }
+    ],
+    "tradeoff": "Pub/Sub at-most-once，丟了靠 Inbox；多一跳個位數 ms 延遲。"
+   },
+   {
+    "decision": "partition by user 還是 by chat",
+    "chosen": "以 user 為主，大群（超過門檻如 25 人）自適應額外訂閱 chat-level channel",
+    "rejected": [
+     {
+      "option": "全部 by chat",
+      "why": "每人 250 個 1:1 chat 要訂 250 個 channel"
+     }
+    ],
+    "tradeoff": "群規模變動時要雙發 publish（celebrity problem）。"
+   },
+   {
+    "decision": "離線與多裝置",
+    "chosen": "Inbox per-client + client ACK 後刪除 + TTL；限制裝置數",
+    "rejected": [
+     {
+      "option": "user-level Inbox",
+      "why": "多裝置下無法分別追蹤"
+     }
+    ],
+    "tradeoff": "限制每帳號裝置數避免儲存與吞吐暴增。"
+   },
+   {
+    "decision": "偵測死連線與漏訊息",
+    "chosen": "Application-level heartbeat（10-30s）+ 每 user 全域 sequence 附在 heartbeat + polling 兜底",
+    "rejected": [
+     {
+      "option": "靠 TCP timeout",
+      "why": "可能數分鐘"
+     },
+     {
+      "option": "ACK timeout + retry",
+      "why": "只有送訊息時才偵測得到"
+     },
+     {
+      "option": "每 chat sequence + gap detection",
+      "why": "聊天安靜時偵測不到缺口"
+     }
+    ],
+    "tradeoff": "原子計數器（Redis INCR）多一個依賴；2000 萬 ping/s 但訊息很小。"
+   },
+   {
+    "decision": "Last seen 與訊息順序",
+    "chosen": "只在 disconnect 寫 LastSeen（conditional write），在線由 Pub/Sub 詢問；順序以 server NTP 時間戳",
+    "rejected": [
+     {
+      "option": "每次 heartbeat 寫 DB",
+      "why": "每秒數百萬寫入且立刻過期"
+     },
+     {
+      "option": "嚴格排序",
+      "why": "需延遲+重排，使用者寧可快"
+     }
+    ],
+    "tradeoff": "server 掛了漏 disconnect；偶爾訊息插到上面。"
+   }
+  ],
+  "topics": [
+   "realtime",
+   "fanout",
+   "reliability",
+   "blobs",
+   "scaling-writes",
+   "api-networking"
+  ],
+  "followUps": [
+   "為什麼不每個 user 一個 Kafka topic？50TB+ overhead。",
+   "Redis 掛了會丟訊息嗎？不會，Inbox 先寫。",
+   "怎麼保證順序？不保證嚴格，server 時間戳。"
+  ]
+ },
+ {
+  "id": "yelp",
+  "title": "Yelp",
+  "kind": "面試題",
+  "source": "HelloInterview Premium（補充）",
+  "file": "hellointerview-breakdowns/yelp.md",
+  "origin": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/yelp",
+  "core": "讀多寫少的本地商家搜尋：geo 搜尋、評分預先計算、評論唯一性。",
+  "scaleNumbers": [
+   "100M DAU、10M 商家",
+   "搜尋 <500ms",
+   "約 5.8k QPS 平均，峰值約 17k（補充）",
+   "10M 商家約 10GB（補充）"
+  ],
+  "decisions": [
+   {
+    "decision": "平均評分如何顯示在搜尋結果",
+    "chosen": "Business 上存 avg_rating 與 review_count，寫評論時增量更新；熱商家可非同步批次並同步進搜尋索引",
+    "rejected": [
+     {
+      "option": "每次 AVG(rating) 掃 review 表",
+      "why": "每頁 N 家就 N 次聚合，太慢"
+     }
+    ],
+    "tradeoff": "同步更新簡單正確但熱商家 row contention；非同步最終一致，符合 eventual consistency。"
+   },
+   {
+    "decision": "一人一商家一則評論",
+    "chosen": "DB UNIQUE(user_id, business_id) + upsert 語意，聚合依舊值差更新",
+    "rejected": [
+     {
+      "option": "應用層 check-then-insert",
+      "why": "race condition，雙擊重複"
+     }
+    ],
+    "tradeoff": "分片時 shard key 要對齊唯一性檢查，否則需分散式唯一檢查。"
+   },
+   {
+    "decision": "複雜查詢搜尋",
+    "chosen": "Elasticsearch/OpenSearch（全文+geo_distance+category+評分排序），CDC 同步",
+    "rejected": [
+     {
+      "option": "LIKE + lat/long 範圍",
+      "why": "全表掃描，無法用索引"
+     },
+     {
+      "option": "DB geospatial 索引（PostGIS/geohash）",
+      "why": "可行，但複合條件與相關性排序不如搜尋引擎"
+     }
+    ],
+    "tradeoff": "多一套系統與同步延遲；10M 商家資料量小。"
+   },
+   {
+    "decision": "城市/社區地名搜尋",
+    "chosen": "Gazetteer/geocoding：autocomplete 對應 location_id（polygon），索引時預標註 city/neighborhood term filter",
+    "rejected": [
+     {
+      "option": "地名當全文關鍵字",
+      "why": "Springfield 各州混在一起"
+     },
+     {
+      "option": "Location 表 bounding box 查詢時解析",
+      "why": "可行，但預標註更快"
+     }
+    ],
+    "tradeoff": "預標註最快但邊界變動需重建；polygon 彈性高較貴。"
+   }
+  ],
+  "topics": [
+   "search",
+   "geo",
+   "scaling-reads",
+   "counting",
+   "storage-choice",
+   "caching"
+  ],
+  "followUps": [
+   "熱商家評論寫入競爭？非同步聚合或 sharded counter。",
+   "評論分頁？keyset pagination。",
+   "搜尋排序？距離、評分、相關性加權。"
+  ]
+ },
+ {
+  "id": "youtube",
+  "title": "YouTube",
+  "kind": "面試題",
+  "source": "HelloInterview",
+  "file": "hellointerview-breakdowns/youtube.md",
+  "origin": "https://www.hellointerview.com/learn/system-design/problem-breakdowns/youtube",
+  "core": "上傳走 presigned URL + multipart 可續傳，上傳後 DAG pipeline 切 segment 轉多格式並產生 manifest，播放用 Adaptive Bitrate Streaming，CDN 撐讀取。",
+  "scaleNumbers": [
+   "約 1M 影片上傳/天、100M 觀看/天",
+   "一年約 365M metadata",
+   "10GB 影片 100Mbps 下載 13+ 分鐘",
+   "chunk 約 5-10MB",
+   "影片數十 GB"
+  ],
+  "decisions": [
+   {
+    "decision": "影片要存成什麼",
+    "chosen": "切 segment（數秒）再轉多種格式，產生 primary/media manifest",
+    "rejected": [
+     {
+      "option": "只存原始影片",
+      "why": "不同裝置需要不同格式"
+     },
+     {
+      "option": "存多種格式但不切 segment",
+      "why": "無法只下載一部分，串流關鍵"
+     }
+    ],
+    "tradeoff": "post-processing 變成 pipeline，需保存 segment 參考。"
+   },
+   {
+    "decision": "如何觀看",
+    "chosen": "Adaptive Bitrate Streaming：下載 manifest，依網路選格式，持續偵測並切換 segment 畫質",
+    "rejected": [
+     {
+      "option": "整檔下載後播放",
+      "why": "10GB 要 13+ 分鐘，中斷進度全失"
+     },
+     {
+      "option": "增量下載單一格式 segment",
+      "why": "沒處理播放中網路變化，網路變差會 buffer"
+     }
+    ],
+    "tradeoff": "最複雜，client 要更主動參與，依賴上游切段/多格式/manifest。"
+   },
+   {
+    "decision": "後製 pipeline",
+    "chosen": "DAG + orchestrator（Temporal），segment 轉碼平行（CPU-bound），worker 間傳 S3 URL",
+    "rejected": [
+     {
+      "option": "單一序列處理",
+      "why": "轉碼最貴，無法平行"
+     }
+    ],
+    "tradeoff": "此設計假設整檔傳完才處理；可讓 client 切段上傳邊傳邊處理，但 client 要參與且可能留垃圾 segment。"
+   },
+   {
+    "decision": "可續傳上傳",
+    "chosen": "client 切 chunk + fingerprint，VideoMetadata 記錄 chunk 狀態，PATCH 後由 server 以 S3 API 驗證 ETag",
+    "rejected": [
+     {
+      "option": "單次上傳",
+      "why": "中斷從頭來"
+     }
+    ],
+    "tradeoff": "與 Dropbox 同構；S3 只發一次 object-level 完成通知，chunk 進度由 client 驅動。"
+   },
+   {
+    "decision": "metadata 儲存與擴展讀取",
+    "chosen": "Cassandra（videoId 為 partition key）+ 熱門 metadata 分散式 cache + CDN 快取 segment 與 manifest",
+    "rejected": [
+     {
+      "option": "單一關聯式 DB",
+      "why": "365M+ 筆/年需水平分片，只做點查"
+     },
+     {
+      "option": "內容只放 S3",
+      "why": "單一 region，遠端使用者慢或 buffer"
+     }
+    ],
+    "tradeoff": "熱門影片造成 hot partition，用多節點複製與 cache 緩解；manifest 與 segment 都在 CDN 時串流不碰 backend。"
+   }
+  ],
+  "topics": [
+   "blobs",
+   "streaming",
+   "async-jobs",
+   "scaling-reads",
+   "caching",
+   "storage-choice"
+  ],
+  "followUps": [
+   "為何切 segment？快速起播、中斷不丟、ABR 基礎。",
+   "上傳中斷？跳過已 Uploaded 的 chunk。",
+   "加速上傳到可播放？client 切段上傳，後端立即處理。"
+  ]
+ },
+ {
+  "id": "github-apps-jwt",
+  "title": "GitHub Apps JWT 認證",
+  "kind": "業界實例",
+  "source": "Tech Blog",
+  "file": "hellointerview-breakdowns/github-apps-jwt.md",
+  "origin": "https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-json-web-token-jwt-for-a-github-app",
+  "core": "用長效、極少使用的非對稱私鑰簽出短效 JWT 證明 app 身分，再換成短效、有範圍的 installation token，使外洩的東西都短命且低權限。",
+  "scaleNumbers": [
+   "JWT 最長 10 分鐘（exp-now <= 600s）",
+   "iat 回推 60 秒",
+   "installation token 約 1 小時（貼文，非本頁原文）",
+   "演算法 RS256"
+  ],
+  "decisions": [
+   {
+    "decision": "簽章演算法用非對稱還是共享 secret",
+    "chosen": "RS256：你持私鑰簽，GitHub 用 iss 找公鑰驗證",
+    "rejected": [
+     {
+      "option": "共享 secret（HS256）",
+      "why": "GitHub 需驗證身分但不應持有你的簽章 secret"
+     }
+    ],
+    "tradeoff": "私鑰儲存與輪替責任在你；簽章比 HMAC 稍慢，低頻使用可忽略。"
+   },
+   {
+    "decision": "token 分層設計",
+    "chosen": "兩層：JWT 證明身分（<=10 分鐘），再換 installation token（約 1 小時、限定範圍）用於日常呼叫",
+    "rejected": [
+     {
+      "option": "每次 API 呼叫都用私鑰簽的長效憑證",
+      "why": "曝險面大，洩漏等於永久失陷"
+     }
+    ],
+    "tradeoff": "多一次交換與 token 快取/刷新邏輯；身分與授權範圍分離。"
+   },
+   {
+    "decision": "JWT 有效期上限",
+    "chosen": "exp 不超過 10 分鐘",
+    "rejected": [
+     {
+      "option": "長效 JWT 當 session",
+      "why": "被截獲時有效期過長；JWT 只用來換 token"
+     }
+    ],
+    "tradeoff": "每次換 token 前需重簽（Octokit 自動處理）。"
+   },
+   {
+    "decision": "時鐘誤差處理",
+    "chosen": "iat = now - 60，並用 NTP 校時",
+    "rejected": [
+     {
+      "option": "iat = now",
+      "why": "你的時鐘領先 GitHub 時 JWT 被視為尚未生效而被拒"
+     }
+    ],
+    "tradeoff": "有效窗口被 60 秒吃掉一小段，exp 仍須在 now+10 分內。"
+   }
+  ],
+  "topics": [
+   "auth",
+   "api-networking"
+  ],
+  "followUps": [
+   "為何 JWT 一定要 Bearer？官方規定。",
+   "JWT 洩漏影響？最多 10 分鐘內換 token，不是長期失陷。",
+   "不想自己簽？用 Octokit 自動產生。"
+  ]
+ }
+]

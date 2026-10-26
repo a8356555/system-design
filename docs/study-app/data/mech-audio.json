@@ -1,0 +1,302 @@
+{
+  "mechanisms": [
+    {
+      "id": "shazam-constellation-peaks",
+      "domain": "audio",
+      "apps": ["Shazam"],
+      "title": "Spectrogram peak constellation：只留時頻圖上的局部峰值",
+      "naive": "直覺做法：把整段波形或整張 spectrogram 當特徵，直接做 cross-correlation 或逐幀比對",
+      "breaks": "哪裡會壞：手機麥克風錄音混有人聲、環境噪音與編碼失真，整段波形對不上；全量特徵也大到無法對百萬首歌做搜尋",
+      "trick": "實際做法：把音訊轉成 spectrogram，只保留時間 × 頻率平面上能量最強的局部峰值，丟掉振幅，剩下像星空的 (time, freq) 座標點，稱為 constellation map。峰值位置對 EQ 濾波與疊加噪音相對穩定，因為噪音通常只是新增偽峰，不會抹掉原本的強峰",
+      "cost": "代價 / 取捨：峰值取太少 → 噪音下存活的點不夠；取太多 → 索引變大、偽匹配變多。這套設計目標是辨識『資料庫裡已有的錄音』，論文明說不期待能泛化到現場演出（live version），那種情境不划算",
+      "alternatives": [
+        {"name": "全頻譜 / MFCC 整體相似度", "pickIf": "做的是音樂相似度或分類，而不是精確辨識同一份錄音"},
+        {"name": "Chroma 類指紋（Chromaprint）", "pickIf": "要對不同 codec / 轉檔版本做穩定比對，且不必扛麥克風噪音"}
+      ],
+      "numbers": ["論文實驗在 8 kHz、mono、16-bit 取樣下進行", "1024-bin 頻率軸單一峰值最多只有 10 bits 的頻率資訊（低 entropy，所以才需要 combinatorial hash）", "論文宣稱資料庫超過一百萬首曲目"],
+      "interviewUse": "被問『Shazam 怎麼在吵雜環境認歌』時先講：不比波形，比 spectrogram 的局部峰值 constellation，噪音只會多出偽峰而不會抹掉強峰。",
+      "sources": [{"title": "An Industrial-Strength Audio Search Algorithm (Avery Wang, ISMIR 2003)", "url": "https://www.ee.columbia.edu/~dpwe/papers/Wang03-shazam.pdf"}],
+      "topics": ["search"],
+      "byAgents": true
+    },
+    {
+      "id": "shazam-combinatorial-hash",
+      "domain": "audio",
+      "apps": ["Shazam"],
+      "title": "Combinatorial hash：anchor + target zone 配對換取查詢速度",
+      "naive": "直覺做法：把每個單一峰值（只有頻率）當 key 去反向索引查歌",
+      "breaks": "哪裡會壞：單點只有約 10 bits，specificity 太低，每個 key 命中大量不相干歌曲，候選集爆炸、搜尋極慢",
+      "trick": "實際做法：每個 anchor point 搭配其 target zone 內的數個峰值成對，每對編成 (f1, f2, Δt) 打包進 32-bit hash，並另存 anchor 的絕對時間偏移與 track ID（合成 64-bit struct：32 bit hash + 32 bit offset/track ID），依 hash 排序成反向索引。fan-out F 控制每個 anchor 配幾個點",
+      "cost": "代價 / 取捨：fan-out 直接放大儲存（F 倍 hash）；且 hash 需要兩個點同時存活，存活機率約從 p 降成 p²。若來源音訊品質極差、峰值存活率很低，配對 hash 會大量消失，這時 F 要調大或改用單點策略",
+      "alternatives": [
+        {"name": "單峰值 token 索引", "pickIf": "資料庫很小、可以接受慢搜尋，且想要最高的 per-token 存活率"},
+        {"name": "加大 fan-out F", "pickIf": "查詢音訊很短或很髒，願意用更多儲存換更高偵測機率"}
+      ],
+      "numbers": ["F=10 時，儲存約多 10 倍，搜尋速度約快 10000 倍", "兩個各 10 bits 的頻率加上 10 bits 的 Δt = 30 bits，比單點多 20 bits，specificity 約高一百萬倍", "每個 hash 可打包成 32-bit unsigned integer；加上 offset 與 track ID 為 64-bit struct"],
+      "interviewUse": "被問『為什麼不直接用峰值當索引 key』時回：單點 entropy 太低，配對後 30 bits 讓每次 lookup 只命中少量候選，用約 10 倍空間換約 10000 倍速度。",
+      "sources": [{"title": "An Industrial-Strength Audio Search Algorithm (Avery Wang, ISMIR 2003)", "url": "https://www.ee.columbia.edu/~dpwe/papers/Wang03-shazam.pdf"}],
+      "topics": ["search", "storage-choice"],
+      "byAgents": true
+    },
+    {
+      "id": "shazam-offset-histogram",
+      "domain": "audio",
+      "apps": ["Shazam"],
+      "title": "Time-offset 直方圖：用『時間對齊』而非『命中數』判定是哪首歌",
+      "naive": "直覺做法：查詢 hash 在資料庫中命中最多的歌就是答案",
+      "breaks": "哪裡會壞：hash 只有 32 bits，不同歌之間會有偶然碰撞；熱門 hash 在多首歌都出現，單純計次會被亂命中淹沒",
+      "trick": "實際做法：每個命中算 δ = 資料庫中該 hash 的時間偏移 − 查詢中該 hash 的時間偏移。真正的匹配，所有 δ 會集中在同一個值（scatterplot 上形成斜率 1 的對角線）；對每首候選歌做 δ 直方圖，峰值高度就是分數，再用依資料庫大小估出的 false positive 門檻判定",
+      "cost": "代價 / 取捨：要為每個候選 track 保留 offset 並做 bin 掃描，候選多時計算量上升；它假設查詢與原曲播放速度一致（斜率 1），明顯變速或變調的版本會對不上。不連續的 dropout 倒是無妨",
+      "alternatives": [
+        {"name": "穩健迴歸擬合對角線", "pickIf": "需要容忍輕微速度偏移（斜率不是 1），願意付較高運算成本"},
+        {"name": "只算命中次數", "pickIf": "僅當作第一輪粗篩，再用 offset 對齊精排"}
+      ],
+      "numbers": ["嚴重損壞的 15 秒樣本，只要約 1–2% 的 hash 存活並落在 offset 叢集就能得到統計上顯著的匹配", "false positive 門檻可依應用設定，論文舉例 0.1% 或 0.01%"],
+      "interviewUse": "面試講匹配時帶出：『先用 hash 取候選，再用 time-offset histogram 做對齊投票，只要幾個 hash 對齊就夠，因此對 dropout 很強。』",
+      "sources": [{"title": "An Industrial-Strength Audio Search Algorithm (Avery Wang, ISMIR 2003)", "url": "https://www.ee.columbia.edu/~dpwe/papers/Wang03-shazam.pdf"}],
+      "topics": ["search"],
+      "byAgents": true
+    },
+    {
+      "id": "fingerprint-robustness-tradeoff",
+      "domain": "audio",
+      "apps": ["Shazam"],
+      "title": "雜訊 / 壓縮魯棒性：查詢越短越怕噪音，要用 SNR 曲線選產品門檻",
+      "naive": "直覺做法：只要演算法『夠穩』，3 秒音訊也能在酒吧辨識",
+      "breaks": "哪裡會壞：查詢越短能存活的 hash 越少，加上 GSM 這類語音 codec 壓縮後，辨識率在低 SNR 快速崩盤",
+      "trick": "實際做法：以實測曲線決定『聆聽多久才回答』。論文用酒吧噪音錄音測試，並比較『加噪音』與『加噪音再過 GSM 6.10 壓縮』兩種條件，辨識率掉到 50% 的 SNR 隨樣本長度（5/10/15 秒）而不同——越長越能撐到更低 SNR",
+      "cost": "代價 / 取捨：要讓使用者等更久才有高準確率；若產品追求『按下即出結果』，只能接受短錄音的較低成功率，或在伺服端持續累積 hash 直到分數過門檻。若環境多半安靜、音質是 radio quality，不需要為了抗噪多聽幾秒",
+      "alternatives": [
+        {"name": "固定聆聽長度", "pickIf": "UX 簡單優先，且環境噪音可控"},
+        {"name": "串流式累積直到分數過門檻（早停）", "pickIf": "噪音變異大，想要安靜時快、吵時慢的自適應行為"}
+      ],
+      "numbers": ["僅加噪音：辨識率掉到 50% 時，15/10/5 秒樣本約在 -9/-6/-3 dB SNR", "加噪音再經 GSM 壓縮：15/10/5 秒約在 -3/0/+4 dB SNR", "測試為 250 次辨識、10000 首流行音樂資料庫"],
+      "interviewUse": "被問『要怎麼評估辨識系統品質』時說：畫 recognition rate vs SNR × 樣本長度 × 是否經壓縮的曲線，用它決定錄音長度與早停策略。",
+      "sources": [{"title": "An Industrial-Strength Audio Search Algorithm (Avery Wang, ISMIR 2003)", "url": "https://www.ee.columbia.edu/~dpwe/papers/Wang03-shazam.pdf"}],
+      "topics": ["reliability"],
+      "byAgents": true
+    },
+    {
+      "id": "dejavu-hash-truncation",
+      "domain": "audio",
+      "apps": ["Dejavu (open-source Python fingerprinter)"],
+      "title": "Hash 截斷與 offset 對齊投票：開源實作的空間 / 準確率取捨",
+      "naive": "直覺做法：把完整 SHA-1（40 hex 字元）當 fingerprint 主鍵存進 MySQL",
+      "breaks": "哪裡會壞：每首歌數十萬筆指紋，完整 hash 讓索引與儲存膨脹，查詢也要搬更多 bytes",
+      "trick": "實際做法：峰值取自 spectrogram 的局部極大值，配對後的 (f1, f2, Δt) 做 SHA-1，再截斷成 20 字元並存成 binary(10)；辨識時以『資料庫 offset − 樣本 offset』當投票 key，得票最多的 song_id 勝出",
+      "cost": "代價 / 取捨：截斷增加碰撞機率，需靠 hash + offset 的組合熵與對齊投票補回；這是單機 MySQL 教學規模的做法，資料量到百萬首以上要換成分片的 key-value / 專用 inverted index",
+      "alternatives": [
+        {"name": "完整 SHA-1", "pickIf": "資料集很小、不在意儲存"},
+        {"name": "專用 inverted index（如 acoustid-index）", "pickIf": "資料量大、需要常駐記憶體的低延遲查詢"}
+      ],
+      "numbers": ["截斷後減少 75% 空間（40 字元 → 20 字元 → binary(10)）", "作者估算可能指紋空間約 2^112", "5 秒以上音訊辨識率 100%、2 秒 95.6%、1 秒 60%", "45 首歌共 540 萬筆指紋佔 377 MB，約為 WAV 檔大小的 20%"],
+      "interviewUse": "要估算儲存時可引用：指紋量約為原檔的兩成，每秒音訊產生的 hash 數 ≈ 峰值密度 × fan-out。",
+      "sources": [{"title": "Audio Fingerprinting with Python and Numpy (Will Drevo)", "url": "https://willdrevo.com/fingerprinting-and-audio-recognition-with-python/"}],
+      "topics": ["storage-choice", "search"],
+      "byAgents": true
+    },
+    {
+      "id": "chromaprint-chroma-fingerprint",
+      "domain": "audio",
+      "apps": ["Chromaprint", "AcoustID"],
+      "title": "Chromaprint：chroma 特徵 + 濾波器量化成 32-bit 指紋序列",
+      "naive": "直覺做法：直接拿 MP3 / FLAC / AAC 的檔案 hash 當識別",
+      "breaks": "哪裡會壞：同一首歌轉檔、重新壓縮後位元組全不同，檔案 hash 完全對不上",
+      "trick": "實際做法：先重取樣到 11025 Hz，做 4096 樣本、2/3 overlap 的 STFT，再把頻率折疊成 12 個音名（chroma，去掉八度資訊以抵抗 codec 壓縮）；以 16×12 的滑動視窗套 16 個濾波器，每個輸出以 Gray code 量化成 2 bits，共 32 bits，整段音訊就是一串 32-bit 整數。比對用 bit error rate",
+      "cost": "代價 / 取捨：chroma 去掉音色與八度資訊，適合『同一份錄音的不同編碼』，但對麥克風環境噪音、短片段的抗性不如 Shazam 式峰值 hash；函式庫只吃原始 PCM，不處理檔案格式，需先解碼",
+      "alternatives": [
+        {"name": "Shazam 式 constellation hash", "pickIf": "查詢是麥克風錄的短片段，要抗噪音"},
+        {"name": "檔案內容 hash（SHA）", "pickIf": "只需偵測位元組完全相同的重複檔"}
+      ],
+      "numbers": ["重取樣 11025 Hz；frame 4096 樣本、2/3 overlap", "12 個 chroma bins；16×12 視窗；16 個濾波器 × 2 bits = 32 bits"],
+      "interviewUse": "做音樂資料庫去重 / 標記（如 MusicBrainz 類）時提：『用 chroma 指紋抗轉檔，不是檔案 hash。』",
+      "sources": [
+        {"title": "How does Chromaprint work? (Lukáš Lalinský)", "url": "https://oxygene.sk/2011/01/how-does-chromaprint-work/"},
+        {"title": "Chromaprint / AcoustID", "url": "https://acoustid.org/chromaprint"}
+      ],
+      "topics": ["search"],
+      "byAgents": true
+    },
+    {
+      "id": "acoustid-inverted-index",
+      "domain": "audio",
+      "apps": ["AcoustID"],
+      "title": "AcoustID 反向索引：把 32-bit 指紋當 term 做集合交集，整個索引放在 RAM",
+      "naive": "直覺做法：把指紋存進關聯式資料庫，查詢時逐筆算 bit error rate",
+      "breaks": "哪裡會壞：每個指紋是一長串 32-bit 整數，逐筆比對是線性掃描，資料量大時延遲不可接受",
+      "trick": "實際做法：acoustid-index 把每個指紋的 32-bit 值當 term 建立 inverted index；查詢給一組 hash，回傳與之交集的 fingerprint ID 與分數。索引全放在鎖定記憶體，由不可變的 file segments 加上記憶體 segment 累積寫入，超過門檻（預設 100,000 筆或 60 秒）才 flush；叢集模式下 replica 消費有序 changelog 擴展讀取",
+      "cost": "代價 / 取捨：整個索引必須塞進 RAM，成本隨曲庫線性成長；fingerprint ID 限 32-bit 非零，規模再大需要分片。若曲庫小或 QPS 低，用資料庫索引就夠，不值得自管這套服務",
+      "alternatives": [
+        {"name": "PostgreSQL 等 DB 的 GIN / 整數陣列索引", "pickIf": "資料量小、希望少維運一個服務"},
+        {"name": "按 hash 範圍分片的 key-value store", "pickIf": "資料量超過單機 RAM，需要水平擴展"}
+      ],
+      "numbers": ["Lookup API 免費使用限制：不可超過每秒 3 次請求", "memory segment 預設 flush 門檻：100,000 筆或 60 秒"],
+      "interviewUse": "被問『百萬到上億指紋怎麼查』時：把指紋拆成 hash term 做 inverted index，熱資料常駐記憶體，用 immutable segments 加 changelog 做複製。",
+      "sources": [
+        {"title": "acoustid-index (GitHub)", "url": "https://github.com/acoustid/acoustid-index"},
+        {"title": "AcoustID Web Service", "url": "https://acoustid.org/webservice"}
+      ],
+      "topics": ["search", "scaling-reads", "sharding"],
+      "byAgents": true
+    },
+    {
+      "id": "content-id-reference-claims",
+      "domain": "audio",
+      "apps": ["YouTube Content ID"],
+      "title": "Content ID：權利人提供參考檔，上傳時自動比對並依政策處置",
+      "naive": "直覺做法：靠人工檢舉與下架申請處理侵權影片",
+      "breaks": "哪裡會壞：每天上傳量太大，檢舉流程延遲高；片段、背景音樂等部分侵權人工無法逐一發現",
+      "trick": "實際做法：符合資格的權利人（需擁有大量被頻繁上傳之原創素材的專屬權利）提供音訊 / 視覺參考檔，上傳影片自動掃描；比對到整段或片段就自動產生 claim，依權利人設定執行 block、monetize（投廣告、可能分潤）或 track（只看觀看統計），政策可依國家 / 地區而異。自動化漏掉的才由具資格者用 Manual Claiming 工具標註精確 timestamp",
+      "cost": "代價 / 取捨：自動比對有誤判（公版音樂、授權素材被 claim），需要申訴與反制機制；權利人濫用要有處罰。僅 fingerprint 的參考檔無法自動套用新版比對技術，超過六個月未更新可能被停用。對 UGC 平台，若沒有大量權利人合作，建一套比對成本並不划算",
+      "alternatives": [
+        {"name": "Notice-and-takedown（人工檢舉）", "pickIf": "平台規模小、內容量低，不值得建比對系統"},
+        {"name": "上傳前阻擋（pre-publish filter）", "pickIf": "法規要求侵權內容不得上線，願意承擔誤擋與延遲"}
+      ],
+      "numbers": ["政策變更：2024 年 10 月 15 日起，1–3 分鐘直式影片被視為 Shorts，有有效 claim 時一律被 block，不看 policy（官方說明頁所述）"],
+      "interviewUse": "設計 UGC 平台版權系統時提：參考檔庫 + 上傳時指紋比對 + 權利人政策（block / monetize / track）+ 申訴流程，並說明誤判成本。",
+      "sources": [
+        {"title": "How Content ID works (YouTube Help)", "url": "https://support.google.com/youtube/answer/2797370"},
+        {"title": "Using Content ID (YouTube Help)", "url": "https://support.google.com/youtube/answer/2605065"},
+        {"title": "Copyright claims on your videos (YouTube Help)", "url": "https://support.google.com/youtube/answer/6013276"}
+      ],
+      "topics": ["async-jobs", "storage-choice"],
+      "byAgents": true
+    },
+    {
+      "id": "hum-to-search-embedding",
+      "domain": "audio",
+      "apps": ["Google Hum to Search"],
+      "title": "Hum to Search：用 embedding 直接把哼唱 spectrogram 映射到原曲",
+      "naive": "直覺做法：先把哼唱轉成音高序列（或 MIDI），再與每首歌的旋律線做動態規劃比對",
+      "breaks": "哪裡會壞：流行錄音是多聲部（人聲 + 樂器），很難乾淨抽出主旋律；哼唱跑調、節奏不準；且缺少大量成對的『哼唱 ↔ 原曲』訓練資料",
+      "trick": "實際做法：訓練神經網路由 spectrogram 直接產生旋律 embedding，不經過中間表示，使同旋律的哼唱與原曲錄音在 embedding 空間靠近（triplet loss，並加上以 batch 為單位的 confidence 損失）。訓練資料不足就用音高 / 速度隨機擴增、用 SPICE 抽音高合成哼唱、混合不同歌手唱同一旋律的片段。查詢時對 embedding 做最近鄰搜尋",
+      "cost": "代價 / 取捨：需要訓練與維護模型，曲庫新增歌曲也要重新算 embedding 並更新向量索引；結果是相似度排序而非精確匹配，要回傳多個候選。如果使用者只會用錄音片段來辨識，Shazam 式 fingerprint 便宜且精準，不需要模型",
+      "alternatives": [
+        {"name": "音高序列 + DTW 比對", "pickIf": "曲庫是乾淨單音旋律，資料量小，沒有訓練資源"},
+        {"name": "Fingerprint 比對（Shazam 式）", "pickIf": "查詢是同一份錄音的片段，而不是人聲哼唱"}
+      ],
+      "numbers": ["比對的曲庫超過 500,000 首歌，且持續更新（部落格所述）"],
+      "interviewUse": "被問『哼歌找歌』時：fingerprint 只能辨識同一份錄音，哼唱要換成 embedding + ANN 檢索，並說明訓練資料不足用合成哼唱解決。",
+      "sources": [{"title": "The Machine Learning Behind Hum to Search (Google Research)", "url": "https://research.google/blog/the-machine-learning-behind-hum-to-search/"}],
+      "topics": ["search"],
+      "byAgents": true
+    },
+    {
+      "id": "soundhound-audio-discriminator",
+      "domain": "audio",
+      "apps": ["SoundHound"],
+      "title": "查詢類型分流：先判斷是語音、單音哼唱還是複音音樂，再送對應的辨識器",
+      "naive": "直覺做法：單一模型 / 單一資料庫處理所有聲音輸入，讓使用者自己選模式",
+      "breaks": "哪裡會壞：語音、哼唱與錄音音樂的特徵與索引結構都不同；單一管線會互相干擾，也讓使用者多一道選擇",
+      "trick": "實際做法：SoundHound 專利描述一個 audio discriminator，將輸入分類為語音 / 單音（singing、humming）/ 複音音樂，再路由到各自專用的辨識應用與資料庫，並以音高變化等特徵比對哼唱資料庫；專利宣稱最短約四秒內回應",
+      "cost": "代價 / 取捨：分類器出錯會把查詢送去錯的管線（失效模式是整個結果都錯），需維護多套資料庫與索引。如果產品只支援一種輸入，就不用做路由。此條為專利敘述，無法證實目前線上實作細節，面試時用『類似做法』帶過",
+      "alternatives": [
+        {"name": "使用者手動選模式", "pickIf": "想省分類器、使用者願意多一次點擊"},
+        {"name": "同時送所有管線再合併排名", "pickIf": "延遲預算夠、算力便宜，想避免分類錯誤"}
+      ],
+      "numbers": [],
+      "interviewUse": "設計多模態聲音搜尋入口時提：先分類再路由，並討論分類錯誤與 fan-out 同送的取捨。",
+      "sources": [{"title": "US8688253B2 Systems and methods for sound recognition (SoundHound)", "url": "https://patents.google.com/patent/US8688253"}],
+      "topics": ["search"],
+      "byAgents": true
+    },
+    {
+      "id": "spotify-loudness-normalization",
+      "domain": "audio",
+      "apps": ["Spotify"],
+      "title": "Loudness normalization：上傳時量測，播放時調整增益",
+      "naive": "直覺做法：離線把每首歌重新壓縮 / 限幅成同一響度，再存一份新檔",
+      "breaks": "哪裡會壞：會破壞藝人母帶的動態範圍，且每改一個目標響度就要重處理全曲庫、多存一份",
+      "trick": "實際做法：上傳時量測 loudness，不改動音檔；播放端依使用者選的檔位調整增益——Loud −11 LUFS、Normal −14 LUFS（預設）、Quiet −19 LUFS。壓縮與 lossless FLAC 播放都適用。官方建議母帶以 −14 dB integrated LUFS 為目標，lossy 格式 True Peak 低於 −1 dB（較響的母帶 −2 dB）",
+      "cost": "代價 / 取捨：只靠播放端增益，網頁播放器與第三方裝置（電視、喇叭）不支援就沒有效果；調高增益遇到峰值太高的歌可能削波，需要 True Peak 餘裕。若是專輯聆聽情境，逐曲正規化可能破壞作者刻意設計的曲間音量差",
+      "alternatives": [
+        {"name": "離線轉檔固定響度", "pickIf": "播放端能力很差，無法在客戶端調整增益"},
+        {"name": "Album 模式正規化（以專輯為單位）", "pickIf": "要保留專輯內曲間相對音量"}
+      ],
+      "numbers": ["Loud −11 LUFS、Normal −14 LUFS、Quiet −19 LUFS", "建議母帶 −14 dB integrated LUFS、True Peak 低於 −1 dB"],
+      "interviewUse": "設計音樂串流時被問音量一致性：上傳時量測 LUFS 存 metadata，播放端調增益，不動原檔。",
+      "sources": [{"title": "Loudness normalization (Spotify for Artists Support)", "url": "https://support.spotify.com/us/artists/article/loudness-normalization/"}],
+      "topics": ["blobs", "streaming"],
+      "byAgents": true
+    },
+    {
+      "id": "spotify-ingest-and-quality-ladder",
+      "domain": "audio",
+      "apps": ["Spotify"],
+      "title": "無損母帶進、依方案與裝置出多檔位串流格式",
+      "naive": "直覺做法：只存一份 320 kbps 的檔案，所有裝置和網路狀況都送同一份",
+      "breaks": "哪裡會壞：行動網路與免費方案頻寬成本高，弱網下卡頓；網頁播放器與 App 的 codec 支援也不同",
+      "trick": "實際做法：上傳要求 FLAC 或 WAV 無損母帶（建議 24-bit、44.1 kHz 以上、stereo），Spotify 內部再統一處理（超過 24-bit 降為 44.1 kHz / 24-bit FLAC，更高取樣率降取樣）；串流端依方案與裝置提供不同檔位：Free 的 App 有自動、Low（約 24 kbps）、Normal（約 96 kbps）、High（約 160 kbps），Premium 另有 Very high（約 320 kbit/s）與最高 24-bit/44.1 kHz FLAC 無損；網頁播放器 Free 為 AAC 128 kbit/s、Premium 為 AAC 256 kbit/s。App 並有依網路自動調整音質的功能",
+      "cost": "代價 / 取捨：多檔位要多份轉碼與 CDN 儲存，快取命中率被切散；高檔位耗頻寬與流量費。若使用者幾乎都在好網路下聽、方案單一，維護多檔位不划算",
+      "alternatives": [
+        {"name": "單一檔位 + 客戶端降級", "pickIf": "小型服務，轉碼與儲存成本比頻寬更敏感"},
+        {"name": "Adaptive bitrate 分段串流", "pickIf": "網路波動大，願意為分段切換增加實作複雜度"}
+      ],
+      "numbers": ["Free App：Low 約 24 kbps、Normal 約 96 kbps、High 約 160 kbps", "Very high 約 320 kbit/s；lossless 最高 24-bit/44.1 kHz FLAC", "網頁播放器：Free AAC 128 kbit/s，Premium AAC 256 kbit/s"],
+      "interviewUse": "被問音樂串流的 storage / CDN：一份無損母帶，離線轉出多檔位格式，客戶端依方案與網速選檔位。離線下載與 DRM 細節這裡不展開（無一手來源）。",
+      "sources": [
+        {"title": "Audio quality (Spotify Support)", "url": "https://support.spotify.com/us/article/audio-quality/"},
+        {"title": "Audio file formats (Spotify for Artists Support)", "url": "https://support.spotify.com/artists/article/audio-file-formats"}
+      ],
+      "topics": ["blobs", "streaming"],
+      "byAgents": true
+    },
+    {
+      "id": "audio-cnn-cold-start-recsys",
+      "domain": "audio",
+      "apps": ["Spotify（實習期研究實驗）"],
+      "title": "用音訊內容預測 collaborative filtering 向量，解新歌 cold start",
+      "naive": "直覺做法：只用 collaborative filtering，靠聽歌紀錄推薦",
+      "breaks": "哪裡會壞：新發行或冷門歌曲沒有足夠使用紀錄，永遠推不出來，造成熱門歌更熱",
+      "trick": "實際做法：以 mel-spectrogram（599 frames × 128 頻率 bins）為輸入，用只沿時間軸做 1D 卷積的 CNN（4 層卷積 + 3 層全連接），全局時間池化（mean、max、L2-norm），迴歸預測 collaborative filtering 的 latent factors，訓練目標為 MSE。這樣新歌一上架就能由音訊算出向量放進推薦空間",
+      "cost": "代價 / 取捨：作者自述結果『遠非完美』；只看歌曲中段 30 秒會漏掉上下文，音訊也捕捉不到歌詞、文化脈絡與社交因素。曲庫有充足互動資料時，CF 本身就更準，內容模型只該當 cold start 的 fallback。此為研究部落格，不代表目前線上系統",
+      "alternatives": [
+        {"name": "純 collaborative filtering", "pickIf": "互動資料充足，新歌佔比低"},
+        {"name": "metadata / 標籤 / 編輯推薦", "pickIf": "沒有訓練音訊模型的資源，或需要可解釋性"}
+      ],
+      "numbers": ["訓練資料為 100 萬首 Spotify 熱門歌曲的 30 秒片段，約 500,000 訓練、約 5,000 驗證", "單張 NVIDIA GTX 780Ti 上訓練 18–36 小時，約 750000 次梯度更新"],
+      "interviewUse": "推薦系統被問 cold start：新內容用 content embedding 預測 CF 向量，互動累積後逐步切回 CF。",
+      "sources": [{"title": "Recommending music on Spotify with deep learning (Sander Dieleman)", "url": "https://sander.ai/2014/08/05/spotify-cnns.html"}],
+      "topics": ["search"],
+      "byAgents": true
+    }
+  ],
+  "quiz": [
+    {
+      "q": "Shazam 為什麼不直接用單一 spectrogram 峰值的頻率當索引 key，而要把峰值配對成 (f1, f2, Δt) 的 hash？代價是什麼？",
+      "a": "單點只有約 10 bits，specificity 低、每次 lookup 命中大量不相干歌曲；配對後約 30 bits，specificity 約高一百萬倍，F=10 時以約 10 倍儲存換約 10000 倍速度。代價是 hash 需要兩個點同時存活，存活機率約從 p 降成 p²，且儲存隨 fan-out 放大。",
+      "topic": "audio",
+      "kind": "取捨"
+    },
+    {
+      "q": "使用者在吵雜酒吧錄了 5 秒，hash 命中很多首歌的碎片。Shazam 式系統怎麼判定是哪一首？為什麼不直接取命中次數最多的？",
+      "a": "對每個候選 track 計算 δ = 資料庫 offset − 查詢 offset，做 time-offset 直方圖，真正的匹配 δ 會集中成一個峰（對角線），以峰高當分數並過 false positive 門檻。只算命中次數會被 32-bit hash 的偶然碰撞與熱門 hash 淹沒；offset 對齊則能容忍只有 1–2% 的 hash 存活與中間 dropout。",
+      "topic": "audio",
+      "kind": "情境"
+    },
+    {
+      "q": "要做『哼歌找歌』功能，為什麼 Shazam 式 fingerprint 不夠用？Hum to Search 改用什麼，缺點是什麼？",
+      "a": "fingerprint 只能辨識『同一份錄音』的片段；哼唱的音高、節奏與音色都和原曲不同，峰值 hash 對不上。Hum to Search 訓練網路由 spectrogram 直接產生旋律 embedding，用 triplet loss 讓同旋律靠近，查詢時做最近鄰。缺點是要訓練與維護模型、缺乏成對資料需合成哼唱，新歌要重算 embedding，且結果是相似度排序而非精確匹配。",
+      "topic": "audio",
+      "kind": "取捨"
+    },
+    {
+      "q": "音樂串流要讓所有歌曲音量一致，為什麼 Spotify 選擇『上傳時量測、播放時調增益』，而不是離線重新處理每首歌？Normal 檔位的目標是多少？",
+      "a": "不改動音檔就保留母帶動態範圍，也不用因為改目標響度而重處理整個曲庫；播放端依檔位調整增益（Loud −11、Normal −14、Quiet −19 LUFS，Normal 為預設）。代價是網頁播放器與第三方裝置不支援時沒有效果，增益調高可能遇到峰值削波，所以建議母帶 True Peak 留餘裕。",
+      "topic": "audio",
+      "kind": "數字"
+    },
+    {
+      "q": "UGC 平台要做版權比對，為什麼 YouTube 用 Content ID 的『參考檔 + 自動 claim + block / monetize / track』而不是只做 notice-and-takedown？什麼情況下 Content ID 這套不划算？",
+      "a": "上傳量大且片段、背景音樂等部分侵權人工檢舉發現不了，所以對符合資格權利人提供的參考檔在上傳時自動比對，並讓權利人依地區選擇處置方式，monetize 還能分潤。代價是誤判（公版、授權素材）需要申訴機制，且要建指紋與參考檔庫；平台規模小、沒有大量權利人合作時，人工檢舉流程成本更低。",
+      "topic": "audio",
+      "kind": "情境"
+    },
+    {
+      "q": "對一個新發行、幾乎沒有聽歌紀錄的歌，如何做推薦？為什麼不能只靠 collaborative filtering？",
+      "a": "CF 需要互動資料，新歌或冷門歌有 cold start 問題。做法是用音訊內容（mel-spectrogram 輸入 CNN）預測 CF 的 latent factors，新歌上架即可放入推薦空間，互動累積後再回到 CF。限制是音訊看不到歌詞與社交脈絡，準確度不如有充足資料的 CF，所以當 fallback 而非取代。",
+      "topic": "audio",
+      "kind": "取捨"
+    }
+  ]
+}

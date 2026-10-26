@@ -1,0 +1,536 @@
+{
+ "mechanisms": [
+  {
+   "id": "expand-contract-schema",
+   "domain": "deploy-migration",
+   "apps": [
+    "Prisma 範例（泛用 RDBMS）",
+    "Blue-green deployment（Fowler）"
+   ],
+   "title": "Expand / Contract：schema 變更拆成多次可回滾的小步驟",
+   "naive": "直覺做法：一個 migration 直接 RENAME / DROP COLUMN，和新版程式碼同時上線",
+   "breaks": "新舊版本程式碼在 rolling deploy 或 blue-green 切換期間會同時存在；舊版讀不到被改名的欄位就噴錯，且一旦 schema 已改，應用程式 rollback 也回不去",
+   "trick": "先 expand：新增 nullable 的新欄位 → 應用程式雙寫新舊欄位、仍讀舊欄位 → 回填歷史資料 → 驗證後把讀切到新欄位 → 停止寫舊欄位 → 最後 contract：刪除舊欄位。Fowler 的 blue-green 也建議把 DB refactoring 與應用部署解耦：先上同時相容新舊版本的 schema，穩定後再部署新 app，最後才移除舊支援",
+   "cost": "代價：一個改動要拆成 3–7 次部署、中間要長期維護雙寫與回填程式碼；contract 那步不可逆，容易被拖著永遠不做而留下技術債",
+   "alternatives": [
+    {
+     "name": "單步 migration + 維護窗口",
+     "pickIf": "內部系統、可接受停機、表很小"
+    },
+    {
+     "name": "online schema change 工具（gh-ost）",
+     "pickIf": "只是加欄位/索引，不需要改應用語意，重點是表很大時不鎖表"
+    }
+   ],
+   "numbers": [
+    "Prisma 範例拆成 7 步（欄位 name 拆為 first_name / last_name）",
+    "Fowler：blue-green 兩套環境共用同一個 DB 時，schema 必須同時相容兩版 app"
+   ],
+   "interviewUse": "被問「怎麼零停機改欄位名稱 / 拆欄位」或「部署失敗怎麼 rollback」時，一句話帶出：schema 永遠只做向後相容的加法，刪除放在最後一步，這樣每一步都能 rollback。",
+   "sources": [
+    {
+     "title": "Expand and Contract Pattern (Prisma Data Guide)",
+     "url": "https://www.prisma.io/dataguide/types/relational/expand-and-contract-pattern"
+    },
+    {
+     "title": "BlueGreenDeployment (Martin Fowler)",
+     "url": "https://martinfowler.com/bliki/BlueGreenDeployment.html"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "consistency"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "gh-ost-triggerless",
+   "domain": "deploy-migration",
+   "apps": [
+    "GitHub",
+    "MySQL"
+   ],
+   "title": "gh-ost vs pt-online-schema-change：用 binlog 取代 trigger 改大表",
+   "naive": "直覺做法：pt-online-schema-change——建 shadow table，用 MySQL trigger 把原表的寫入同步到 shadow table，再 rename 換表",
+   "breaks": "trigger 是被直譯執行的 stored routine，會拖慢每筆對原表的寫入；trigger 與主流量競爭 lock，GitHub 遇過整張表甚至整個 DB 近乎鎖死；高負載時就算暫停複製，trigger 仍在跑，無法真正 throttle",
+   "trick": "gh-ost 不用 trigger：用 row-based replication 讀 binary log 來串流變更，master 只看到一條連線在循序寫 ghost table。可在執行中動態調整 throttle（Threads_running 門檻、replica lag heartbeat、自訂查詢條件、flag file、socat 指令），cut-over 也可用 flag file 延後到人工/排程許可",
+   "cost": "代價：需要 binlog 為 ROW 格式並多一條 replica 連線，工具本身更複雜；cut-over 仍有一瞬間的 table swap；對沒有 binlog 權限的託管環境可能用不了",
+   "alternatives": [
+    {
+     "name": "pt-online-schema-change",
+     "pickIf": "表小、負載低、環境不允許讀 binlog 時，trigger 工具更簡單"
+    },
+    {
+     "name": "expand/contract + 應用層雙寫",
+     "pickIf": "需要改變資料語意而非僅 DDL"
+    }
+   ],
+   "numbers": [
+    "gh-ost throttle 範例：Threads_running=30",
+    "GitHub 說某些 pt-osc 遷移只能在離峰或週末跑，有些會造成 MySQL 中斷"
+   ],
+   "interviewUse": "問「億級列大表怎麼加索引/欄位不停服」時：提 triggerless + 可隨時 throttle + 可延後 cut-over，並說明 trigger 方案為什麼在高寫入表會反咬 production。",
+   "sources": [
+    {
+     "title": "gh-ost: GitHub's online schema migration tool for MySQL",
+     "url": "https://github.blog/engineering/infrastructure/gh-ost-github-s-online-migration-tool-for-mysql/"
+    },
+    {
+     "title": "gh-ost: why triggerless",
+     "url": "https://github.com/github/gh-ost/blob/master/doc/why-triggerless.md"
+    }
+   ],
+   "topics": [
+    "scaling-writes",
+    "reliability"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "stripe-online-migration-4step",
+   "domain": "deploy-migration",
+   "apps": [
+    "Stripe"
+   ],
+   "title": "Stripe 線上資料遷移四步：雙寫 → 改讀 → 改寫 → 移除舊路徑",
+   "naive": "直覺做法：寫一支腳本把資料搬到新表，然後一次切換應用程式用新表",
+   "breaks": "搬移期間新資料持續進來，切換瞬間新舊不一致；億級資料單線程跑不完（Stripe 估算每筆 1 秒要超過三年）；一次切換出錯無法回頭",
+   "trick": "Stripe 把 Subscriptions 從嵌在 Customer 內搬成獨立表：(1) 新舊表雙寫保持同步；(2) 把所有讀取切到新表；(3) 反轉寫入方向，讓新表成為主；(4) 移除舊表與相關程式碼。歷史資料用 Hadoop/MapReduce（Scalding）離線處理 DB 快照找出需遷移目標，不衝擊 production，並用 GitHub Scientist 在新舊路徑間比對差異",
+   "cost": "代價：遷移期很長，雙寫期間寫入成本與失敗面都增加；需要完整的差異監控才敢往下一步；程式碼要同時背兩套路徑",
+   "alternatives": [
+    {
+     "name": "Big-bang cutover + 停機",
+     "pickIf": "資料量小、可停機、一致性比可用性重要"
+    },
+    {
+     "name": "CDC / binlog 複製",
+     "pickIf": "新舊儲存系統能被工具直接同步，不想改應用寫入路徑"
+    }
+   ],
+   "numbers": [
+    "數億筆 Subscription 物件",
+    "每筆 1 秒 = 超過三年"
+   ],
+   "interviewUse": "問「怎麼把資料從舊表/舊服務搬到新的而不停機」時直接背四步，並補一句每一步都要有可 rollback 的開關與 diff 監控。",
+   "sources": [
+    {
+     "title": "Online migrations at scale (Stripe)",
+     "url": "https://stripe.com/blog/online-migrations"
+    }
+   ],
+   "topics": [
+    "consistency",
+    "reliability"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "scientist-shadow-compare",
+   "domain": "deploy-migration",
+   "apps": [
+    "GitHub",
+    "Stripe"
+   ],
+   "title": "Scientist：在 production 流量上同時跑新舊路徑並比對結果",
+   "naive": "直覺做法：靠單元/整合測試證明重寫的程式碼與舊版行為一致",
+   "breaks": "測試無法涵蓋 production 資料與真實流量的長尾；重寫權限系統這類關鍵路徑，測試全過仍可能在真實資料上算出不同結果",
+   "trick": "Scientist 把舊邏輯當 control（回傳給使用者的永遠是它）、新邏輯當 candidate 一起執行，順序隨機化以避免順序偏差，比對結果並記錄不一致；同時發佈執行時間、不一致率與不一致樣本供儀表板觀察。GitHub 用它重構權限系統，Stripe 在線上遷移中也拿它比對新舊路徑",
+   "cost": "代價：每次請求多跑一次 candidate（延遲與資源成本），candidate 必須無副作用（只能 shadow read，不能 shadow write）；要處理非決定性欄位的比對噪音",
+   "alternatives": [
+    {
+     "name": "Dark launch / shadow traffic 於基礎設施層",
+     "pickIf": "要比對整個服務而非單一函式，可在 proxy 層鏡射流量"
+    },
+    {
+     "name": "Canary 小流量上線",
+     "pickIf": "沒有確定性的『正確答案』可比對，只能看錯誤率與延遲"
+    }
+   ],
+   "numbers": [
+    "（來源未列具體數字）"
+   ],
+   "interviewUse": "提到『換資料庫 / 重寫核心邏輯』時補一句：先 shadow read 比對到不一致率歸零再切流量，而不是只信測試。",
+   "sources": [
+    {
+     "title": "Scientist (GitHub Engineering)",
+     "url": "https://github.blog/engineering/infrastructure/scientist/"
+    },
+    {
+     "title": "Online migrations at scale (Stripe)",
+     "url": "https://stripe.com/blog/online-migrations"
+    }
+   ],
+   "topics": [
+    "reliability"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "discord-cassandra-to-scylla",
+   "domain": "deploy-migration",
+   "apps": [
+    "Discord",
+    "ScyllaDB"
+   ],
+   "title": "Discord：Cassandra → ScyllaDB，用 Rust migrator 把 3 個月縮成 9 天",
+   "naive": "直覺做法：留在 Cassandra 繼續調 JVM 與 gossip 維運；或用 Spark migrator 慢慢搬",
+   "breaks": "messages cluster 成長到 177 nodes；hot partition（大 server 與小群組流量懸殊）讓單節點越追越慢，因 quorum 拖垮整個 cluster；Java GC 造成延遲尖峰與人工介入；維運成本只增不減",
+   "trick": "新資料 dual-write 到兩個 DB，歷史資料用 migrator 搬；原本 Spark 估 3 個月，改用 Rust 寫、沿用既有 data service library 後速度達每秒 320 萬筆，9 天完成。切換前用自動化測試把 sample 讀取同時送兩邊比對，2022 年 5 月完成 cutover。ScyllaDB（C++、shard-per-core、無 GC）讓 cluster 縮為 72 nodes",
+   "cost": "代價：換 DB 要先在 production 累積 ScyllaDB 經驗並補強其 reverse query 能力；仍需處理 hot partition 本身；雙寫期間要維護兩套",
+   "alternatives": [
+    {
+     "name": "留在原 DB 並調校",
+     "pickIf": "團隊小、尚未出現維運瓶頸、遷移風險大於收益"
+    },
+    {
+     "name": "託管服務",
+     "pickIf": "不想自己維運 cluster，能接受成本與鎖定"
+    }
+   ],
+   "numbers": [
+    "177 Cassandra nodes → 72 ScyllaDB nodes",
+    "migrator 最高每秒 320 萬筆；9 天 vs 預估 3 個月",
+    "historical fetch p99 40–125ms → 15ms；insert p99 5–70ms → 5ms"
+   ],
+   "interviewUse": "被問『資料庫瓶頸要換引擎怎麼遷』：雙寫新資料 + 高速回填歷史 + 讀取雙邊比對後再切，並指出回填工具本身的吞吐是時程關鍵。",
+   "sources": [
+    {
+     "title": "How Discord Stores Trillions of Messages",
+     "url": "https://discord.com/blog/how-discord-stores-trillions-of-messages"
+    }
+   ],
+   "topics": [
+    "storage-choice",
+    "sharding"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "shopify-redis-to-mysql-shadow",
+   "domain": "deploy-migration",
+   "apps": [
+    "Shopify"
+   ],
+   "title": "Shopify：庫存 reservation 從 Redis 搬到 MySQL 的 shadow mode + 逐 pod 放量",
+   "naive": "直覺做法：寫好 MySQL 版本後，一個 deploy 全站切換",
+   "breaks": "reservation 是進行中的短暫狀態，一次切換會有 in-flight reservation 遺失或重複的問題；錯了不是超賣就是隱藏可售庫存",
+   "trick": "Shadow mode：每筆 reservation 同時寫 Redis 與 MySQL，Redis 仍是 source of truth，用真實流量驗證 MySQL 正確性與效能。通過後把權威來源切到 MySQL，但保留雙寫當安全網（Redis 仍是完整備份視圖）。再逐 pod 放量，先低流量 pod、最後高流量商家，雙寫讓 kill switch 能快速切回 Redis。新設計本身用每單位一列 + SELECT FOR UPDATE SKIP LOCKED，每 item 池上限 1,000 列",
+   "cost": "代價：切換期間寫入成本加倍；雙寫失敗要定義以誰為準；短暫狀態雖少了搬移問題，但要確認 TTL 與釋放邏輯兩邊一致",
+   "alternatives": [
+    {
+     "name": "一次性 big-bang 切換",
+     "pickIf": "資料是無狀態或可重建的 cache"
+    },
+    {
+     "name": "outbox / reconciliation 事後修復",
+     "pickIf": "可容忍短暫不一致，不是 flash sale 這類不能重複賣的場景"
+    }
+   ],
+   "numbers": [
+    "Black Friday 2025 峰值 $5.1 million / 分鐘",
+    "每個 item reservation pool 上限 1,000 列"
+   ],
+   "interviewUse": "換儲存引擎時說：先 shadow（舊的當權威）→ 切權威但保留雙寫 → 逐批放量，雙寫即 kill switch。",
+   "sources": [
+    {
+     "title": "Scaling inventory reservations (Shopify Engineering)",
+     "url": "https://shopify.engineering/scaling-inventory-reservations"
+    }
+   ],
+   "topics": [
+    "contention",
+    "storage-choice"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "ghostferry-shard-move",
+   "domain": "deploy-migration",
+   "apps": [
+    "Shopify"
+   ],
+   "title": "Shopify Ghostferry：不停機地把一家店從一個 MySQL shard 搬到另一個",
+   "naive": "直覺做法：停寫入 → dump → restore → 切路由，停機時間隨資料量成長",
+   "breaks": "店家資料可到 TB 級，停寫期間太長；只靠一次性拷貝會漏掉拷貝期間的新寫入",
+   "trick": "Ghostferry 同時做兩件事：以 SELECT...FOR UPDATE 依 shop ID 批次複製各表資料，並 tail source 的 binlog、只過濾該店變更套用到 target。追上後進 cutover：用 Redis 支撐的 multi-reader-single-writer lock 暫停該店寫入，重播剩餘 binlog，更新 routing table 指向新 pod，驗證舊 shard 無殘留查詢後再清除舊資料。前、中、後都有 verifier，演算法還用 TLA+ 建模",
+   "cost": "代價：cutover 仍有短暫寫入暫停；需要 binlog 存取與 per-tenant 路由表；工具與 verifier 的建置、形式化驗證成本高",
+   "alternatives": [
+    {
+     "name": "gh-ost / 整表 dump-restore",
+     "pickIf": "搬的是整張表或整個 DB 而非單一租戶"
+    },
+    {
+     "name": "consistent hashing 自動 rebalance",
+     "pickIf": "資料沒有明確租戶邊界，且接受由分片系統自動搬移"
+    }
+   ],
+   "numbers": [
+    "TB 級 shop 搬移、zero consumer-facing downtime（來源描述）"
+   ],
+   "interviewUse": "問 multi-tenant SaaS 如何 rebalance hot shard：批次複製 + binlog 追趕 + 短暫鎖租戶 + 改路由表。",
+   "sources": [
+    {
+     "title": "MySQL database shard balancing at terabyte scale (Shopify Engineering)",
+     "url": "https://shopify.engineering/mysql-database-shard-balancing-terabyte-scale"
+    }
+   ],
+   "topics": [
+    "sharding"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "kayenta-canary-analysis",
+   "domain": "deploy-migration",
+   "apps": [
+    "Netflix",
+    "Spinnaker"
+   ],
+   "title": "Kayenta：自動 canary 分析，用統計檢定取代人看 dashboard",
+   "naive": "直覺做法：部署到少量機器後，工程師盯著 dashboard 憑感覺判斷要不要放量",
+   "breaks": "人工判斷慢、主觀且不一致；把 canary 與長時間運行的 production 比較，會因機器預熱、運行時間不同而誤判",
+   "trick": "Kayenta 對 canary 與 baseline 兩組 cluster 取得成對時間序列，由 judge 逐 metric 以 Mann-Whitney U 檢定（要求 98% confidence，並有 ±0.25×estimate 的容忍帶），分類為 Pass/High/Low/Nodata/Error；Group score = Pass 數/總數×100，加權平均後與 Pass/Marginal 門檻比較。標為 critical 的 metric 顯著劣化，或 50% 以上 metric 無資料，直接判失敗",
+   "cost": "代價：需要穩定的 metric 與足夠流量才有統計意義；要為每個服務挑 metric 與權重；新起一組 baseline 也增加資源成本；小流量服務檢定力不足",
+   "alternatives": [
+    {
+     "name": "Blue-green",
+     "pickIf": "要整套環境瞬間切換與秒級 rollback，且負擔得起雙倍資源"
+    },
+    {
+     "name": "人工 canary + 告警",
+     "pickIf": "服務少、流量小，統計判定不划算"
+    }
+   ],
+   "numbers": [
+    "98% confidence",
+    "容忍帶 ±0.25×estimate",
+    "50% 以上 metric 無資料即失敗"
+   ],
+   "interviewUse": "講 canary 時補『對照 baseline 而非 production，並用自動評分決定放量/回滾』，比只說「小流量先試」更有深度。",
+   "sources": [
+    {
+     "title": "How canary judgment works (Spinnaker)",
+     "url": "https://spinnaker.io/guides/user/canary/judge"
+    },
+    {
+     "title": "Canary analysis (Spinnaker)",
+     "url": "https://spinnaker.io/docs/guides/user/canary/"
+    }
+   ],
+   "topics": [
+    "reliability"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "feature-flag-kill-switch",
+   "domain": "deploy-migration",
+   "apps": [
+    "Cloudflare",
+    "通用 feature toggle"
+   ],
+   "title": "Feature flag 分類與 kill switch：能不重新部署就關掉壞功能",
+   "naive": "直覺做法：所有功能變更都靠重新部署來上線與回滾",
+   "breaks": "部署回滾慢（分鐘到小時）；壞功能擴散時沒有快速關閉手段。Cloudflare 2025-11-18 事故歷時 5.5 小時，事後承諾建立 global kill switches",
+   "trick": "Fowler 把 toggle 依壽命與動態程度分四類：release（短命，支援 trunk-based）、experiment（A/B）、ops（部分會成為永久 kill switch，在高負載時優雅降級非關鍵功能）、permissioning（長命、依使用者類型）。Cloudflare 2019 事故中用 global terminate 在 14:07 關閉整個 WAF，14:09 流量恢復。toggle 應視為有持有成本的庫存，要有移除機制",
+   "cost": "代價：flag 組合爆炸、測試難以覆蓋；Knight Capital 是舊 flag 管理失誤的反例；kill switch 的控制面若依賴同一套故障系統（Cloudflare 當時 Access 掛掉，連面板都難進）就無效",
+   "alternatives": [
+    {
+     "name": "靜態設定 + source control",
+     "pickIf": "變更頻率低、不需要執行期動態決策"
+    },
+    {
+     "name": "Canary 放量",
+     "pickIf": "需要用真實流量逐步驗證而不是只有開關"
+    }
+   ],
+   "numbers": [
+    "Cloudflare 2019：13:42 部署、14:07 global terminate、14:09 恢復，共 27 分鐘",
+    "Cloudflare 2025：5.5 小時"
+   ],
+   "interviewUse": "設計上線流程時說：每個高風險變更都要有獨立於部署的 kill switch，且控制面不能依賴被保護的系統。",
+   "sources": [
+    {
+     "title": "Feature Toggles (Martin Fowler)",
+     "url": "https://martinfowler.com/articles/feature-toggles.html"
+    },
+    {
+     "title": "Cloudflare outage on July 2, 2019",
+     "url": "https://blog.cloudflare.com/details-of-the-cloudflare-outage-on-july-2-2019/"
+    },
+    {
+     "title": "Cloudflare outage on November 18, 2025",
+     "url": "https://blog.cloudflare.com/18-november-2025-outage/"
+    }
+   ],
+   "topics": [
+    "reliability"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "stripe-api-versioning",
+   "domain": "deploy-migration",
+   "apps": [
+    "Stripe"
+   ],
+   "title": "Stripe 日期版本 + version change modules：十年不破壞客戶",
+   "naive": "直覺做法：v1、v2、v3 大版本，舊版逐步下線，強迫客戶遷移",
+   "breaks": "大版本改動大、客戶遷移成本高，常因此不升級；維護多套大版本的程式碼與文件負擔重",
+   "trick": "以發佈日期命名滾動版本（如 2017-05-24）；帳號首次呼叫時自動 pin 在當下最新版，之後每次呼叫隱含該版，可用 Stripe-Version header 覆寫或在 dashboard 升級。每個向後不相容的變更封裝成 version change module（含文件、轉換邏輯、受影響資源），產生回應時從最新版往回逐個套用模組，直到目標版本",
+   "cost": "代價：每個不相容變更都要寫可逆轉換，模組累積後回應路徑越來越長；測試矩陣隨版本數成長；需要長期維護成本換取客戶信任",
+   "alternatives": [
+    {
+     "name": "URL 大版本 /v2",
+     "pickIf": "變更少、客戶可控（內部 API），團隊無法承擔轉換層"
+    },
+    {
+     "name": "additive-only + 欄位淘汰期",
+     "pickIf": "只要新增欄位即可，不需要破壞性變更"
+    }
+   ],
+   "numbers": [
+    "自 2011 年起保持對每個版本的相容",
+    "六年約近百次向後不相容升級"
+   ],
+   "interviewUse": "被問 API 版本策略：說 pin per account + 轉換層把相容成本集中在伺服器端，而不是丟給客戶。",
+   "sources": [
+    {
+     "title": "APIs as infrastructure: future-proofing Stripe with versioning",
+     "url": "https://stripe.com/blog/api-versioning"
+    }
+   ],
+   "topics": [
+    "api-networking"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "config-rollout-gradual",
+   "domain": "deploy-migration",
+   "apps": [
+    "Cloudflare",
+    "Meta"
+   ],
+   "title": "設定變更也要漸進發布：兩次 Cloudflare 與 Meta 事故的教訓",
+   "naive": "直覺做法：程式碼走 canary，設定/規則/特徵檔因為『只是資料』而全球秒級推送",
+   "breaks": "Cloudflare 2019：WAF 規則依設計繞過 DOG → PIG → Canary PoPs 的分階段流程，一條含 catastrophic backtracking regex 的規則經 Quicksilver 秒級全球推送，CPU 耗盡。2025：Bot Management 特徵檔每五分鐘重生，因 DB 權限變更膨脹超過 200 features 的上限，proxy panic 造成 5xx。Meta 2021：維護指令中 audit 工具 bug 沒擋下，整個 backbone 斷線",
+   "trick": "把設定視為程式碼：同樣走分階段發布與自動回滾；對『內部產生』的設定檔做與使用者輸入同等的驗證與大小上限；保留舊版本可快速重新部署；out-of-band 存取路徑不要依賴被保護的系統（Meta 工程師須實體進機房，安全強化延誤了復原）",
+   "cost": "代價：緊急威脅（如 WAF 規則）需要速度，分階段會延遲防護；多一層驗證與灰度需要平台投入；如何在速度與安全間取捨要事先定好例外流程",
+   "alternatives": [
+    {
+     "name": "全球即時推送",
+     "pickIf": "威脅回應時效性壓倒一切，並搭配 kill switch 與預先驗證"
+    },
+    {
+     "name": "受控 staged rollout",
+     "pickIf": "一般設定與規則變更"
+    }
+   ],
+   "numbers": [
+    "Cloudflare 2025：功能上限 200、正常約 60 個 features；11:05 變更、11:28 壞檔到達 production、14:30 恢復、17:06 完全恢復",
+    "Cloudflare 2019：總計 27 分鐘"
+   ],
+   "interviewUse": "面試講上線安全時，主動說：最大的事故常來自設定而非程式碼，所以設定要同樣 canary、驗證、可回滾。",
+   "sources": [
+    {
+     "title": "Cloudflare outage on November 18, 2025",
+     "url": "https://blog.cloudflare.com/18-november-2025-outage/"
+    },
+    {
+     "title": "Details of the Cloudflare outage on July 2, 2019",
+     "url": "https://blog.cloudflare.com/details-of-the-cloudflare-outage-on-july-2-2019/"
+    },
+    {
+     "title": "More details about the October 4 outage (Meta)",
+     "url": "https://engineering.fb.com/2021/10/05/networking-traffic/outage-details/"
+    }
+   ],
+   "topics": [
+    "reliability"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "slack-cell-architecture",
+   "domain": "deploy-migration",
+   "apps": [
+    "Slack",
+    "AWS Route 53"
+   ],
+   "title": "Cell-based architecture：把爆炸半徑限制在一個 AZ / 一個 cell",
+   "naive": "直覺做法：服務跨多個 AZ 全互通，由 load balancer 自行分流",
+   "breaks": "2021-06-30 一條 AZ 間網路鏈路故障形成 gray failure（各元件對可用性看法不一致），各 AZ 的 frontend 仍連到不可用的 backend，造成層層連鎖失敗；強一致的 datastore（Vitess 單 shard primary）使偵測與切換更難",
+   "trick": "Slack 做 siloing：服務只接收同 AZ 的流量、只送往同 AZ 的上游，等於每個服務有 N 個獨立實例（每 AZ 一個）。用 Envoy 加 xDS control plane（Rotor）重配權重，可把一個 AZ drain 到 0：目標 5 分鐘內移除流量、不造成使用者可見錯誤、以 1% 粒度逐步調整。AWS Route 53 則以 shuffle sharding：2,048 個 virtual name servers、每個網域分 4 個，有 730 billion 種組合，攻擊只影響單一網域",
+   "cost": "代價：容量要預留足以吸收一個 cell 被 drain 的餘裕；跨 cell 的共用資料與全域狀態更難；多 cell 部署與維運複雜度上升",
+   "alternatives": [
+    {
+     "name": "跨 AZ 全互通 + health check",
+     "pickIf": "故障多為完全當機而非 gray failure，且規模小"
+    },
+    {
+     "name": "Shuffle sharding",
+     "pickIf": "多租戶且個別租戶可能是攻擊或毒藥請求來源"
+    }
+   ],
+   "numbers": [
+    "drain 目標 5 分鐘、1% 粒度",
+    "Route 53：2,048 virtual name servers、每網域 4 個、730 billion 組合"
+   ],
+   "interviewUse": "談 blast radius 與部署：新版先上一個 cell，壞了就 drain 掉該 cell，影響限於 1/N。",
+   "sources": [
+    {
+     "title": "Slack's migration to a cellular architecture",
+     "url": "https://slack.engineering/slacks-migration-to-a-cellular-architecture/"
+    },
+    {
+     "title": "Workload isolation using shuffle sharding (AWS)",
+     "url": "https://builder.aws.com/content/3F06NpJ8YeoIGP8VHTw4n81pFn8/workload-isolation-using-shuffle-sharding"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "sharding"
+   ],
+   "byAgents": false
+  }
+ ],
+ "quiz": [
+  {
+   "q": "要把 3 億列的 MySQL 表加欄位且不能停機，為什麼 GitHub 不用 pt-online-schema-change 而做了 gh-ost？",
+   "a": "pt-osc 靠 trigger，trigger 是被直譯的 stored routine，會拖慢每筆寫入、與主流量競爭 lock（GitHub 遇過整表近乎鎖死），且暫停複製時 trigger 仍在跑無法 throttle。gh-ost 讀 binlog 異步套用，可動態 throttle 並延後 cut-over；代價是需要 ROW binlog 與額外連線。",
+   "topic": "deploy-migration",
+   "kind": "取捨"
+  },
+  {
+   "q": "你要把訂閱資料從 Customer 內嵌欄位搬到獨立表，且不能停機。描述 Stripe 式的步驟，並說明每一步的風險控制。",
+   "a": "雙寫新舊表 → 切讀到新表 → 反轉寫入讓新表為主 → 移除舊表與程式碼。歷史資料用離線快照/批次處理搬，雙寫期間用 Scientist 類工具比對差異；每步都保留可 rollback 的開關，差異歸零才進下一步。",
+   "topic": "deploy-migration",
+   "kind": "情境"
+  },
+  {
+   "q": "新舊儲存引擎遷移時，為什麼 Shopify 把 Redis 保持為 source of truth 做 shadow mode，而不是直接讓 MySQL 當主？",
+   "a": "先用真實流量驗證 MySQL 的正確性與效能而不承擔風險；切權威後仍保留雙寫，Redis 成為完整備份，逐 pod 放量，雙寫即 kill switch 可快速回滾。代價是遷移期寫入加倍、需要定義雙寫失敗的處理。",
+   "topic": "deploy-migration",
+   "kind": "取捨"
+  },
+  {
+   "q": "Cloudflare 2025-11-18 與 2019-07-02 兩次事故的共通教訓是什麼？你會在上線流程補什麼？",
+   "a": "問題都來自『設定/規則』而非程式碼，且繞過了漸進發布：2019 WAF 規則秒級全球推送，2025 內部產生的 feature file 超過 200 features 上限致 proxy panic。應：設定同樣 staged rollout、對內部產生的檔案做驗證與大小限制、備好 global kill switch 並確保控制面不依賴故障系統。",
+   "topic": "deploy-migration",
+   "kind": "情境"
+  },
+  {
+   "q": "Stripe 為什麼用日期版本並 pin 在帳號上，而不是 v1/v2/v3？代價是什麼？",
+   "a": "客戶不被強迫遷移，Stripe 自 2011 年對每個版本維持相容；向後不相容變更封裝成 version change modules，從最新版往回逐個套用到目標版本。代價是轉換層與測試矩陣隨版本累積，維護成本集中在 Stripe 自己身上。",
+   "topic": "deploy-migration",
+   "kind": "取捨"
+  },
+  {
+   "q": "Kayenta 判定 canary 時，為什麼要和新起的 baseline 比，而不是和現有 production 比？如何決定通過與否？",
+   "a": "production 已運行很久，預熱、運行時間與流量條件不同，會造成誤判，所以起一組同條件的 baseline。judge 對每個 metric 做 Mann-Whitney U 檢定（98% confidence、±0.25 容忍帶），分數＝Pass 比例，加權後與 Pass/Marginal 門檻比；critical metric 劣化或 50% 以上無資料直接失敗。",
+   "topic": "deploy-migration",
+   "kind": "概念"
+  }
+ ]
+}

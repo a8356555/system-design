@@ -1,0 +1,550 @@
+{
+ "mechanisms": [
+  {
+   "id": "cdc-dblog-watermark-snapshot",
+   "domain": "data-pipeline",
+   "apps": [
+    "Netflix",
+    "Debezium 使用者"
+   ],
+   "title": "CDC 進 data lake：log tailing + 分塊 snapshot（DBLog 的 watermark）",
+   "naive": "直覺做法：應用程式 dual-write（寫 DB 又寫 Kafka），或定期全表 SELECT dump 進 lake。",
+   "breaks": "dual-write 沒有跨系統交易，兩邊會漂移；全表 dump 又重又有 lag；只讀 transaction log 則 log 不保留完整歷史，新 sink 或漏事件時無法補全狀態。",
+   "trick": "Netflix DBLog：持續讀 transaction log，同時用 watermark 把「分塊 SELECT 出來的 rows」與 log 事件交錯合併，不鎖表、可暫停續跑、可對特定 table 或 primary key 補撈。Debezium 則是先 consistent snapshot 再接 logical decoding，事件含 before / after / source(LSN) / op。",
+   "cost": "Debezium 是 at-least-once：offset commit 前當機會重送，sink 必須以 PK + LSN/版本做 idempotent upsert；Postgres replication slot 會 hold 住 WAL，connector 停掉時磁碟會被撐爆；schema 變更要靠 schema registry 一起處理。",
+   "alternatives": [
+    {
+     "name": "定期全表 dump / batch ETL",
+     "pickIf": "資料量小、可接受小時級延遲、來源 DB 無法開 log 權限"
+    },
+    {
+     "name": "Outbox pattern",
+     "pickIf": "要的是 domain event 而不是 row-level 變更，且你控制應用程式碼"
+    }
+   ],
+   "numbers": [
+    "Debezium Postgres connector 預設 snapshot.mode=initial，語意為 at-least-once"
+   ],
+   "interviewUse": "被問「怎麼把 OLTP 資料同步進 data lake / search」時，一句話帶出：我用 log-based CDC 而非 dual-write，初始化用分塊 snapshot 與 log 交錯（DBLog），sink 端 idempotent upsert，並監控 replication slot lag。",
+   "sources": [
+    {
+     "title": "DBLog: A Watermark Based Change-Data-Capture Framework (Netflix, arXiv)",
+     "url": "https://arxiv.org/abs/2010.12597"
+    },
+    {
+     "title": "Debezium PostgreSQL connector documentation",
+     "url": "https://debezium.io/documentation/reference/stable/connectors/postgresql.html"
+    }
+   ],
+   "topics": [
+    "consistency",
+    "streaming",
+    "idempotency"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "elt-dbt-warehouse-transform",
+   "domain": "data-pipeline",
+   "apps": [
+    "dbt",
+    "cloud data warehouse 團隊"
+   ],
+   "title": "ELT + dbt：先載入原始資料，再在 warehouse 內用 SQL 轉換",
+   "naive": "直覺做法：ETL——在進 warehouse 前用獨立的 Spark / 自刻程式先清洗、轉換，只載入結果。",
+   "breaks": "商業邏輯一改，就要重跑上游 pipeline 且原始資料已丟失；分析師要等工程師；轉換邏輯散在程式裡難以版控與測試。",
+   "trick": "ELT：raw data 先原樣載入 warehouse，轉換以版控的 SQL model（dbt）在 warehouse 內執行，分析師可直接存取 raw 並迭代商業邏輯，轉換可測試、可 review。",
+   "cost": "要保留未轉換的 raw data，儲存成本較高；大規模下轉換管理複雜、warehouse 運算可能成瓶頸；敏感原始資料存放帶來安全與合規風險。",
+   "alternatives": [
+    {
+     "name": "ETL",
+     "pickIf": "金融、醫療等需嚴格治理，敏感欄位必須在落地前遮罩或剔除"
+    },
+    {
+     "name": "混合式",
+     "pickIf": "多數表走 ELT，只有含 PII 的來源在載入前先處理"
+    }
+   ],
+   "numbers": [],
+   "interviewUse": "談 analytics pipeline 時說：cloud warehouse 運算便宜，所以我選 ELT 保留 raw、把轉換變成可版控可測試的 SQL；PII 資料例外走 ETL。",
+   "sources": [
+    {
+     "title": "ELT vs ETL (dbt Labs)",
+     "url": "https://www.getdbt.com/blog/extract-load-transform"
+    }
+   ],
+   "topics": [
+    "storage-choice",
+    "async-jobs"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "iceberg-snapshot-table-format",
+   "domain": "data-pipeline",
+   "apps": [
+    "Netflix",
+    "Apache Iceberg"
+   ],
+   "title": "Lakehouse table format：Netflix 為什麼發明 Iceberg（snapshot + time travel）",
+   "naive": "直覺做法：Hive 風格——table 就是一堆目錄，裡面有哪些檔案就是 table 內容，靠 listing 目錄來讀。",
+   "breaks": "沒辦法跨目錄、跨檔案做原子變更；寫到一半被讀到會看到不一致資料；rename / listing 在物件儲存上不可靠。Netflix 內部團隊因此避免修改 Hive 上的資料。",
+   "trick": "Iceberg 用 metadata（snapshot → manifest → data files）追蹤 table 狀態，每次 commit 產生新 snapshot，讀者永遠讀一致的 snapshot、不需鎖；並發寫入靠 optimistic retry + validation；舊 snapshot 保留即可 time travel 與 rollback；partition 資訊藏在 metadata（hidden partitioning）。",
+   "cost": "metadata 會持續膨脹，需定期 expire snapshots、清 orphan files；time travel 的歷史範圍取決於保留多少 snapshot，保留越久儲存越貴；並發寫衝突時 retry 有成本。",
+   "alternatives": [
+    {
+     "name": "Hudi",
+     "pickIf": "高頻 upsert / CDC、需要 incremental query 與內建 indexing"
+    },
+    {
+     "name": "Delta Lake",
+     "pickIf": "主要在 Databricks / Spark 生態，要最緊密的整合"
+    },
+    {
+     "name": "純 Hive / Parquet 目錄",
+     "pickIf": "append-only、單一 writer、不需要 ACID 的小型資料集"
+    }
+   ],
+   "numbers": [
+    "Netflix 於 2017 開發，2018 捐給 Apache，2020 成為 top-level project"
+   ],
+   "interviewUse": "被問 data lake 為何要 table format：因為物件儲存上目錄即 table 無法原子 commit；Iceberg 用 snapshot 把 commit 變成換一個 metadata 指標，順便得到 time travel 與 rollback。",
+   "sources": [
+    {
+     "title": "Apache Iceberg - Reliability",
+     "url": "https://iceberg.apache.org/docs/latest/reliability/"
+    },
+    {
+     "title": "Apache Iceberg (origins at Netflix)",
+     "url": "https://en.wikipedia.org/wiki/Apache_Iceberg"
+    }
+   ],
+   "topics": [
+    "consistency",
+    "storage-choice"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "hudi-incremental-upsert",
+   "domain": "data-pipeline",
+   "apps": [
+    "Uber",
+    "Apache Hudi"
+   ],
+   "title": "Uber Hudi：增量 upsert 取代整個 partition 重寫（CoW vs MoR）",
+   "naive": "直覺做法：每次 ETL 重算並覆寫整個 partition / table，遲到或被更新的資料就靠重跑。",
+   "breaks": "只有少量 row 變動卻要重寫大量資料；runtime 與成本高，SLA 難降；遲到資料需要回頭重寫舊 partition。",
+   "trick": "Uber 以 Hudi 做 record-level upsert：ETL 的 SQL 輸出直接 upsert 到目標表，下游用 incremental query 只讀變動，一路串接到 modeled tables；Merge-On-Read 讓高頻 mutation 先寫 log file，compaction 等 table service 可與 writer 並行、不阻塞。",
+   "cost": "MoR 讀取要合併 base 與 delta log（除非用 read-optimized），讀延遲較高；CoW 寫放大、更新要重寫整個 base file；需要維護 index 與 compaction 排程。",
+   "alternatives": [
+    {
+     "name": "Copy-on-Write",
+     "pickIf": "批次 ETL、更新少、重視查詢速度（reference / 慢變維度表）"
+    },
+    {
+     "name": "Merge-on-Read",
+     "pickIf": "CDC / streaming ingestion、高頻更新、要近即時 freshness"
+    },
+    {
+     "name": "整 partition overwrite",
+     "pickIf": "更新稀少且 partition 小，不值得引入 Hudi"
+    }
+   ],
+   "numbers": [
+    "Dimensional Driver Table runtime 220 → 39 分鐘（-82%），成本 -78%",
+    "Driver Status Fact Table runtime -48%、成本 -25%"
+   ],
+   "interviewUse": "談遲到資料或 CDC 落地時說：我用支援 record-level upsert 與 incremental read 的 table format（如 Uber 的 Hudi），更新密集選 MoR、讀多更新少選 CoW。",
+   "sources": [
+    {
+     "title": "Uber's Lakehouse Architecture",
+     "url": "https://www.uber.com/blog/ubers-lakehouse-architecture/"
+    },
+    {
+     "title": "Apache Hudi - Table Types (CoW vs MoR)",
+     "url": "https://hudi.apache.org/docs/table_types"
+    },
+    {
+     "title": "Apache Hudi Overview",
+     "url": "https://hudi.apache.org/docs/overview"
+    }
+   ],
+   "topics": [
+    "scaling-writes",
+    "storage-choice"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "kappa-backfill-uber-hive-source",
+   "domain": "data-pipeline",
+   "apps": [
+    "Uber",
+    "LinkedIn (Kreps 的 Kappa 論述)"
+   ],
+   "title": "Lambda vs Kappa 的實際取捨：Uber 把 Hive 當 streaming source 做 backfill",
+   "naive": "直覺做法：Lambda——batch 與 streaming 各寫一套，batch 結果事後覆蓋 streaming 的近似結果。",
+   "breaks": "兩套程式碼要保持邏輯一致，「exactly as painful」；streaming 系統在 watermark 後丟棄遲到事件，造成不準；Kappa 純版（把歷史重放回 Kafka）對多天資料會壓垮 Kafka / 下游基礎設施。",
+   "trick": "Kreps 的 Kappa：保留足夠歷史，改版時另起一個 job 從頭重處理，追上後切換輸出。Uber 進一步把 Hive 建模成 Spark Structured Streaming 的 source，一次讀一個時間窗，event-time window 與 watermark 語意在 backfill 時與線上一致，並天然限速，同一套程式碼同時跑 streaming 與 backfill。",
+   "cost": "Kappa 重處理期間需暫時 2x 儲存與更高的輸出寫入吞吐；backfill 必須用 event time 並限速；仍需要可靠的歷史 source（Kafka retention 或 Hive）。Lambda 的代價則是長期維運兩套系統。",
+   "alternatives": [
+    {
+     "name": "Lambda",
+     "pickIf": "批次與串流的演算法本質不同、無法共用邏輯，或要求 batch 做最終校正"
+    },
+    {
+     "name": "純 Kappa（重放 Kafka）",
+     "pickIf": "Kafka 保留期夠長且回補量不大"
+    }
+   ],
+   "numbers": [
+    "Uber 在同樣的 75-core production cluster 設定下 backfill 10 TB、9 天的資料"
+   ],
+   "interviewUse": "被問 Lambda 還是 Kappa：我選單一程式碼的 Kappa，backfill 用「歷史儲存當 streaming source、按時間窗限速」；只有批次與串流邏輯真的不同才退回 Lambda。",
+   "sources": [
+    {
+     "title": "Designing a Production-Ready Kappa Architecture for Timely Data Stream Processing (Uber)",
+     "url": "https://www.uber.com/en-US/blog/kappa-architecture-data-stream-processing/"
+    },
+    {
+     "title": "Questioning the Lambda Architecture (Jay Kreps)",
+     "url": "https://www.oreilly.com/radar/questioning-the-lambda-architecture/"
+    }
+   ],
+   "topics": [
+    "streaming",
+    "async-jobs"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "netflix-ads-bounded-join-state",
+   "domain": "data-pipeline",
+   "apps": [
+    "Netflix",
+    "Apache Flink"
+   ],
+   "title": "Streaming join 的 state 大小：60 分鐘 window + 每小時 batch 撿落單",
+   "naive": "直覺做法：兩條 stream 用 regular join，或每筆事件同步查 DB / Registry 做 enrichment。",
+   "breaks": "Flink regular join 的 state 會隨 distinct key 無上限成長（只能靠 state TTL，且可能影響準確度）；同步查 Registry 在直播規模下成為 critical path 與 scaling 瓶頸，timeout 還會打破 frequency capping SLA。",
+   "trick": "Netflix Ads：改成 Flink stateful streaming join，事件在記憶體等對應 ad-serving response，限定 60 分鐘 matching window 以限制 state 大小；落單的極少數事件交給每小時 Maestro 排程的 Spark job 從 warehouse 重新配對，讓 streaming state 有界。Flink 官方建議有時間界線時用 interval join，才能安全清掉舊 state。",
+   "cost": "窗口外的事件要靠 batch 補，結果有延遲的最終一致；dedup 為 best-effort（at-least-once + 下游 idempotent）而非 exactly-once；需要 regional routing，避免把 serving response 全球複寫。",
+   "alternatives": [
+    {
+     "name": "Interval join（append-only + 時間條件）",
+     "pickIf": "兩邊事件有明確時間差上界，可讓 Flink 安全清 state"
+    },
+    {
+     "name": "Lookup / temporal join 外部維度表",
+     "pickIf": "一邊是慢變維度、不想把整張表放進 Flink state"
+    },
+    {
+     "name": "Regular join + state TTL",
+     "pickIf": "key 空間有界或可接受結果不精確"
+    }
+   ],
+   "numbers": [
+    "60 分鐘 matching window 涵蓋約 99.999% 事件",
+    "落單約 0.001% 由每小時 Spark job 補配",
+    "Netflix 營運 25,000+ Flink jobs",
+    "直播賽事超過 1 億 concurrent viewers"
+   ],
+   "interviewUse": "被問 stream join 怎麼不爆記憶體：用時間窗界定 state 上限（interval join / matching window），窗口外的少數 late 事件用批次對帳，而不是把窗口拉到無限。",
+   "sources": [
+    {
+     "title": "Evolving Netflix's Ads Event Pipeline for Live, Part II（轉載頁）",
+     "url": "https://noise.getoto.net/2026/10/14/behind-the-scenes-evolving-netflixs-ads-event-pipeline-for-live-part-ii/"
+    },
+    {
+     "title": "Apache Flink - Joins（state 成長警告與 interval join）",
+     "url": "https://nightlies.apache.org/flink/flink-docs-release-2.3/docs/sql/reference/queries/joins/"
+    },
+    {
+     "title": "Apache Flink - Timely Stream Processing（watermark / allowed lateness）",
+     "url": "https://nightlies.apache.org/flink/flink-docs-stable/docs/concepts/time/"
+    }
+   ],
+   "topics": [
+    "streaming",
+    "realtime"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "kafka-transactions-eos",
+   "domain": "data-pipeline",
+   "apps": [
+    "Kafka",
+    "Kafka Streams"
+   ],
+   "title": "Kafka exactly-once：idempotent producer + transactions 的範圍與代價",
+   "naive": "直覺做法：說「Kafka 有 exactly-once」就當整條 pipeline 不會重複；或全部用 at-least-once 再祈禱消費端冪等。",
+   "breaks": "producer retry 會在 partition 內產生重複；consume-process-produce 中途當機會重複處理；而且 exactly-once 只涵蓋 Kafka 內部，呼叫外部 RPC 或寫外部 store 的副作用不在保證內。",
+   "trick": "Idempotent producer：每個 batch 帶 sequence number，broker 去重。Transactions：跨多個 partition 原子寫入，consumer 要嘛全看到要嘛都看不到，並把 consumer offset commit 納入同一個交易，達成 read-process-write 的 exactly-once。",
+   "cost": "idempotent producer 吞吐約降 3%（1 KB 訊息）；transactions 在 100ms 短 commit interval 下吞吐降 15–30%，30 秒 interval 在 1 KB 以上訊息幾乎無額外開銷——commit interval 是延遲與吞吐的旋鈕。出了 Kafka 就需自己做 idempotent sink。",
+   "alternatives": [
+    {
+     "name": "At-least-once + idempotent sink（PK upsert）",
+     "pickIf": "sink 本來就能以 key 去重，要最低延遲與最簡單維運（Netflix Ads 即選 best-effort + 下游 idempotent）"
+    },
+    {
+     "name": "Two-phase commit sink（如 Flink + 交易型 sink）",
+     "pickIf": "sink 是 Kafka 以外且要端到端精確一次"
+    }
+   ],
+   "numbers": [
+    "idempotent producer 吞吐 -3%（1 KB 訊息）",
+    "transactions 吞吐 -15% 至 -30%（100ms commit interval）",
+    "新訊息格式使 producer 吞吐最高 +20%、consumer 最高 +50%（小訊息）"
+   ],
+   "interviewUse": "被問 exactly-once：我會說 Kafka 的 EOS 只在 Kafka 內部成立，代價是 transaction commit interval 帶來的延遲；對外部 sink 我選 at-least-once 加 idempotent key，通常更簡單。",
+   "sources": [
+    {
+     "title": "Exactly-once Semantics are Possible: Here's How Kafka Does it (Confluent)",
+     "url": "https://www.confluent.io/blog/exactly-once-semantics-are-possible-heres-how-apache-kafka-does-it/"
+    }
+   ],
+   "topics": [
+    "idempotency",
+    "streaming",
+    "reliability"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "schema-registry-avro-compat",
+   "domain": "data-pipeline",
+   "apps": [
+    "Confluent Schema Registry",
+    "Kafka + Avro 管線"
+   ],
+   "title": "Schema registry 與 Avro 相容性：先升級誰決定了你能改什麼",
+   "naive": "直覺做法：producer 自行改 JSON 欄位，下游「應該」能處理。",
+   "breaks": "上游悄悄改欄位或型別，下游 consumer 反序列化失敗或靜默讀到錯值，整條 pipeline 一起壞，且 Kafka 內已有舊版本資料可重放。",
+   "trick": "Schema registry 集中管理 schema 並在註冊時檢查相容性：預設 BACKWARD（新 schema 的 consumer 能讀舊資料，故先升級所有 consumer 再讓 producer 發新版）；FORWARD 則先升級 producer；FULL 兩邊可獨立升級，只能增刪 optional 欄位；加 _TRANSITIVE 則對所有歷史版本檢查，而不是只比最新一版。",
+   "cost": "限制 schema 演進方式（新欄位需預設值、不能任意改型別）；重放舊資料時用 BACKWARD 而非 TRANSITIVE 可能讀不了更早的版本；registry 成為需要高可用的依賴。",
+   "alternatives": [
+    {
+     "name": "BACKWARD（預設）",
+     "pickIf": "consumer 可控制、需要能重放 Kafka 舊資料"
+    },
+    {
+     "name": "FULL_TRANSITIVE",
+     "pickIf": "producer 與 consumer 分屬不同團隊、升級順序無法協調"
+    },
+    {
+     "name": "NONE",
+     "pickIf": "僅限開發階段或有人工 review 流程把關"
+    }
+   ],
+   "numbers": [],
+   "interviewUse": "被問資料契約時說：用 registry 強制 Avro 相容性，預設 BACKWARD 並先升級 consumer；跨團隊場景改 FULL_TRANSITIVE，代價是只能加減 optional 欄位。",
+   "sources": [
+    {
+     "title": "Schema Evolution and Compatibility (Confluent Schema Registry)",
+     "url": "https://docs.confluent.io/platform/current/schema-registry/fundamentals/schema-evolution.html"
+    }
+   ],
+   "topics": [
+    "api-networking",
+    "reliability"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "lakehouse-small-files-compaction",
+   "domain": "data-pipeline",
+   "apps": [
+    "Apache Iceberg",
+    "Apache Hudi",
+    "Netflix",
+    "Uber"
+   ],
+   "title": "Small files 問題與 compaction：串流寫入越頻繁，查詢越慢",
+   "naive": "直覺做法：Streaming job 每次 checkpoint / micro-batch 就 commit 一批檔案，追求低延遲。",
+   "breaks": "每次 commit 產生許多小檔案，查詢要開大量檔案與讀大量 metadata，效能劣化；物件儲存對每次 request 都有固定開銷。",
+   "trick": "Iceberg 的維護程序：定期 compact data files 合併小檔、rewrite manifests、expire snapshots、清 orphan files。Hudi 的 table service（compaction / clustering）則可與 incremental / backfill writer 並行執行而不阻塞寫入。",
+   "cost": "compaction 本身消耗運算並與寫入競爭資源；expire snapshots 會縮短 time travel 範圍；寫入端要在 commit 頻率（freshness）與檔案大小之間取捨。",
+   "alternatives": [
+    {
+     "name": "降低 commit 頻率",
+     "pickIf": "freshness 要求在分鐘級以上，可直接寫出較大的檔案"
+    },
+    {
+     "name": "Merge-on-Read + 非同步 compaction",
+     "pickIf": "高頻更新且要近即時，願意讓讀端合併 log"
+    }
+   ],
+   "numbers": [],
+   "interviewUse": "設計 streaming ingestion 到 lake 時主動提：我會排程 compaction 與 expire snapshots，因為小檔案會拖垮查詢，且要告知用戶 time travel 的保留期限。",
+   "sources": [
+    {
+     "title": "Apache Iceberg - Maintenance",
+     "url": "https://iceberg.apache.org/docs/latest/maintenance/"
+    },
+    {
+     "title": "Uber's Lakehouse Architecture（table services 並行 compaction）",
+     "url": "https://www.uber.com/blog/ubers-lakehouse-architecture/"
+    }
+   ],
+   "topics": [
+    "scaling-writes",
+    "storage-choice"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "airbnb-midas-wall-data-quality",
+   "domain": "data-pipeline",
+   "apps": [
+    "Airbnb"
+   ],
+   "title": "資料品質：Airbnb 從 Midas 認證到 Wall 的 YAML 檢查框架",
+   "naive": "直覺做法：每個團隊自己在 pipeline 裡寫檢查（每個 check 一個 Airflow task），並靠人工認證流程把關關鍵資料集。",
+   "breaks": "Airbnb 的 Midas 對關鍵 dataset 強制 accuracy / completeness / anomaly 檢查，但各團隊用 Hive、Presto、PySpark、Scala 各寫一套，沒有集中視圖；每個 check 都是 Airflow task 導致 DAG 肥大，誤報還會擋住 production job；人工認證難以規模化。",
+   "trick": "Wall：檢查以 YAML 設定而非自訂程式，由 Airflow helper 執行、與 pipeline 邏輯分離；區分 blocking 與 non-blocking checks，避免小問題阻斷關鍵作業；檢查結果發佈到 Kafka 供下游消費。",
+   "cost": "需要平台團隊維護框架；要持續校準哪些 check 該 blocking，避免誤報擋 pipeline 或漏報；覆蓋率仍取決於各團隊願意寫規則。",
+   "alternatives": [
+    {
+     "name": "Great Expectations / dbt tests",
+     "pickIf": "團隊規模較小，不需要自建平台，直接用現成 declarative 檢查"
+    },
+    {
+     "name": "在 pipeline 內寫死檢查",
+     "pickIf": "只有少數幾條 pipeline、尚無平台化需求"
+    }
+   ],
+   "numbers": [
+    "部分 pipeline 的 Airflow 程式碼減少超過 70%",
+    "Midas 為 2020 年啟動的認證流程，含 Spec / Data / Code / Minerva 四種 review"
+   ],
+   "interviewUse": "談資料品質時說：檢查要宣告式（YAML）且與 pipeline 解耦，分 blocking 與 non-blocking，結果發事件讓下游自己決定要不要信；人工認證不可擴張。",
+   "sources": [
+    {
+     "title": "The Hidden Platform Lesson Behind Airbnb's Data Quality Framework (Midas → Wall)",
+     "url": "https://packtcloudpro.substack.com/p/the-hidden-platform-lesson-behind"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "async-jobs"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "datahub-push-based-lineage",
+   "domain": "data-pipeline",
+   "apps": [
+    "LinkedIn",
+    "DataHub"
+   ],
+   "title": "資料血緣與 metadata：DataHub 的 push-based 事件模型",
+   "naive": "直覺做法：metadata catalog 定期爬取（pull / crawl）各系統，產生一份快照。",
+   "breaks": "爬取有延遲，catalog 與實際不同步；lineage 只能事後猜；新增來源就要寫新的 crawler；無法對 metadata 變更即時反應（例如通知下游）。",
+   "trick": "LinkedIn 開發、後開源的 DataHub 同時支援 push 與 pull：producer（Airflow、Spark、dbt 等）可透過 Kafka 或 REST 發出 Metadata Change Proposal（前身 MCE），由 consumer job 寫入 metadata service；pull 型 ingestion 則是 Python 框架抽取後再 push，與 Airflow 整合以捕捉 lineage。",
+   "cost": "需維運 Kafka、儲存、搜尋索引與（lineage 用的）graph 後端；push 要求每個 producer 願意整合，覆蓋率不全時 lineage 有缺口；column-level lineage 的解析成本更高。",
+   "alternatives": [
+    {
+     "name": "Pull / crawler 型 catalog",
+     "pickIf": "來源系統多為第三方、無法改碼植入 emitter"
+    },
+    {
+     "name": "OpenLineage 之類的標準事件格式",
+     "pickIf": "多種排程器 / 引擎，想用統一事件規格"
+    }
+   ],
+   "numbers": [],
+   "interviewUse": "被問血緣或 data discovery 時說：讓 pipeline 在執行時 push metadata 事件到 Kafka（DataHub 模式），而不是事後爬取；用 lineage 做 impact analysis，例如改欄位前知道影響哪些下游。",
+   "sources": [
+    {
+     "title": "DataHub - Metadata Ingestion Architecture",
+     "url": "https://docs.datahub.com/docs/architecture/metadata-ingestion"
+    }
+   ],
+   "topics": [
+    "async-jobs",
+    "storage-choice"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "spotify-rap-lake-point-query",
+   "domain": "data-pipeline",
+   "apps": [
+    "Spotify"
+   ],
+   "title": "Data lake 的 point query：Spotify 用外部索引 RAP 取代第二份拷貝",
+   "naive": "直覺做法：要快速點查的資料另外複製到 Bigtable / DynamoDB（第二份、按 GB 計價），或直接用 Trino / BigQuery 掃 Parquet。",
+   "breaks": "掃描要經過整個分散式查詢計畫，且得拖整個大 page 才拿到數百 bytes；第二份拷貝要付儲存成本，團隊還得挑「值得線上服務」的資料，其餘留在 lake 卻太慢。",
+   "trick": "RAP（Random Access Parquet）：在資料檔外建一個外部索引，記錄 key → 檔案 → row 編號（並可選填 value count），給定 key 就精準回傳檔案與列，不用掃描；寫入端調整：依 key 排序並讓同 key 集中、one-page-per-key、把小值直接放進 covering index 以減少讀取次數。",
+   "cost": "需要額外維護索引（索引大小約隨資料量成正比，TB 資料產生 GB 索引）；寫入端需重排資料與 key 排序；只對 key 查詢有效，不是通用分析加速。",
+   "alternatives": [
+    {
+     "name": "複製到 KV store（Bigtable / DynamoDB）",
+     "pickIf": "熱資料少且延遲要求極嚴，願意付第二份拷貝成本"
+    },
+    {
+     "name": "Bucket 分區 + Bloom filter 剪枝",
+     "pickIf": "不想動檔案內容，只想減少候選檔案數（Spotify 的前兩步）"
+    }
+   ],
+   "numbers": [
+    "一天收聽事件約落在 1,000 個檔案，90 天窗口 = 90,000 個候選 Parquet 檔",
+    "bucket 後 90,000 → 90，再用 Bloom filter → 約 12 個",
+    "indexing terabytes produces gigabytes of index"
+   ],
+   "interviewUse": "被問在 lake 上做低延遲查詢時說：先 bucket + Bloom filter 剪枝，仍不夠才加外部 key 索引（Spotify RAP），避免維護第二份資料。",
+   "sources": [
+    {
+     "title": "Indexing the Data Lake for Online Point Queries (Spotify Engineering)",
+     "url": "https://engineering.atspotify.com/2026/7/indexing-the-data-lake-for-online-point-queries/"
+    }
+   ],
+   "topics": [
+    "search",
+    "storage-choice",
+    "scaling-reads"
+   ],
+   "byAgents": false
+  }
+ ],
+ "quiz": [
+  {
+   "q": "Streaming job 每 10 秒 commit 一次到 Iceberg table，三天後查詢明顯變慢。原因與你的處理順序是什麼？為什麼不是單純加大查詢叢集？",
+   "a": "小檔案累積，查詢要開大量檔案與讀 metadata。處理：排程 compact data files、rewrite manifests、expire snapshots、清 orphan files，並評估降低 commit 頻率。加大叢集沒解決檔案數與 request 固定開銷；注意 expire snapshots 會縮短 time travel 範圍。",
+   "topic": "data-pipeline",
+   "kind": "情境"
+  },
+  {
+   "q": "兩條 Kafka stream 要 join，其中一條的事件可能晚到最多數十分鐘。Regular join 與 interval join（或 matching window）怎麼選？落單事件怎麼辦？",
+   "a": "有時間差上界就用 interval join / 限定 window，讓 Flink 能清舊 state；regular join 的 state 會隨 distinct key 無限成長（只能靠 TTL 且可能不準）。窗口外的少數落單事件用批次（如 Netflix 每小時 Spark job 從 warehouse 重配對）補，換取 streaming state 有界，代價是這些事件最終一致。",
+   "topic": "data-pipeline",
+   "kind": "取捨"
+  },
+  {
+   "q": "面試官說「Kafka 有 exactly-once，所以我們整條 pipeline 不會重複」。你要怎麼回應？對外部資料庫 sink 你會選什麼？",
+   "a": "Kafka EOS（idempotent producer + transactions）只涵蓋 Kafka 內部的 read-process-write，外部 RPC / 外部 store 的副作用不在保證內；transactions 也有吞吐代價（100ms commit interval 下約降 15–30%）。對外部 DB 我選 at-least-once + 以主鍵 / 事件 ID 做 idempotent upsert，通常更簡單且延遲更低。",
+   "topic": "data-pipeline",
+   "kind": "取捨"
+  },
+  {
+   "q": "Schema registry 使用預設的 BACKWARD 相容。Producer 要新增一個欄位，上線順序是什麼？若 producer 與 consumer 屬不同團隊、無法協調升級順序，要改用哪個模式？代價？",
+   "a": "BACKWARD：先升級所有 consumer，再讓 producer 發新 schema（新欄位需有預設值）。跨團隊改用 FULL（或 FULL_TRANSITIVE，對所有歷史版本檢查），兩邊可獨立升級；代價是只能增刪 optional 欄位，演進彈性變小。",
+   "topic": "data-pipeline",
+   "kind": "情境"
+  },
+  {
+   "q": "要把 OLTP 資料庫同步進 data lake，為什麼用 log-based CDC（Debezium / DBLog）而不是 dual-write？Debezium 上線後最常見的營運風險是什麼？",
+   "a": "dual-write 沒有跨系統交易，兩邊會漂移；log-based CDC 從 transaction log 取得有序、完整的變更且不侵入應用。風險：Postgres replication slot 會 hold 住 WAL，connector 停擺時磁碟被撐爆；且是 at-least-once，sink 必須 idempotent。初始化用分塊 snapshot 與 log 交錯（DBLog 的 watermark）避免鎖表。",
+   "topic": "data-pipeline",
+   "kind": "概念"
+  },
+  {
+   "q": "資料集有 CDC 高頻更新，Hudi 要選 Copy-on-Write 還是 Merge-on-Read？什麼情況下會反過來選？",
+   "a": "高頻更新、要近即時 freshness 選 MoR：更新先 append 到 log file，寫延遲低，代價是讀取要合併 log、需 compaction。若是批次 ETL、更新少、重視查詢速度（參考表、慢變維度）則選 CoW：讀快但每次更新要重寫整個 base file。",
+   "topic": "data-pipeline",
+   "kind": "取捨"
+  }
+ ]
+}

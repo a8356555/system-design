@@ -1,0 +1,1599 @@
+[
+ {
+  "id": "discord-messages-scylladb",
+  "title": "Discord：數兆訊息遷移到 ScyllaDB",
+  "kind": "業界實例",
+  "source": "In the Wild",
+  "file": "hellointerview-learn/in-the-wild/discord-messages-scylladb.md",
+  "origin": "https://discord.com/blog/how-discord-stores-trillions-of-messages",
+  "core": "熱門 channel 把讀取集中在同一個 partition；換更快的 DB 只降低每次讀的成本，擋不住流量，必須減少到達 DB 的重複讀。",
+  "scaleNumbers": [
+   "177 個 Cassandra node -> 72 個 ScyllaDB node",
+   "儲存數兆則訊息",
+   "p99 read 從 40–125 ms 波動變成穩定 15 ms",
+   "partition 複製 3 份，quorum 3 取 2"
+  ],
+  "decisions": [
+   {
+    "decision": "訊息表的 partition key 與排序",
+    "chosen": "PRIMARY KEY ((channel_id, bucket), message_id)，message_id 倒序；bucket 為時間窗口",
+    "rejected": [
+     {
+      "option": "只用 channel_id 當 partition key",
+      "why": "partition 會無限成長"
+     },
+     {
+      "option": "再切更細的 sharding 解決熱點",
+      "why": "熱是資料本身熱門，不是 bucket 太少；再切只會讓依序讀 channel 的主要查詢更複雜"
+     }
+    ],
+    "tradeoff": "寫入分散很好，但多數 live read 打最新 bucket，熱門 channel 仍會把讀集中到同 3 個 node"
+   },
+   {
+    "decision": "儲存引擎",
+    "chosen": "Cassandra 換 ScyllaDB（相同 query language / data model，C++、shard-per-core）",
+    "rejected": [
+     {
+      "option": "留在 Cassandra 繼續調 compaction",
+      "why": "compaction 落後與讀變慢互相正回饋、與線上流量搶資源，只能靠 gossip dance 手動輪流下線；JVM GC pause 造成延遲尖峰"
+     }
+    ],
+    "tradeoff": "解決 GC 與維運、單機效能，但沒解決熱 partition 的流量集中"
+   },
+   {
+    "decision": "如何擋住熱 partition 的重複讀",
+    "chosen": "API 與 DB 間加 Rust data service，依 channel_id 做 consistent hashing 路由，instance 內做 request coalescing",
+    "rejected": [
+     {
+      "option": "靠 DB 自己的 cache",
+      "why": "DB cache 能重用底層工作，但不知道兩個獨立 RPC 在要同一則訊息"
+     },
+     {
+      "option": "在前面加 cache",
+      "why": "能吸收更多請求，但帶來 expiration / invalidation 的複雜度"
+     }
+    ],
+    "tradeoff": "多一層 hop 與維運；coalescing 只對時間上重疊的請求有效，hit rate 低於 cache，但永不回舊資料；仍未完全消除 hot partition"
+   },
+   {
+    "decision": "遷移順序",
+    "chosen": "data service 在 Cassandra 仍為主儲存時先上線，再做 ScyllaDB 遷移",
+    "rejected": [
+     {
+      "option": "一次同時換 DB 與架構",
+      "why": "風險集中；先上 data service 已大幅減少 hot partition 事件，給團隊餘裕完成調校"
+     }
+    ],
+    "tradeoff": "ScyllaDB 相容 Cassandra 使 schema 不必改，風險低"
+   }
+  ],
+  "topics": [
+   "scaling-reads",
+   "sharding",
+   "caching",
+   "storage-choice"
+  ],
+  "followUps": [
+   "為何 coalescing 要搭配 consistent hashing？合併只發生在同一 process 內，同資料的請求必須落在同一 instance。",
+   "為何熱門 channel 拖慢不相關查詢？同 node 還存著數千冷門 channel，quorum 要等被壓垮的 replica。"
+  ]
+ },
+ {
+  "id": "figma-multiplayer",
+  "title": "Figma：以簡化 CRDT 做多人協作編輯",
+  "kind": "業界實例",
+  "source": "In the Wild",
+  "file": "hellointerview-learn/in-the-wild/figma-multiplayer.md",
+  "origin": "https://www.figma.com/blog/how-figmas-multiplayer-technology-works/",
+  "core": "有中央 server 時不需要 OT 或完整 CRDT：每個 property 做 last-writer-wins，並讓每份文件由單一 server process 排序，把演算法難題換成基礎設施難題。",
+  "scaleNumbers": [
+   "2016-09 推出 multiplayer",
+   "離線窗口從秒到數小時"
+  ],
+  "decisions": [
+   {
+    "decision": "並行編輯的衝突解法",
+    "chosen": "文件 = Map<ObjectID, Map<Property, Value>>，每個 property 是無 timestamp 的 LWW register，以最後到達 server 者為準",
+    "rejected": [
+     {
+      "option": "OT",
+      "why": "要 transform 並行操作，正確性證明複雜易錯，設計文件的操作種類遠多於 insert/delete"
+     },
+     {
+      "option": "完整 CRDT",
+      "why": "複雜度大多為去中心化環境（timestamp、tombstone）而生，Figma 有中央 server 不需要"
+     }
+    ],
+    "tradeoff": "同 property 並行衝突只保留一方，文字編輯不可接受；並行文字編輯明確放棄最佳化（需真正 CRDT 如 Yjs）"
+   },
+   {
+    "decision": "樹狀結構的 reparent",
+    "chosen": "把 parent 當子物件上的普通 property，移動 = 一次 property write；server 拒絕造成 cycle 的更新",
+    "rejected": [
+     {
+      "option": "delete + recreate",
+      "why": "會產生新 ID，並行的其他 property 編輯遺失"
+     }
+    ],
+    "tradeoff": "逐 property 檢查抓不到環，需 server 驗證 invariant，client 樂觀套用時暫時隱藏成環物件"
+   },
+   {
+    "decision": "兄弟排序",
+    "chosen": "0~1 的分數 position，插入兩兄弟間取平均，parent 與 position 原子寫入",
+    "rejected": [
+     {
+      "option": "1,2,3 整數索引",
+      "why": "插入中間要重編號一堆，容易衝突"
+     }
+    ],
+    "tradeoff": "分數位置可能隨反覆插入而越來越長"
+   },
+   {
+    "decision": "刪除與離線",
+    "chosen": "刪除直接移除 entry 不留 tombstone；重連即重新下載文件並 replay 離線期間的編輯",
+    "rejected": [
+     {
+      "option": "保留 tombstone",
+      "why": "文件存活多年，記住所有刪除會無限膨脹"
+     },
+     {
+      "option": "斷線 resume 協定",
+      "why": "離線 4 小時與斷線幾秒沒差別，重新下載更簡單"
+     }
+    ],
+    "tradeoff": "誤刪靠 client undo history 還原；過期編輯找不到 ID 即被丟棄"
+   },
+   {
+    "decision": "文件如何分配到 server",
+    "chosen": "每份文件單一 server process，client 以一條 WebSocket 連到它",
+    "rejected": [
+     {
+      "option": "pub/sub 讓 client 連任一 server 再跨 server 排序",
+      "why": "最後到達 server 只有在單一地方看到所有寫入才有意義"
+     }
+    ],
+    "tradeoff": "要做路由、process 生命週期、故障轉移且不能有兩個 writer；問題縮小為每個 session 一次的文件歸屬"
+   }
+  ],
+  "topics": [
+   "realtime",
+   "consistency",
+   "contention"
+  ],
+  "followUps": [
+   "Client 為何會閃爍？本地先套用但未 ack，會先看到對方舊值覆蓋；解法是丟棄與自己未確認寫入衝突的 incoming 變更。",
+   "object ID 怎麼避免碰撞？client 自己產生並內嵌 client ID，可離線建立。"
+  ]
+ },
+ {
+  "id": "meta-zgateway-zippydb",
+  "title": "Meta：ZGateway 的五招擴展資料庫",
+  "kind": "業界實例",
+  "source": "In the Wild",
+  "file": "hellointerview-learn/in-the-wild/meta-zgateway-zippydb.md",
+  "origin": "https://engineering.fb.com/2026/09/03/core-infra/zgateway-proxy-zippydb-meta/",
+  "core": "DB 的瓶頸不只一種：連線過多、重複讀、流量超載要用不同技術對治，先看資源花在哪再選招。",
+  "scaleNumbers": [
+   "數百個團隊共用 ZippyDB",
+   "超過一百萬台 client 機器",
+   "單台 DB host 數萬條 incoming 連線"
+  ],
+  "decisions": [
+   {
+    "decision": "連線過多",
+    "chosen": "在 DB 前加 reverse proxy，多個 client 共享後端 connection pool",
+    "rejected": [
+     {
+      "option": "各應用自己管 client 端 pool",
+      "why": "每個 instance 各有一個 pool，DB 仍要維持所有 client 的連線；應用同時重啟會讓 DB 一邊重建連線一邊服務"
+     }
+    ],
+    "tradeoff": "多一個要維運的服務與額外延遲"
+   },
+   {
+    "decision": "請求固定開銷",
+    "chosen": "Batching：不同 key 合成一個後端請求，timer 或大小上限觸發 flush，並限制 in-flight 批次數",
+    "rejected": [
+     {
+      "option": "逐 key 發請求",
+      "why": "每次都付序列化、網路、請求處理的固定開銷，也消耗 rate-limit 預算"
+     }
+    ],
+    "tradeoff": "等越久越有效率但先到的 caller 延遲越高，需配合 workload 的 latency budget"
+   },
+   {
+    "decision": "重複讀同一 key",
+    "chosen": "Request coalescing（進行中合併）加 read-through cache（完成後保留），per-key fill lock 防 thundering herd",
+    "rejected": [
+     {
+      "option": "只做 batching",
+      "why": "不同 key 仍要 N 次 lookup，相同 key 沒有合併"
+     },
+     {
+      "option": "只做 coalescing",
+      "why": "lookup 完成後就失效，後續請求要重讀"
+     }
+    ],
+    "tradeoff": "只能在同一 gateway 內合併；cache 可能 stale，需 CDC stream 失效並約定落後上限；DB 變慢時等待者累積需限額"
+   },
+   {
+    "decision": "多租戶流量隔離",
+    "chosen": "Admission control：依 use case 與 priority 分有界 queue 輪流服務，滿了只拒絕該團隊",
+    "rejected": [
+     {
+      "option": "共用單一 queue",
+      "why": "一個團隊尖峰填滿 queue 會拖慢流量沒變的其他團隊（noisy neighbor）"
+     }
+    ],
+    "tradeoff": "部分 caller 收到錯誤而非等待，必須 backoff 重試，否則重建同樣的過載"
+   }
+  ],
+  "topics": [
+   "scaling-reads",
+   "scaling-writes",
+   "caching",
+   "rate-limiting",
+   "api-networking"
+  ],
+  "followUps": [
+   "batching 與 coalescing 差在哪？batching 是不同 key 共享傳輸開銷，lookup 次數不變；coalescing 是相同 key 只查一次。",
+   "為何 coalescing 後還要 cache？coalescing 在 lookup 結束就失效。"
+  ]
+ },
+ {
+  "id": "shopify-inventory-reservations",
+  "title": "Shopify：庫存預約從 Redis 搬到 MySQL",
+  "kind": "業界實例",
+  "source": "In the Wild",
+  "file": "hellointerview-learn/in-the-wild/shopify-inventory-reservations.md",
+  "origin": "https://shopify.engineering/scaling-inventory-reservations",
+  "core": "預約必須與永久庫存帳本在同一個 transaction 提交，Redis 無法參與，所以搬進 MySQL，再以一單位一列加 SKIP LOCKED 化解 hot row。",
+  "scaleNumbers": [
+   "處理超過 14% 的美國電商",
+   "Black Friday 2025 merchant sales 高峰 $5.1 million / 分鐘",
+   "每個 item 池上限 1,000 列"
+  ],
+  "decisions": [
+   {
+    "decision": "預約存放位置",
+    "chosen": "MySQL，與帳本同一 DB 同一 transaction 提交",
+    "rejected": [
+     {
+      "option": "Redis counter + MySQL 雙寫",
+      "why": "兩個 DB 無法一起 commit，crash 在中間會隱藏可售庫存或重複賣出；換順序只是換失敗類型"
+     },
+     {
+      "option": "2PC / outbox",
+      "why": "Redis 不能參與 2PC；outbox 只能事後修復，flash sale 中短暫不一致就可能重複賣"
+     }
+    ],
+    "tradeoff": "若 hold 與記錄不必一起 commit，Redis counter 仍是更簡單的工具"
+   },
+   {
+    "decision": "避開單列 counter 的鎖爭用",
+    "chosen": "reservation_units 表一單位一列，SELECT ... FOR UPDATE SKIP LOCKED",
+    "rejected": [
+     {
+      "option": "每 item 一列加 available 數量 UPDATE",
+      "why": "InnoDB 一次只給一個 transaction 該列 row lock，數千 checkout 序列化在同一把鎖"
+     }
+    ],
+    "tradeoff": "需要有界池（每 item 上限 1,000 列）與 replenishment 程序，要運行、監控、on-call；最自然的失敗模式是 flash sale 中池空"
+   },
+   {
+    "decision": "池被搶空時",
+    "chosen": "預約請求 inline refill 後重試，以鎖保證只有一個 transaction 補貨",
+    "rejected": [
+     {
+      "option": "池落後就拒絕買家",
+      "why": "帳本仍有庫存卻拒絕，損失銷售"
+     }
+    ],
+    "tradeoff": "觸發 refill 的請求變慢；原文未說明延遲增加多少或訂單大於池時如何處理"
+   },
+   {
+    "decision": "鎖行為調校",
+    "chosen": "PK 改為 (shop_id, inventory_item_id, inventory_group_id, id)、isolation 用 READ COMMITTED、統一鎖順序",
+    "rejected": [
+     {
+      "option": "auto-increment PK + secondary index",
+      "why": "InnoDB 同時鎖 index entry 與 table row，每單位 2 把鎖"
+     },
+     {
+      "option": "預設 REPEATABLE READ",
+      "why": "gap lock 鎖到索引尾端，正好是 replenishment 要插入的位置，造成阻塞或死鎖"
+     }
+    ],
+    "tradeoff": "首次在其程式碼庫使用非預設 isolation level；不同路徑鎖順序不一致會 ordering deadlock"
+   },
+   {
+    "decision": "預約過期",
+    "chosen": "hold 存 expires_at，replenishment 只計 expires_at > NOW() 的 hold，過期自動不計入",
+    "rejected": [
+     {
+      "option": "Redis TTL / keyspace notification",
+      "why": "TTL 會刪整個 counter 或唯一紀錄；keyspace notification 是 fire-and-forget 會丟事件（此段為 HI 推測）"
+     }
+    ],
+    "tradeoff": "清理 job 只是 GC，不是正確性所需；鎖只在毫秒級短 transaction，沒人在預約窗口內持有 DB lock"
+   }
+  ],
+  "topics": [
+   "contention",
+   "consistency",
+   "storage-choice",
+   "multistep"
+  ],
+  "followUps": [
+   "MySQL 8 的 SKIP LOCKED 出現前此決定是對的；過去排除某技術的理由值得重新檢驗。",
+   "若不需要與帳本原子提交，為何仍可用 Redis？單線程 counter 本身並發正確且更簡單。"
+  ]
+ },
+ {
+  "id": "slack-job-queue",
+  "title": "Slack：在 Redis job queue 前加 Kafka",
+  "kind": "業界實例",
+  "source": "In the Wild",
+  "file": "hellointerview-learn/in-the-wild/slack-job-queue.md",
+  "origin": "https://slack.engineering/scaling-slacks-job-queue/",
+  "core": "Redis 記憶體同時是突發 backlog 的 buffer 和 dispatch 工作空間，DB 變慢就 OOM 鎖死；解法是用持久 log 吸收 backlog，Redis 只留短 dispatch window。",
+  "scaleNumbers": [
+   "最忙的日子超過 14 億個 job",
+   "峰值 33,000 jobs/秒",
+   "16 brokers、每 topic 32 partitions、replication factor 3、保留 2 天",
+   "1,600 個 partition（50 topic × 32）"
+  ],
+  "decisions": [
+   {
+    "decision": "backlog 放哪",
+    "chosen": "Kafka 在 Redis 前當持久 buffer，Redis 只保留短 dispatch window",
+    "rejected": [
+     {
+      "option": "開 Redis persistence",
+      "why": "dataset 仍須放得進 RAM，事故是容量問題不是持久性問題"
+     },
+     {
+      "option": "換成 RabbitMQ / SQS / beanstalkd",
+      "why": "各自有不同 delivery 語意，一樣要重寫既有依賴 Redis 語意的程式碼"
+     }
+    ],
+    "tradeoff": "Kafka offset 是 partition 位置不是 per-job 狀態，ack / retry / dedup 要自建，所以不取代 Redis；多了 Kafkagate 與 JQRelay 兩個元件"
+   },
+   {
+    "decision": "遷移範圍",
+    "chosen": "minimum viable change：enqueue 介面與 worker 端不變，先保護 enqueue 路徑",
+    "rejected": [
+     {
+      "option": "全面換成 Kafka consumer 模型",
+      "why": "會把可用性修補變成重寫"
+     }
+    ],
+    "tradeoff": "排程、優先權與 worker 擴展的問題留待之後"
+   },
+   {
+    "decision": "enqueue 的 ack 語意",
+    "chosen": "Kafkagate 同步寫入，只等 partition leader ack",
+    "rejected": [
+     {
+      "option": "等全部 replica ack",
+      "why": "延遲較高"
+     }
+    ],
+    "tradeoff": "leader 在複製前掛掉有小機率遺失 job，Slack 認為對多數 job 可接受"
+   },
+   {
+    "decision": "relay 的可靠性與背壓",
+    "chosen": "JQRelay 先寫 Redis 成功才 commit offset（at-least-once），Consul 分散式鎖確保每 topic 一個 relay，rate limit 存 Consul",
+    "rejected": [
+     {
+      "option": "限制 producer 速率",
+      "why": "堆積時 web app 應全速 enqueue，改在 relay 限速匹配 worker 能力"
+     }
+    ],
+    "tradeoff": "可能重複投遞；個別 job 出錯 re-enqueue 回 Kafka；Go 與 PHP 對 JSON 編碼不同造成位元組差異"
+   },
+   {
+    "decision": "上線驗證",
+    "chosen": "雙寫 + JQRelay shadow 模式、每跳計數、heartbeat canary，內部數週後依 job type 放量",
+    "rejected": [
+     {
+      "option": "一次切換",
+      "why": "真實流量未驗證前風險過高"
+     }
+    ],
+    "tradeoff": "雙寫期間成本與維運複雜度較高"
+   }
+  ],
+  "topics": [
+   "async-jobs",
+   "reliability",
+   "streaming",
+   "scaling-writes"
+  ],
+  "followUps": [
+   "為何 Redis 滿了連 dequeue 都失敗？dequeue 要把 job 移到 processing list，需要少量可用記憶體。",
+   "現代對應？Kafka consumer groups、SQS、Temporal 這類 durable execution。"
+  ]
+ },
+ {
+  "id": "spotify-data-lake-point-queries",
+  "title": "Spotify：在 exabyte data lake 上做 point query（RAP）",
+  "kind": "業界實例",
+  "source": "In the Wild",
+  "file": "hellointerview-learn/in-the-wild/spotify-data-lake-point-queries.md",
+  "origin": "https://engineering.atspotify.com/2026/7/indexing-the-data-lake-for-online-point-queries/",
+  "core": "欄式大 page 的 data lake 適合掃描不適合點查；Spotify 在原檔外建確定性索引並調整寫入端，不用第二份拷貝就能 point query。",
+  "scaleNumbers": [
+   "GCS 保存 exabytes",
+   "一天約 1,000 個檔案，90 天 = 90,000 個候選檔",
+   "bucket 後 90、Bloom filter 後約 12",
+   "page 可達約 4 MB，目標 row 約 100 bytes",
+   "1 TB 資料 -> GB 級索引；1 PB -> TB 級",
+   "GCS 請求 30–100 ms"
+  ],
+  "decisions": [
+   {
+    "decision": "縮小搜尋空間",
+    "chosen": "先依查詢維度 bucket（hash(user) % 1000），再用 Bloom filter 排除",
+    "rejected": [
+     {
+      "option": "掃全部候選檔",
+      "why": "90 天 = 90,000 個 Parquet 檔，GB 到 TB 掃描量"
+     }
+    ],
+    "tradeoff": "兩者只是剪枝，只能說哪裡不是；剩下仍要打開檔案做一連串相依讀取，無法平行"
+   },
+   {
+    "decision": "point query 的存取路徑",
+    "chosen": "RAP 外部索引：key -> 檔案、row numbers，builder 每次 pipeline append 新 fragment，不動原檔",
+    "rejected": [
+     {
+      "option": "複製到 Bigtable / DynamoDB",
+      "why": "按 GB 計價的第二份拷貝，團隊要配給值得線上服務的資料"
+     },
+     {
+      "option": "Parquet min/max、Bloom filter",
+      "why": "機率式或只能排除，不能直接解析到 row"
+     }
+    ],
+    "tradeoff": "要維護索引 fragment；原文無端到端延遲數字，財務論述是主張非量測"
+   },
+   {
+    "decision": "降低讀取放大",
+    "chosen": "寫入端同 key 排在一起、key 變更就開新 page（約 20 bytes header），小值或預先聚合放進 covering index",
+    "rejected": [
+     {
+      "option": "維持原 page 布局",
+      "why": "page 是最小可定址單位，要為 100 bytes 拖約 4 MB 夾帶數千其他使用者"
+     }
+    ],
+    "tradeoff": "檔案仍是標準 Parquet，其他 reader 不受影響；需改寫入端"
+   },
+   {
+    "decision": "新增查詢維度",
+    "chosen": "另建一個 secondary index（只是服務層決定）",
+    "rejected": [
+     {
+      "option": "重新 migrate / 重排資料",
+      "why": "成本高；新索引花一個索引而非一次 migration"
+     }
+    ],
+    "tradeoff": "檔案仍按原 key 排序，次要鍵查詢散落更多檔，只能合併相鄰 byte range，永遠不如主鍵便宜"
+   }
+  ],
+  "topics": [
+   "storage-choice",
+   "search",
+   "blobs",
+   "scaling-reads"
+  ],
+  "followUps": [
+   "為何不是物件儲存太慢？GCS 30–100 ms，S3 Express One Zone 等已個位數 ms，貴的是周圍的讀取流程。",
+   "索引如何擴大？用 key hash 分 bucket，與資料檔相同手法。"
+  ]
+ },
+ {
+  "id": "dropbox-fleet-efficiency",
+  "title": "Dropbox：AI 時代先榨乾現有 fleet 的效率",
+  "kind": "業界實例",
+  "source": "Tech Blog",
+  "file": "threads-chunhao2026/tech-blog/dropbox-fleet-efficiency.md",
+  "origin": "https://dropbox.tech/infrastructure/improving-infrastructure-efficiency-for-growing-demand-in-the-age-of-ai",
+  "core": "容量需求暴增時，先把現有 fleet 的電力、空間、硬體壽命壓榨到極致，用 watts/PB 這類單位成本衡量，再考慮擴建。",
+  "scaleNumbers": [
+   "自 2020 年起 watts per petabyte 改善超過 50%",
+   "第七代 server 每 rack PDU 數量加倍"
+  ],
+  "decisions": [
+   {
+    "decision": "需求暴增時先擴容還是先提高利用率",
+    "chosen": "先最佳化現有 fleet（電力、空間、壽命），再談擴大 footprint",
+    "rejected": [
+     {
+      "option": "直接買新設備擴容",
+      "why": "受限於能源、冷卻、硬體供應與實體空間"
+     }
+    ],
+    "tradeoff": "各項決策需視為相互關聯的系統級最佳化，而非單點問題"
+   },
+   {
+    "decision": "閒置容量怎麼處理",
+    "chosen": "Deep Sleep：由 fleet management 演算法挑選，把閒置 HDD 降到 standby 或整台 server 斷電，數分鐘內可恢復",
+    "rejected": [
+     {
+      "option": "讓硬體一直跑以備不時之需",
+      "why": "待機耗電無謂"
+     }
+    ],
+    "tradeoff": "恢復需數分鐘，只適合可容忍延遲的容量；低延遲 workload 可只 spin down 閒置硬碟"
+   },
+   {
+    "decision": "局部瓶頸",
+    "chosen": "Workload Balancing：持續監看 spare capacity 與 workload 分布，把工作搬到低使用率機器",
+    "rejected": [
+     {
+      "option": "局部過載就擴容",
+      "why": "可用重新分配解決，不需新增硬體"
+     }
+    ],
+    "tradeoff": "需要全 fleet 的持續監控與搬移機制"
+   },
+   {
+    "decision": "儲存媒體",
+    "chosen": "SMR 硬碟（track 互相重疊，密度高於 PMR），用於資料多半只寫一次的 blob storage",
+    "rejected": [
+     {
+      "option": "PMR",
+      "why": "同容量要更多硬碟、cabling、電力與冷卻"
+     }
+    ],
+    "tradeoff": "random write 慢，只在 write-once 的 blob 場景可接受"
+   },
+   {
+    "decision": "換機時機",
+    "chosen": "依實測 annual failure rate 決策，能修就修",
+    "rejected": [
+     {
+      "option": "廠商固定換機週期",
+      "why": "不反映各世代元件實際行為，浪費壽命"
+     }
+    ],
+    "tradeoff": "需要長期蒐集各世代設備的故障資料"
+   }
+  ],
+  "topics": [
+   "storage-choice",
+   "blobs",
+   "reliability"
+  ],
+  "followUps": [
+   "怎麼衡量儲存效率？用 watts/PB、$/PB 單位成本，不只看總容量。",
+   "為何 SMR 適合 blob store？資料 write-once、append-only，random write 的缺點幾乎不影響。"
+  ]
+ },
+ {
+  "id": "linkedin-muse-semantic-search",
+  "title": "LinkedIn：MUSE 語義搜尋（Hiring Assistant）",
+  "kind": "業界實例",
+  "source": "Tech Blog",
+  "file": "threads-chunhao2026/tech-blog/linkedin-muse-semantic-search.md",
+  "origin": "https://www.linkedin.com/blog/engineering/ai/semantic-search-for-ai-agents-at-scale-retrieval-and-ranking-for-linkedins-hiring-assistant",
+  "core": "在 1.3B+ profile 上做語義搜尋，難在 query 端 <100ms 還要準：query 線上算、profile 向量離線預算，並用 LLM judge 量產訓練標籤。",
+  "scaleNumbers": [
+   "1.3B+ member profiles",
+   "query 端 p95 <100ms",
+   "Matryoshka：4096 維內嵌 2048 / 1024 / 512",
+   "Boolean keyword search 約 50% query 回傳零結果",
+   "線上 A/B：post-LLM-Guard HRR +2.7%、InMail accepts/seat +1.8%、candidates sourced/seat -4%"
+  ],
+  "decisions": [
+   {
+    "decision": "檢索方式",
+    "chosen": "Dual-tower 共用單一 LLM，query 與 profile 編進同一向量空間；query 線上算，profile 離線預算",
+    "rejected": [
+     {
+      "option": "Boolean keyword search",
+      "why": "約 50% query 回傳零結果"
+     },
+     {
+      "option": "faceted search",
+      "why": "覆蓋高但撈出很多不合格的人"
+     }
+    ],
+    "tradeoff": "ANN 犧牲 recall 換速度，再加 post-filter，兩種損失相乘；原文估計 exhaustive kNN + pre-filter 在同等相關度下可多約 30% 候選人"
+   },
+   {
+    "decision": "embedding 維度",
+    "chosen": "Matryoshka：2048 維用於 ANN 檢索，完整 4096 維作 L2 ranker 特徵",
+    "rejected": [
+     {
+      "option": "檢索與排序各維護一套模型",
+      "why": "成本與維護翻倍"
+     }
+    ],
+    "tradeoff": "粗訊號放低維、細緻資格推理放高維；base model 的 post-training 目標比參數量重要"
+   },
+   {
+    "decision": "索引新鮮度",
+    "chosen": "Lambda：每週全量 LLM 推論 + 每日 CDC delta 推論；Iceberg 為 single source of truth，Venice 存向量，Galene 做 IVFPQ ANN",
+    "rejected": [
+     {
+      "option": "只做全量重建",
+      "why": "新增與更新的 profile 要等一週"
+     }
+    ],
+    "tradeoff": "兩條路徑要維護；inline filtering 與兩階段 pipeline 可降低 filter 損失"
+   },
+   {
+    "decision": "訓練標籤來源",
+    "chosen": "Expert Judge（專有 LLM）產種子標籤，MUSE Teacher（open-weight reasoning model）複製其判斷量產至百萬級",
+    "rejected": [
+     {
+      "option": "全靠人工標註或只用 Expert Judge",
+      "why": "Expert Judge 產能有限（數十萬標籤等級）"
+     }
+    ],
+    "tradeoff": "Teacher 與人工不一致時，高信心預測約 4/5 次是對的；需人工校準"
+   },
+   {
+    "decision": "評估流程",
+    "chosen": "評估階梯：訓練指標 -> 離線 Expert Judge replay -> 線上 A/B",
+    "rejected": [
+     {
+      "option": "直接上線 A/B",
+      "why": "成本高且週期長；replay 趨勢可預測線上方向"
+     }
+    ],
+    "tradeoff": "候選人數量少 4% 換來較高品質"
+   }
+  ],
+  "topics": [
+   "search",
+   "scaling-reads",
+   "async-jobs"
+  ],
+  "followUps": [
+   "為何 filter 要 inline？ANN 後 post-filter 會再丟一批，recall 損失相乘。",
+   "向量與 KV 怎麼分工？Venice KV 存向量，Galene 做 ANN index。"
+  ]
+ },
+ {
+  "id": "linkedin-premium-unified-data",
+  "title": "LinkedIn：Premium All-in-One 的共用 TA graph",
+  "kind": "業界實例",
+  "source": "Tech Blog",
+  "file": "threads-chunhao2026/tech-blog/linkedin-premium-unified-data.md",
+  "origin": "https://www.linkedin.com/blog/engineering/member-customer-experience/building-linkedin-premium-all-in-one-unified-ai-powered-workflows-for-small-businesses",
+  "core": "難點不在 AI 功能，而在先定義一份共用的 Target Audience graph 供 sales / marketing / hiring 三條線共用，同時整頓計費與權限碎片化。",
+  "scaleNumbers": [
+   "Daily Prospect Suggestions 每日 15 位",
+   "追蹤者 +57%/月、prospect 回覆 +61%（未揭露樣本與基線）",
+   "把 founder 加進 profile 的成員成長 60%"
+  ],
+  "decisions": [
+   {
+    "decision": "多產品線如何共用資料",
+    "chosen": "先定義單一 TA graph，所有下游功能都讀這一份",
+    "rejected": [
+     {
+      "option": "每個團隊各做 AI feature 各養一份資料",
+      "why": "資料不互通、功能重疊，使用者要在三個介面間切換"
+     }
+    ],
+    "tradeoff": "需要明確 ownership 與 schema 契約，並整頓計費、revenue recognition、entitlement 等非 AI 整合"
+   },
+   {
+    "decision": "TA 的生成與冷啟動",
+    "chosen": "三層：Activity-based（行為訊號指數衰減）-> LLM-based（無活動史者，限定從既有 taxonomy 選）-> Implicit（融合買賣雙方訊號）",
+    "rejected": [
+     {
+      "option": "沿用 enterprise 導向的 audience model",
+      "why": "不符合小企業流程與規模"
+     },
+     {
+      "option": "LLM 自由生成 audience",
+      "why": "會破壞下游相容性"
+     }
+    ],
+    "tradeoff": "三種來源要共存維護；輸入限定個別成員並遵守隱私偏好"
+   },
+   {
+    "decision": "內容推薦的成本控制",
+    "chosen": "先輕量 rule-based 過濾，再只對候選做 LLM scoring",
+    "rejected": [
+     {
+      "option": "對全量內容跑 LLM",
+      "why": "成本過高"
+     }
+    ],
+    "tradeoff": "規則過濾可能漏掉好內容；prospect 推薦用 index 與 embedding 並用，取捨為延遲 vs 運算成本"
+   },
+   {
+    "decision": "組織與權限整合",
+    "chosen": "從客戶問題出發而非組織圖：共用體驗、統一 entitlement 模型、可重用 AI 基礎",
+    "rejected": [
+     {
+      "option": "沿用各部門各自的 billing 與 access 模型",
+      "why": "整合暴露幣別、ledger、revenue recognition、entitlement 的碎片"
+     }
+    ],
+    "tradeoff": "Conway's law 成為設計議題；需要品質/可靠性 gate 的 ramp"
+   }
+  ],
+  "topics": [
+   "consistency",
+   "storage-choice",
+   "auth"
+  ],
+  "followUps": [
+   "冷啟動怎麼分層 fallback？行為訊號 -> LLM 推測 -> implicit。",
+   "為何要約束 LLM 輸出到既有 taxonomy？確保與下游系統一致。"
+  ]
+ },
+ {
+  "id": "meta-gpu-training-storage",
+  "title": "Meta：AI 訓練的 storage 藍圖",
+  "kind": "業界實例",
+  "source": "Tech Blog",
+  "file": "threads-chunhao2026/tech-blog/meta-gpu-training-storage.md",
+  "origin": "https://engineering.fb.com/2026/07/01/data-infrastructure/metas-ai-storage-blueprint-at-scale/",
+  "core": "GPU 昂貴，storage 讓 GPU stall 就是燒錢；Meta 把序列 metadata 查詢壓平、移除 proxy、加多層快取，讓資料跟上 GPU。",
+  "scaleNumbers": [
+   "舊 metadata 序列查詢累積數百 ms -> O(1)",
+   "分散式 data cache 平均 hit rate 約 80%",
+   "ReadPlan metadata cache 1-2 ms",
+   "AI 算力約每兩年成長三倍"
+  ],
+  "decisions": [
+   {
+    "decision": "Metadata 查詢",
+    "chosen": "Unified flat metadata schema（ZippyDB 後端），path -> storage address 為 O(1) lookup",
+    "rejected": [
+     {
+      "option": "namelayer / volumeslayer / containerlayer 三層序列查詢",
+      "why": "每層可能跨 region，累積數百 ms"
+     }
+    ],
+    "tradeoff": "需要把分散的 metadata 收斂遷移"
+   },
+   {
+    "decision": "資料路徑",
+    "chosen": "Fat client SDK 直連 storage server，移除 dataplane proxy",
+    "rejected": [
+     {
+      "option": "集中式 dataplane proxy",
+      "why": "是吞吐與功耗瓶頸，每多一個中間人多一份 latency"
+     }
+    ],
+    "tradeoff": "fat client 的升級與一致性成本，換取延遲與吞吐"
+   },
+   {
+    "decision": "部署範圍與 durability",
+    "chosen": "每個 AI region 與 GPU colocate 一套精簡 regional BLOB stack",
+    "rejected": [
+     {
+      "option": "預設全域複製",
+      "why": "為 durability 設計，對 GPU 訓練多餘且拉長延遲"
+     }
+    ],
+    "tradeoff": "durability 變成可設定的 regional；成本從 cost per byte（HDD）轉為以 GPU 運算成本為主，限制從空間變成功耗"
+   },
+   {
+    "decision": "尖峰與 tail latency",
+    "chosen": "利用 GPU host 閒置記憶體做分散式 data cache，加 hedged reads 與 dynamic concurrency control",
+    "rejected": [
+     {
+      "option": "固定並行度、不備援讀取",
+      "why": "egress spike 與慢節點造成 timeout 與 tail latency"
+     }
+    ],
+    "tradeoff": "hedged read 增加額外請求負載"
+   },
+   {
+    "decision": "訓練前資料搬移",
+    "chosen": "Tiered cache：L1 host memory -> L2 host flash -> L3 regional flash -> 全域 HDD 源，dataloader prefetch 與 TTL+LRU 自動 lifecycle",
+    "rejected": [
+     {
+      "option": "訓練前手動跨 region ingestion",
+      "why": "研究員要花數小時"
+     }
+    ],
+    "tradeoff": "需要預取 API 與容量感知的淘汰策略；原文僅以圖表呈現 ingestion 改善，無具體倍數"
+   }
+  ],
+  "topics": [
+   "blobs",
+   "caching",
+   "scaling-reads",
+   "storage-choice"
+  ],
+  "followUps": [
+   "fat client vs thin proxy？升級與一致性成本 vs 延遲與吞吐。",
+   "全域複製 vs regional？依 workload 重新定義 SLA。"
+  ]
+ },
+ {
+  "id": "netflix-ads-event-pipeline-live",
+  "title": "Netflix：為 Live 重構廣告事件 pipeline（Part II）",
+  "kind": "業界實例",
+  "source": "Tech Blog",
+  "file": "threads-chunhao2026/tech-blog/netflix-ads-event-pipeline-live.md",
+  "origin": "https://netflixtechblog.medium.com/behind-the-scenes-evolving-netflixs-ads-event-pipeline-for-live-part-ii-826ebf9ad9fb",
+  "core": "把同步寫 Metadata Registry 移出 ad serving critical path，改用 Flink 有狀態 streaming join，並在每個環節選夠精準的保證而非理論最強。（來源：轉載/未取得原文）",
+  "scaleNumbers": [
+   "Live 賽事超過 1 億 concurrent viewers",
+   "營運 25,000+ Flink jobs",
+   "60 分鐘 matching window 涵蓋約 99.999% 事件",
+   "落單者約 0.001% 由每小時 Spark 補配",
+   "新舊 pipeline 輸出 well over 99.99% 一致才切換"
+  ],
+  "decisions": [
+   {
+    "decision": "事件 enrichment 的資料來源",
+    "chosen": "Ad server 只把 response 丟進 Kafka，下游 Flink 做 streaming join 比對 client event 與 serving response",
+    "rejected": [
+     {
+      "option": "每次廣告出現先同步寫 Metadata Registry 等 ack",
+      "why": "每秒數百萬必須成功的寫入不敢擴容、Registry 掛了廣告就停、lookup timeout 打破 frequency capping SLA"
+     }
+    ],
+    "tradeoff": "事件要在 state 中等對應 response"
+   },
+   {
+    "decision": "join 的 state 大小",
+    "chosen": "60 分鐘 matching window，加每小時 Maestro 排程的 Spark batch 從 warehouse 重配落單者",
+    "rejected": [
+     {
+      "option": "無界 state 等所有晚到事件",
+      "why": "state 無限成長"
+     }
+    ],
+    "tradeoff": "state 大小 vs 完整性；streaming + batch 對帳，維運較複雜"
+   },
+   {
+    "decision": "多 region",
+    "chosen": "token 編碼 serving region，跨區事件被單跳路由到有對應資料的 region",
+    "rejected": [
+     {
+      "option": "全球複寫 serving response",
+      "why": "複寫成本高"
+     }
+    ],
+    "tradeoff": "延遲 vs 複寫成本，單跳 reroute 勝出"
+   },
+   {
+    "decision": "去重保證等級",
+    "chosen": "event ID hash 成 idempotent key 存在 Flink 本地 state，維持 at-least-once，consumer 端做最終 idempotent dedup",
+    "rejected": [
+     {
+      "option": "追求 exactly-once",
+      "why": "成本高於 at-least-once + idempotent consumer"
+     }
+    ],
+    "tradeoff": "串流內 dedup 只抓 vast majority，非完美"
+   },
+   {
+    "decision": "切換方式",
+    "chosen": "新舊 pipeline 吃全量流量，以決定性 stable-key 切分決定誰發布，自動 audit 直到一致才切",
+    "rejected": [
+     {
+      "option": "一次性 cutover",
+      "why": "live 廣告風險過高"
+     }
+    ],
+    "tradeoff": "平行運行較久，複雜度換取 production 信任"
+   }
+  ],
+  "topics": [
+   "streaming",
+   "async-jobs",
+   "idempotency",
+   "reliability",
+   "counting"
+  ],
+  "followUps": [
+   "為何不 exactly-once？at-least-once 加下游 idempotent 更便宜。",
+   "如何驗證新 pipeline？dual-run + 自動 audit 比對輸出。"
+  ]
+ },
+ {
+  "id": "netflix-cold-start-multimodal",
+  "title": "Netflix：MAPS 多模態 asset 個人化",
+  "kind": "業界實例",
+  "source": "Tech Blog",
+  "file": "threads-chunhao2026/tech-blog/netflix-cold-start-multimodal.md",
+  "origin": "https://netflixtechblog.com/maps-netflixs-multimodal-asset-personalization-at-scale-32f96320785e",
+  "core": "兩個各自線上 A/B 無顯著效果的改動（CLIP embedding、五個 canvas 模型合併），合起來才顯著提升，是 cold start 的複合效應案例。",
+  "scaleNumbers": [
+   "CLIP 圖像 embedding 768 維",
+   "MediaFM 在 8000 萬個 shot 上訓練",
+   "五個 canvas 模型合為一個",
+   "V3 在 short-panel lift 5.691%（單位未明確）",
+   "線上 A/B 至少 4 週；±1% 內視為不顯著"
+  ],
+  "decisions": [
+   {
+    "decision": "新 asset 的冷啟動",
+    "chosen": "Content-aware embedding：CLIP 圖像 embedding 與 learned ID embedding concatenate 過 MLP；video 用 MediaFM（視覺+音訊+文字）",
+    "rejected": [
+     {
+      "option": "asset 當 opaque ID 加 popularity fallback",
+      "why": "新片無歷史，只能退回忽略個人口味的 popularity heuristic"
+     }
+    ],
+    "tradeoff": "單獨上線無收益，因為資料少的 canvas 缺足夠資料學會用 embedding"
+   },
+   {
+    "decision": "模型數量",
+    "chosen": "把五個 canvas 專屬模型合併成統一模型",
+    "rejected": [
+     {
+      "option": "各 canvas 獨立訓練",
+      "why": "ID-based 模型不知不同裁切是相關的，訊號無法跨 canvas；short-panel 資料最少"
+     },
+     {
+      "option": "統一模型但只用 ID",
+      "why": "新 asset 沒有 ID 資料，線上持平不顯著"
+     }
+    ],
+    "tradeoff": "CLIP 對 crop / resize 大致不變才能共享訊號；合併後 canvas 資料量不均需加權"
+   },
+   {
+    "decision": "合併後的訓練權重",
+    "chosen": "依互動類型的 long-term reward（ρ）對正樣本加權",
+    "rejected": [
+     {
+      "option": "raw count",
+      "why": "高流量 canvas 與高頻互動主導"
+     },
+     {
+      "option": "手調權重",
+      "why": "變成任意超參數與無止境的線上掃參"
+     }
+    ],
+    "tradeoff": "依賴 long-term reward modeling"
+   },
+   {
+    "decision": "離線評估",
+    "chosen": "專屬 exploration 流量 slice 做 IPS，須先贏 IPS 才給 A/B 流量；用 linear probe 篩候選",
+    "rejected": [
+     {
+      "option": "用現行 production policy 的 log 評新模型",
+      "why": "有偏差"
+     }
+    ],
+    "tradeoff": "需要隨機 policy 並精確記錄 propensity；linear probe 刻意只用 embedding 以隔離其編碼的資訊"
+   },
+   {
+    "decision": "embedding 管理",
+    "chosen": "Embedding Store：foundation model 編碼一次，訓練與線上取得同一份 embedding",
+    "rejected": [
+     {
+      "option": "各下游模型自行計算 embedding",
+      "why": "training-serving skew 且發版需協調"
+     }
+    ],
+    "tradeoff": "需要平台維護 backfill 與版本註冊；原文教訓是先找第二個阻擋因素，再下結論說 content feature 沒用"
+   }
+  ],
+  "topics": [
+   "scaling-reads",
+   "search",
+   "storage-choice"
+  ],
+  "followUps": [
+   "為何單因子 A/B 全不顯著？改動間有交互作用，需組合測試。",
+   "為何用 IPS？exploration 流量的 propensity 是構造已知，離線數字貼近線上。"
+  ]
+ },
+ {
+  "id": "netflix-debugging-spark-at-scale",
+  "title": "Netflix：用 branch 平行實驗除錯大規模 Spark",
+  "kind": "業界實例",
+  "source": "Tech Blog",
+  "file": "threads-chunhao2026/tech-blog/netflix-debugging-spark-at-scale.md",
+  "origin": "https://noise.getoto.net/2026/10/14/running-apache-spark-experiments-in-my-sleep-and-on-a-plane/",
+  "core": "有些 bug 只在 production 全量資料出現，sample 抓不到；解法不是讓單次 run 變快，而是用 branch 隔離把除錯變成同時跑多組實驗。（來源：轉載/未取得原文）",
+  "scaleNumbers": [
+   "member-sessionizer 每小時處理數百億筆 client events",
+   "原預計兩週的優化拖成兩個月，全量測試一天只能試 3-4 次",
+   "peak executor memory 約 112% 降到約 58% slot 容量",
+   "AQE 悄悄改寫九個 join，累計單一 executor 釘住約 3.1 GB",
+   "runtime broadcast 門檻降到 10 MB"
+  ],
+  "decisions": [
+   {
+    "decision": "在哪裡重現問題",
+    "chosen": "用一整小時未取樣的 production 資料測試",
+    "rejected": [
+     {
+      "option": "1% sample 資料",
+      "why": "data skew：閒置分頁整晚串流產生數萬筆 telemetry，sample 會漏掉極端長尾 session"
+     }
+    ],
+    "tradeoff": "每次全量測試要數小時"
+   },
+   {
+    "decision": "除錯的工作流",
+    "chosen": "branch-driven 平行實驗：Dataflow + Maestro 依 branch name 標記 workflow、tables、namespace，一個 branch 一個參數化實驗",
+    "rejected": [
+     {
+      "option": "循序單次優化",
+      "why": "五個循序 10 小時測試壓成一次最慢 job 的時間"
+     }
+    ],
+    "tradeoff": "叢集競爭時只能同時跑 2-3 組而非 5 組，仍遠勝循序"
+   },
+   {
+    "decision": "OOM 的修正方向",
+    "chosen": "原生型別取代 Option、瘦身 event bag、不變 metadata 上移到 session header、Window stage 前先限制 session 大小",
+    "rejected": [
+     {
+      "option": "只加記憶體",
+      "why": "OOM 與單列重量相關而非總資料量，collect_list 把整個 event bag 緩衝在記憶體"
+     }
+    ],
+    "tradeoff": "Tuning 買到的是 headroom，不是架構改變；資料模型若允許無上限 row 成長終究要重新設計"
+   },
+   {
+    "decision": "自動 planner 的風險",
+    "chosen": "把 AQE runtime broadcast 門檻降到 10 MB（compile-time 門檻不變）",
+    "rejected": [
+     {
+      "option": "信任預設 auto-broadcast",
+      "why": "表縮小後低於門檻，AQE 把九個 sort-merge join 改成 broadcast hash join，每個都低於 400 MB 但累計超過 container 限制"
+     }
+    ],
+    "tradeoff": "變窄的 row 反而增加記憶體壓力；要用峰值 skew 驗證，離峰驗證會藏問題"
+   }
+  ],
+  "topics": [
+   "async-jobs",
+   "scaling-writes",
+   "reliability"
+  ],
+  "followUps": [
+   "為何 sampling 會失效？skew 與長尾 session 在 sample 中消失。",
+   "如何避免實驗互相污染？branch 標記的獨立 tables 與 namespace。"
+  ]
+ },
+ {
+  "id": "netflix-flink-autoscaler",
+  "title": "Netflix：兩代 Flink autoscaler",
+  "kind": "業界實例",
+  "source": "Tech Blog",
+  "file": "threads-chunhao2026/tech-blog/netflix-flink-autoscaler.md",
+  "origin": "https://netflixtechblog.com/a-tale-of-two-flink-autoscalers-e9f6a1b1492b",
+  "core": "自建 autoscaler 從 container 外看 cluster 指標，對 backpressure / I/O 卡住的 job 是盲的；OSS autoscaler 用每個 operator 的 True Processing Rate 在 job graph 內算 per-vertex parallelism。",
+  "scaleNumbers": [
+   "30,000+ Flink jobs",
+   "舊 autoscaler 使數千條 pipeline 資源用量降 25%-45%",
+   "可處理至 3,000 subtasks（先前約 1,000 以上就吃力）",
+   "target utilization 0.45（社群預設 0.7）",
+   "運算支出降 58%、約省 US$1.1M/年",
+   "TPR 範例：700 records/s、70% busy -> 1,000 records/s"
+  ],
+  "decisions": [
+   {
+    "decision": "縮放依據的指標",
+    "chosen": "True Processing Rate（throughput ÷ busy fraction），per-operator 白箱指標",
+    "rejected": [
+     {
+      "option": "cluster 層 CPU、網路、Kafka lag",
+      "why": "job 卡在 backpressure 或 I/O 時不反映在 CPU；網路遷移曾悄悄讓 Atlas 指標失準"
+     }
+    ],
+    "tradeoff": "原文心得：metric 選擇比演算法精巧更重要"
+   },
+   {
+    "decision": "縮放粒度",
+    "chosen": "OSS 版對每個 vertex 算 parallelism，使無 operator 成為瓶頸",
+    "rejected": [
+     {
+      "option": "以 TaskManager 總數當單一旋鈕",
+      "why": "job 內所有 operator 共用同一決策，不適合有分支、join、TB 級 state 的 stateful pipeline"
+     }
+    ],
+    "tradeoff": "需要保留 forward chaining（單獨縮放會默默變成 network shuffle）、尊重 sink 上限"
+   },
+   {
+    "decision": "autoscaler 服務架構",
+    "chosen": "Spring Boot + Temporal，每個 job 一條長駐 workflow",
+    "rejected": [
+     {
+      "option": "單一 batch loop 跑全部 job",
+      "why": "一個慢或壞的 job 會卡住後面所有 job"
+     }
+    ],
+    "tradeoff": "隔離 blast radius、失敗各自重試，但多了 Temporal 的依賴"
+   },
+   {
+    "decision": "自建還是採用社群方案",
+    "chosen": "Adopt then extend：採用 OSS，拆出 library 並重構介面接 Netflix control plane，回饋修正",
+    "rejected": [
+     {
+      "option": "繼續維護自建版",
+      "why": "有天花板，metric 盲點無法修補"
+     }
+    ],
+    "tradeoff": "需要自家客製（metric 收集優化、forward chain、sink backpressure）與有計畫地遷移"
+   },
+   {
+    "decision": "utilization 目標",
+    "chosen": "target utilization 設 0.45",
+    "rejected": [
+     {
+      "option": "社群預設 0.7",
+      "why": "縮太狠會 CPU 飽和、lag 飆高，重啟後 metric window 與 stabilization period 都要重建"
+     }
+    ],
+    "tradeoff": "以些許效率換穩定與較少的 rescale 次數；stateful job 最大剩餘成本是重啟與 state recovery"
+   }
+  ],
+  "topics": [
+   "scaling-reads",
+   "streaming",
+   "reliability"
+  ],
+  "followUps": [
+   "為何 CPU 是不好的訊號？backpressure 時上游看似閒、瓶頸在下游。",
+   "state recovery 怎麼降成本？Flink 2 disaggregated state 把 state 放外部儲存。"
+  ]
+ },
+ {
+  "id": "netflix-genrec-llm-recommendation",
+  "title": "Netflix：GenRec 以 LLM 為 ranker",
+  "kind": "業界實例",
+  "source": "Tech Blog",
+  "file": "threads-chunhao2026/tech-blog/netflix-genrec-llm-recommendation.md",
+  "origin": "https://netflixtechblog.com/genrec-towards-llm-native-recommendation-at-netflix-f20be6f643e3",
+  "core": "把 ranker 從數千手工特徵加客製網路，改成 verbalize 使用者歷史成 prompt，用 post-train 過的 LLM 做 prefill-only 一次 forward 對候選集打分。",
+  "scaleNumbers": [
+   "數千億筆互動事件",
+   "Phase-2 標註少 10-40 倍即可持平或超越 production ranker，MRR 約 +1.6%",
+   "context token 降到約 1/3，離線指標幾乎無損",
+   "約 1B 與 10B 參數 backbone",
+   "線上 A/B 約 10% 流量、約 4 週，僅 batch-compute surfaces"
+  ],
+  "decisions": [
+   {
+    "decision": "ranker 的輸入",
+    "chosen": "Context engineering：把觀看歷史 verbalize 成 prompt，在 token budget 內決定保留、壓縮、捨棄",
+    "rejected": [
+     {
+      "option": "數千個手工數值特徵",
+      "why": "每加一種內容或 surface 都要大量 feature engineering、架構與基礎設施改動，onboarding 成本高"
+     }
+    ],
+    "tradeoff": "context engineering 有持續調校成本"
+   },
+   {
+    "decision": "模型來源",
+    "chosen": "Post-train 內部 foundation LLM 的 ranker，兩階段：Phase 1 用專有語料 adapt，Phase 2 針對 ranking post-train",
+    "rejected": [
+     {
+      "option": "現成 off-the-shelf LLM",
+      "why": "過度推薦全球熱門、幻覺出 catalog 外項目、無視商業限制、個人化有限"
+     }
+    ],
+    "tradeoff": "Phase 1 是巨大前期投資（補充）；Phase 2 需頻繁 refresh"
+   },
+   {
+    "decision": "serving 成本",
+    "chosen": "prefill-only：prompt 只消化一次，單次 forward 對整個候選集打分，加 catalog-aware scoring head；壓縮 context 與蒸餾小模型",
+    "rejected": [
+     {
+      "option": "autoregressive decoding",
+      "why": "昂貴，推論成本隨 context 長度與輸出而增"
+     }
+    ],
+    "tradeoff": "成本約與 context 長度成正比；只證明 batch-compute surface 可行，即時 surface 延遲未知"
+   },
+   {
+    "decision": "context 長度",
+    "chosen": "清理壓縮事件，找 MRR vs 事件數的 elbow point，再調 verbosity，並讓 prompt 前綴共享以利 prefix caching",
+    "rejected": [
+     {
+      "option": "盡量塞滿 context",
+      "why": "邊際遞減且成本線性增加"
+     }
+    ],
+    "tradeoff": "丟棄低訊號事件需靠離線指標驗證"
+   },
+   {
+    "decision": "訓練目標",
+    "chosen": "多目標：catalog-aware ranking cross-entropy + language modeling + reward-weighted loss",
+    "rejected": [
+     {
+      "option": "完整 RL（如 GRPO）",
+      "why": "有額外增益但成本高，留待未來"
+     }
+    ],
+    "tradeoff": "reward weighting 比 RL 簡單便宜；線上絕對提升幅度未公開"
+   }
+  ],
+  "topics": [
+   "scaling-reads",
+   "search",
+   "async-jobs"
+  ],
+  "followUps": [
+   "為何 prefill-only？候選集一次打分，不做 decoding 才可能達到可接受成本。",
+   "能取代線上低延遲 ranking 嗎？原文只證明 batch-compute surface。"
+  ]
+ },
+ {
+  "id": "netflix-hystrix-circuit-breaker",
+  "title": "Netflix：Hystrix 與 bulkhead 隔離",
+  "kind": "業界實例",
+  "source": "Tech Blog",
+  "file": "threads-chunhao2026/tech-blog/netflix-hystrix-circuit-breaker.md",
+  "origin": "https://github.com/Netflix/Hystrix/wiki",
+  "core": "核心不是斷路器本身，而是每個依賴一個獨立 thread pool（bulkhead）加 pool 滿了直接拒絕的 fail fast，讓一個慢依賴只榨乾自己的 pool。",
+  "scaleNumbers": [
+   "30 個服務各 99.99% uptime，整體約 99.7%",
+   "Netflix API 每天 10+ 億次 command、約 40+ thread pool、每個 5-20 threads",
+   "thread 隔離開銷 60 RPS 時 p90 約 3ms、p99 約 9ms",
+   "預設：20 請求 / 50% 錯誤率 / 10 秒視窗 / sleep window 5 秒 / timeout 1000ms / coreSize 10 / maxQueueSize -1",
+   "2011 年尖峰約 20,000 RPS"
+  ],
+  "decisions": [
+   {
+    "decision": "依賴變慢時的資源隔離",
+    "chosen": "每個依賴獨立 thread pool（bulkhead），pool 滿就 reject 走 fallback",
+    "rejected": [
+     {
+      "option": "共用 thread pool 加 timeout/retry",
+      "why": "依賴變慢使 thread 卡等回應，請求堆積直到整個 pool 被佔滿，連無關請求都處理不了（cascading failure）"
+     }
+    ],
+    "tradeoff": "thread context switch 開銷（p99 約 9ms）；semaphore 較輕量但無法 timeout"
+   },
+   {
+    "decision": "過載時排隊還是拒絕",
+    "chosen": "maxQueueSize -1（SynchronousQueue），不排隊直接拒絕",
+    "rejected": [
+     {
+      "option": "排隊等處理",
+      "why": "依賴變慢時排隊只會讓 latency 與記憶體爆炸（補充：Little's law）"
+     }
+    ],
+    "tradeoff": "部分請求會被拒，必須有 fallback"
+   },
+   {
+    "decision": "何時停止呼叫依賴",
+    "chosen": "Circuit breaker 三態：滾動視窗內量超過門檻且錯誤率超過 50% 則 Open，sleep window 後 Half-open 放一個試探",
+    "rejected": [
+     {
+      "option": "持續重試故障依賴",
+      "why": "沒有恢復時間，且放大下游壓力"
+     }
+    ],
+    "tradeoff": "門檻需調校；timeout、pool 與 queue 100% 滿載、exception 都計入錯誤率"
+   },
+   {
+    "decision": "失敗時的降級",
+    "chosen": "三種 fallback：custom fallback（本地資料/cache）、fail silent（回 null）、fail fast（回 5xx）",
+    "rejected": [
+     {
+      "option": "一律回錯誤",
+      "why": "傷害 UX；有 custom fallback 時 circuit trip 後影片觀看量幾乎不受影響"
+     }
+    ],
+    "tradeoff": "完整覆蓋的 custom fallback 維護困難；fallback 應避免再走網路"
+   },
+   {
+    "decision": "可觀測性與調參",
+    "chosen": "10 秒滾動視窗即時統計，dashboard 與 circuit 共用同一份，設定可動態調整",
+    "rejected": [
+     {
+      "option": "15-30 分鐘延遲的監控",
+      "why": "看不到現在的狀況，無法及時反應"
+     }
+    ],
+    "tradeoff": "Hystrix 已進維護模式，業界轉向 Resilience4j 與 service mesh outlier detection（補充）"
+   }
+  ],
+  "topics": [
+   "reliability",
+   "rate-limiting",
+   "api-networking"
+  ],
+  "followUps": [
+   "為何 timeout 與 retry 不夠？需要 bulkhead 隔離資源加 circuit breaker 停止傷害。",
+   "thread pool 與 semaphore 怎麼選？前者可 timeout 隔離徹底，後者適合低延遲可信任的記憶體內呼叫。"
+  ]
+ },
+ {
+  "id": "netflix-realtime-graph-query",
+  "title": "Netflix：Real-Time Distributed Graph 的 gRPC 查詢層",
+  "kind": "業界實例",
+  "source": "Tech Blog",
+  "file": "threads-chunhao2026/tech-blog/netflix-realtime-graph-query.md",
+  "origin": "https://netflixtechblog.com/how-and-why-netflix-built-a-real-time-distributed-graph-part-3-querying-the-graph-with-grpc-0f3468349607",
+  "core": "在 8B nodes / 150B edges 的 graph 上，用 BFS 分層批次、async-first 小 thread pool、把多跳打包成單一 gRPC 呼叫達到低延遲。",
+  "scaleNumbers": [
+   "8B nodes、150+B edges",
+   "單跳 P50 15-30ms、P99 <100ms；3-hop P99 100-150ms",
+   "16-24 threads 承載數千並發",
+   "EVCache node lookup hit rate 70-80%，storage call 約少 3-4 倍",
+   "預設 100 天 lookback、每跳 300 edges",
+   "大型 adjacency list 100 筆一批串流"
+  ],
+  "decisions": [
+   {
+    "decision": "多跳遍歷策略",
+    "chosen": "BFS：每層 node 一次平行處理，延遲約等於跳數乘以一次批次 RTT",
+    "rejected": [
+     {
+      "option": "DFS / 逐 node 呼叫",
+      "why": "N 個循序網路呼叫"
+     }
+    ],
+    "tradeoff": "記憶體用量上升，以每個 edge type 在每一跳的上限約束"
+   },
+   {
+    "decision": "client 與 server 的互動",
+    "chosen": "多跳邏輯打包成單一 gRPC 請求，先解析成 execution plan 再讀 storage",
+    "rejected": [
+     {
+      "option": "client 逐跳送請求",
+      "why": "每跳 10ms 網路，2 跳就先有 20ms overhead，破壞 sub-100ms 目標"
+     }
+    ],
+    "tradeoff": "請求規格較複雜，需分層覆寫（應用預設、全域、每層、每 edge type）"
+   },
+   {
+    "decision": "並發模型",
+    "chosen": "Async-first，只用 16-24 threads，按工作型態分專用 pool，加 adaptive concurrency limiting",
+    "rejected": [
+     {
+      "option": "每 instance 數百個 blocking thread",
+      "why": "thread 卡在 I/O，並發受 thread 數限制"
+     }
+    ],
+    "tradeoff": "大幅降低基礎設施成本，但 async stack trace 難除錯，以各階段 metrics 彌補"
+   },
+   {
+    "decision": "快取",
+    "chosen": "只用 EVCache 快取穩定的 node（accounts、profiles、content），smart TTL",
+    "rejected": [
+     {
+      "option": "快取所有資料含 edge",
+      "why": "edge 變動快，容易 stale"
+     }
+    ],
+    "tradeoff": "預設 eventual consistency 讀近端 replica（RDG 非 source of truth）"
+   },
+   {
+    "decision": "外部資料與超級節點",
+    "chosen": "Enrichment opt-in 且 fail-open；過濾下推到 storage 串流來源，湊夠 limit 就停",
+    "rejected": [
+     {
+      "option": "同步強依賴外部服務、讀完再過濾",
+      "why": "外部掛了會擋 query，並 over-fetch"
+     }
+    ],
+    "tradeoff": "LATEST 排序較慢，ANY 先遇到先取較快但不排序"
+   }
+  ],
+  "topics": [
+   "scaling-reads",
+   "caching",
+   "storage-choice",
+   "api-networking"
+  ],
+  "followUps": [
+   "沒用原生 graph DB？底層是 KVDAL 加 adjacency list。",
+   "為何預設 eventual consistency？查詢多為最近行為，且非 source of truth。"
+  ]
+ },
+ {
+  "id": "netflix-timeseries-tiered-storage",
+  "title": "Netflix：TimeSeries 冷熱分層到 Cassandra 原生冷讀",
+  "kind": "業界實例",
+  "source": "Tech Blog",
+  "file": "threads-chunhao2026/tech-blog/netflix-timeseries-tiered-storage.md",
+  "origin": "https://netflixtechblog.com/timeseries-tiered-storage-journey-kafka-flink-streams-to-native-cassandra-cold-reads-e59d597c9d60",
+  "core": "歷史 timeseries 資料不可變：先用 Kafka + Flink + S3 另建冷層，後來改讓 Cassandra 自己以 S3 backup 當 cold tier，省掉整套獨立 streaming infra。（來源：轉載/未取得原文）",
+  "scaleNumbers": [
+   "資料集達 multiple petabytes",
+   "方案 1：P50 約 150ms、P99 約 500ms，冷層最高約 1,250 reads/s",
+   "方案 2：p90 改善約 30%，p99 低於約 500ms",
+   "冷層超過 15 PB 壓縮資料",
+   "磁碟使用率 80% 降到 7%",
+   "Parquet row group 4-8 MB"
+  ],
+  "decisions": [
+   {
+    "decision": "冷資料放哪",
+    "chosen": "歷史資料移到便宜儲存（S3），API 不變，近期留在快儲存",
+    "rejected": [
+     {
+      "option": "全放 SSD hot storage",
+      "why": "成本過高，且 hot node 儲存密度高使 scaling、部署、cluster 穩定性變難"
+     }
+    ],
+    "tradeoff": "retention 需求成長 vs 成本；歷史需可供偶爾稽核（所以不直接 TTL 刪除）"
+   },
+   {
+    "decision": "第一版冷層",
+    "chosen": "雙寫 Cassandra 與 S3（Flink 依 event hour 寫 Parquet，每日 compaction），query planner 對兩層 fan-out 合併",
+    "rejected": [
+     {
+      "option": "只用 Cassandra hot storage 加 TTL",
+      "why": "歷史資料仍需供稽核與偶發查詢，不能直接刪"
+     }
+    ],
+    "tradeoff": "功能可用，但串流基礎設施貴、額外資料傳輸成本、維運負擔"
+   },
+   {
+    "decision": "第二版冷層",
+    "chosen": "Cassandra 原生 cold tier：重用 DR 的 S3 backup，Backup Memtable 把讀取導向 S3",
+    "rejected": [
+     {
+      "option": "維持 Kafka/Flink 串流冷層",
+      "why": "要維護整套獨立 infrastructure"
+     }
+    ],
+    "tradeoff": "S3 讀比本地讀更吃 CPU，用較便宜硬體的獨立 cold cluster 化解；需先有 immutability"
+   },
+   {
+    "decision": "對不可變資料的 Cassandra 機制",
+    "chosen": "ReadOnlyCompactionStrategy（SSTable 對齊 token range），關閉 read repair 與 speculative retry，較大 compression chunk",
+    "rejected": [
+     {
+      "option": "沿用 mutable data 的 compaction、read repair、speculative retry",
+      "why": "資料凍結後全是純 overhead"
+     }
+    ],
+    "tradeoff": "必須用 time slice 強制不可變；大 chunk 減少 S3 呼叫次數"
+   }
+  ],
+  "topics": [
+   "storage-choice",
+   "blobs",
+   "scaling-reads",
+   "streaming"
+  ],
+  "followUps": [
+   "先問什麼？資料是否 immutable，再決定要不要為冷資料另建 pipeline。",
+   "冷層合理 SLO？可參照 P50 約 150ms、P99 約 500ms。"
+  ]
+ },
+ {
+  "id": "spotify-discover-weekly-spark",
+  "title": "Spotify：Discover Weekly 與 Spark 批次運算",
+  "kind": "業界實例",
+  "source": "Tech Blog",
+  "file": "threads-chunhao2026/tech-blog/spotify-discover-weekly-spark.md",
+  "origin": "https://wondering.app/learn/apache-spark-for-engineers-5-real-world-c91d611aed5f199957b95a60",
+  "core": "Discover Weekly 本質是固定時間窗口內掃過全站聽歌紀錄的規模問題，需分散到大量機器平行算並盡量把中間結果留記憶體；此為教學性案例而非 Spotify 官方架構。（來源：轉載/未取得原文）",
+  "scaleNumbers": [
+   "每人每週一 30 首個人化歌曲",
+   "@Scale 2016 頁面：推出後超過 5B streams / 40M 使用者"
+  ],
+  "decisions": [
+   {
+    "decision": "批次還是即時算推薦",
+    "chosen": "離線批次：週更、可預算，用 SLA（週一早上前完成）反推需要的平行度",
+    "rejected": [
+     {
+      "option": "使用者開 app 時即時算",
+      "why": "需掃過所有人的聽歌紀錄找口味相近者，成本與延遲不可行（補充判斷）"
+     }
+    ],
+    "tradeoff": "結果最多一週舊；算好的清單寫入 key-value store，讀取只需一次 lookup（補充）"
+   },
+   {
+    "decision": "單機還是分散式",
+    "chosen": "Spark：資料分區後在成百上千台機器平行處理再合併",
+    "rejected": [
+     {
+      "option": "單機處理",
+      "why": "作者推估光讀資料就可能要好幾天，趕不上週一（非原文數字）"
+     }
+    ],
+    "tradeoff": "shuffle、資料傾斜、失敗重算靠 lineage（補充）"
+   },
+   {
+    "decision": "運算框架的中間結果",
+    "chosen": "Spark 盡量把中間結果留在記憶體",
+    "rejected": [
+     {
+      "option": "早期 Hadoop MapReduce 每步寫回硬碟",
+      "why": "對需反覆比對相似度的迭代流程，差別是準時發布 vs 拖到下午"
+     }
+    ],
+    "tradeoff": "記憶體成本；這些說法未經 Spotify 原文驗證"
+   }
+  ],
+  "topics": [
+   "async-jobs",
+   "scaling-reads"
+  ],
+  "followUps": [
+   "引用時要注意什麼？註明這是教學性案例，不是 Spotify 官方架構。",
+   "為何是 batch？週更、可預算，不需要即時。"
+  ]
+ },
+ {
+  "id": "whatsapp-on-device-scam-detection",
+  "title": "WhatsApp：E2EE 下的 on-device 詐騙偵測",
+  "kind": "業界實例",
+  "source": "Tech Blog",
+  "file": "threads-chunhao2026/tech-blog/whatsapp-on-device-scam-detection.md",
+  "origin": "https://engineering.fb.com/2026/08/12/security/how-were-building-scam-alert-whatsapp/",
+  "core": "把 ML 推論整個搬到裝置端、遙測只送加噪聚合並在 TEE 處理、模型公開可驗證，讓偵測詐騙與端對端加密同時成立。",
+  "scaleNumbers": [
+   "截至 2026-08 為 limited beta",
+   "原文未提供 precision / recall / 誤報率"
+  ],
+  "decisions": [
+   {
+    "decision": "在 E2EE 下哪裡做偵測",
+    "chosen": "On-device ML inference：小型模型在本機對非聯絡人來訊做機率式分類",
+    "rejected": [
+     {
+      "option": "server 端分析訊息",
+      "why": "會破壞端對端加密，server 能看到明文"
+     }
+    ],
+    "tradeoff": "只限非聯絡人訊息，缺少 server 端上下文，偵測能力受限"
+   },
+   {
+    "decision": "遙測怎麼收",
+    "chosen": "裝置端先彙整成計數，經 OHTTP 去 IP、anonymous credentials，在 TEE 內 secure aggregation，只釋出差分隱私加噪聚合",
+    "rejected": [
+     {
+      "option": "回傳原始事件或未加噪的計數",
+      "why": "可能反推個別行為；原則是沒有用戶明確動作不自動回報"
+     }
+    ],
+    "tradeoff": "只有加噪聚合可用，難做細緻分析與模型迭代"
+   },
+   {
+    "decision": "如何讓使用者不必信任營運方",
+    "chosen": "Remote attestation 對照公開 transparency ledger，模型版本發布到第三方 append-only ledger（Cloudflare），client 以 SHA-256 manifest 驗證",
+    "rejected": [
+     {
+      "option": "server 自行派發不公開的模型",
+      "why": "可能被針對特定用戶派發"
+     }
+    ],
+    "tradeoff": "公開 ledger 與模型增加驗證負擔，所有部署（含實驗）公開可查"
+   },
+   {
+    "decision": "防止針對特定用戶",
+    "chosen": "實驗分組在 client 端決定，下載經 OHTTP + anonymous credentials 匿名",
+    "rejected": [
+     {
+      "option": "server 端決定分組",
+      "why": "server 能針對特定用戶派發模型（non-targetability 失效）"
+     }
+    ],
+    "tradeoff": "實驗控制較弱"
+   },
+   {
+    "decision": "對外透明度",
+    "chosen": "公布模型權重、App 內透明紀錄、bug bounty 涵蓋隱私架構與模型完整性",
+    "rejected": [
+     {
+      "option": "黑箱模型",
+      "why": "無法讓研究者獨立分析"
+     }
+    ],
+    "tradeoff": "用戶需自行處理警告，誤判需人工處理"
+   }
+  ],
+  "topics": [
+   "auth",
+   "realtime",
+   "reliability"
+  ],
+  "followUps": [
+   "E2EE 下如何做 abuse 偵測？client-side classification，server 只拿聚合訊號。",
+   "各層防什麼？預聚合與差分隱私防個別行為反推，TEE 防營運方看原始資料，OHTTP 防 IP 追蹤。"
+  ]
+ }
+]

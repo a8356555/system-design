@@ -1,0 +1,513 @@
+{
+ "mechanisms": [
+  {
+   "id": "road-graph-alt",
+   "domain": "maps",
+   "apps": [
+    "Google Maps",
+    "OSRM",
+    "Bing Maps"
+   ],
+   "title": "路網圖 + Dijkstra / A*（ALT landmarks）：把道路當加權有向圖",
+   "naive": "直覺做法：把路網當 graph，用純 Dijkstra 從起點往外擴張找最短路",
+   "breaks": "哪裡會壞：Dijkstra 以起點為圓心向四面八方擴張，長途查詢要走訪大半個大陸的節點，單次查詢遠超互動式延遲；Euclidean 距離當 A* heuristic 在路網上又太鬆（道路不是直線），剪枝效果有限",
+   "trick": "實際做法：節點=路口、邊=路段、權重=行駛時間（含轉彎成本）。A* 搭配 ALT：預先挑少量 landmarks，存每個點到 landmarks 的最短距離，用三角不等式在 O(1) 得到 lower bound 當 heuristic，仍保證最優解",
+   "cost": "代價 / 取捨：ALT 需要預處理與每個 landmark 一份距離表（線性額外空間）；權重改變（路況）會讓 landmark 距離表過期，lower bound 若不再成立就失去最優保證",
+   "alternatives": [
+    {
+     "name": "純 Dijkstra",
+     "pickIf": "小圖、單次離線計算，或權重每秒都在變而無法維護預處理"
+    },
+    {
+     "name": "Contraction Hierarchies / CRP",
+     "pickIf": "要毫秒級查詢的大規模路網（見後面條目）"
+    }
+   ],
+   "numbers": [
+    "論文結論：ALT 在路網上以大幅差距優於 Euclidean-bound 的 A*（來源未給單一倍數）"
+   ],
+   "interviewUse": "被問「怎麼算最短路」時先講 graph 建模與 Dijkstra，再主動說『Dijkstra 太慢，所以工業界用預處理加速（A*+landmarks 或 CH）』，把話題帶到下一層。",
+   "sources": [
+    {
+     "title": "Computing the Shortest Path: A* Search Meets Graph Theory (Goldberg & Harrelson)",
+     "url": "https://www.microsoft.com/en-us/research/publication/computing-the-shortest-path-a-search-meets-graph-theory"
+    }
+   ],
+   "topics": [
+    "geo"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "contraction-hierarchies",
+   "domain": "maps",
+   "apps": [
+    "OSRM"
+   ],
+   "title": "Contraction Hierarchies：預處理加 shortcut，讓查詢只走訪幾百個節點",
+   "naive": "直覺做法：每次查詢跑 bidirectional Dijkstra，不做預處理",
+   "breaks": "哪裡會壞：長距離查詢仍要探索大量節點，QPS 高時 CPU 吃不消，無法支撐導航/叫車每秒大量 ETA 與路線請求",
+   "trick": "實際做法：預處理時依重要性排序節點並逐一『收縮』，為保持最短距離加入 shortcut 邊；查詢時用修改過的 bidirectional Dijkstra，只往『更重要』的節點爬升，雙向在山頂相遇，只走訪幾百個節點",
+   "cost": "代價 / 取捨：預處理耗時且產物綁定特定權重——權重一變（路況、封路）shortcut 就失效需重建；多個 profile（車/腳踏車）各要一份",
+   "alternatives": [
+    {
+     "name": "MLD / Customizable Route Planning",
+     "pickIf": "權重頻繁更新（即時路況），可接受查詢略慢"
+    },
+    {
+     "name": "Bidirectional Dijkstra",
+     "pickIf": "圖小或權重不穩定"
+    }
+   ],
+   "numbers": [
+    "Geisberger 論文（靜態情境）：預處理 7.5 分鐘、算路徑長度 0.21 ms、完整路徑 0.56 ms、每節點 23 bytes",
+    "查詢約只走訪幾百個節點"
+   ],
+   "interviewUse": "說『為什麼 Google Maps 能毫秒級回應』：路網的階層性（高速公路 vs 巷弄）在離線預處理成 shortcut，線上只做小範圍搜尋；接著補『代價是權重變動要重建』。",
+   "sources": [
+    {
+     "title": "Exact Routing in Large Road Networks Using Contraction Hierarchies (KIT)",
+     "url": "https://ae.iti.kit.edu/1498.php"
+    },
+    {
+     "title": "OSRM Wiki: Traffic（CH 與 MLD 比較）",
+     "url": "https://github.com/Project-OSRM/osrm-backend/wiki/Traffic"
+    }
+   ],
+   "topics": [
+    "geo"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "ch-vs-crp-traffic",
+   "domain": "maps",
+   "apps": [
+    "OSRM",
+    "Bing Maps"
+   ],
+   "title": "即時路況更新權重：CH 重建 vs Customizable Route Planning（MLD）",
+   "naive": "直覺做法：路況一變就重跑整個 CH 預處理",
+   "breaks": "哪裡會壞：CH 的 shortcut 是依特定權重算出，每次路況更新都要完整 contraction，預處理要分鐘級以上，趕不上路況更新頻率；用 partial contraction（core）加速則查詢變慢",
+   "trick": "實際做法：CRP 把預處理拆成三階段——(1) 與 metric 無關的 graph partitioning 建多層 overlay 拓撲（只做一次）；(2) customization：用新權重重算 overlay 邊的成本；(3) 毫秒級查詢。路況更新只重跑第 2 階段。OSRM 的 MLD 模式同理：osrm-partition 一次，之後迴圈跑 osrm-customize",
+   "cost": "代價 / 取捨：查詢比 CH 慢一點；partition 品質影響效能；覆蓋太細的即時事件（單一路口突發事故）仍有更新延遲",
+   "alternatives": [
+    {
+     "name": "CH + 定期重建",
+     "pickIf": "路況變化慢（例如只吃每日歷史速度）、極致查詢速度優先"
+    },
+    {
+     "name": "在 ETA 層用 ML 修正",
+     "pickIf": "不想動 routing graph，改在輸出的 ETA 上疊加即時校正（見 DeepETA）"
+    }
+   ],
+   "numbers": [
+    "CRP 論文：新 metric 可在數秒內併入（後續工作 <1 秒），支援 real-time traffic 與個人化成本函數"
+   ],
+   "interviewUse": "面試被問『即時路況怎麼進路由』時：說明 CH 是 metric 綁定、需重建，所以用 CRP/MLD 把『拓撲』與『權重』分離，路況更新只做 customization。",
+   "sources": [
+    {
+     "title": "Customizable Route Planning (Delling, Goldberg, Pajor, Werneck)",
+     "url": "https://www.microsoft.com/en-us/research/publication/customizable-route-planning/"
+    },
+    {
+     "title": "OSRM Wiki: Traffic",
+     "url": "https://github.com/Project-OSRM/osrm-backend/wiki/Traffic"
+    }
+   ],
+   "topics": [
+    "geo",
+    "caching"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "gnn-eta",
+   "domain": "maps",
+   "apps": [
+    "Google Maps"
+   ],
+   "title": "Supersegment + Graph Neural Network：Google Maps 的 ETA 預測",
+   "naive": "直覺做法：ETA = 路徑上每個路段『目前速度』推得的行駛時間加總",
+   "breaks": "哪裡會壞：你出發時看到的路況不等於你抵達該路段時的路況（尖峰剛開始/結束、前方事故造成的後續壅塞）；單路段獨立預測忽略相鄰道路與路口的交互影響",
+   "trick": "實際做法：把路網切成 Supersegments（多個共享大量車流的相鄰路段）當 graph 節點，用 GNN 做 message passing，結合即時路況與歷史模式預測『未來』行駛時間",
+   "cost": "代價 / 取捨：需要大量歷史/即時資料與訓練基礎設施；模型是黑盒，除錯與城市間泛化較難；不同地區改善幅度不一",
+   "alternatives": [
+    {
+     "name": "即時速度加總（含歷史 profile）",
+     "pickIf": "沒有 ML 團隊或資料量不足的小型產品"
+    },
+    {
+     "name": "Routing ETA + 殘差模型（DeepETA）",
+     "pickIf": "已有可靠的 routing engine，想增量優化"
+    }
+   ],
+   "numbers": [
+    "ETA 改善幅度 16%（London、Copenhagen）至 51%（Taichung）",
+    "原本預測對 >97% 行程已相當準確",
+    "服務超過 10 億 Google Maps 使用者"
+   ],
+   "interviewUse": "講 ETA 時分兩層：routing engine 給基線，再用 ML 預測『抵達時』的路況；提到 DeepMind 的 supersegment GNN 當業界例子。",
+   "sources": [
+    {
+     "title": "Traffic prediction with advanced Graph Neural Networks (DeepMind)",
+     "url": "https://deepmind.google/discover/blog/traffic-prediction-with-advanced-graph-neural-networks/"
+    }
+   ],
+   "topics": [
+    "scaling-reads"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "deepeta-residual",
+   "domain": "maps",
+   "apps": [
+    "Uber",
+    "Uber Eats"
+   ],
+   "title": "DeepETA：不取代 routing engine，只預測它的殘差",
+   "naive": "直覺做法：端到端用大模型直接預測 ETA，或完全相信 routing engine 的結果",
+   "breaks": "哪裡會壞：純 routing ETA 缺乏對真實行為（上下車時間、司機差異、天氣）的建模；端到端新模型又要重新學路網物理，且新資料源/業務變更難整合",
+   "trick": "實際做法：先由 routing engine 算基線 ETA，DeepETA（encoder-decoder + self-attention 的 linear transformer）只學『真實值 − 基線』的殘差；特徵離散化後 embedding，geo 特徵用多解析度格網 + feature hashing；decoder 有依 trip 類型（叫車/外送、接/送）的 bias 調整與 asymmetric Huber loss",
+   "cost": "代價 / 取捨：仍依賴 routing engine 品質；特徵與 embedding 表很大；模型要在 ms 級延遲內服務，需做架構取捨",
+   "alternatives": [
+    {
+     "name": "XGBoost 後處理（先前基線）",
+     "pickIf": "特徵少、重視可解釋與簡單部署"
+    },
+    {
+     "name": "純 routing ETA",
+     "pickIf": "早期產品、無歷史資料"
+    }
+   ],
+   "numbers": [
+    "低延遲三招：linear transformer 複雜度 O(Kd²) 而非 O(K²d)；每次預測只存取約 0.25% 模型參數；離散化讓 geo 查表為 O(1)",
+    "相較先前 XGBoost 基線在生產環境有立即改善（來源未給百分比）"
+   ],
+   "interviewUse": "面試說『ETA 我用 routing 當基線、ML 學殘差』——好處是可以換 routing engine、新增特徵而不用重訓整個系統，且 serving 延遲可控。",
+   "sources": [
+    {
+     "title": "DeepETA: How Uber Predicts Arrival Times Using Deep Learning",
+     "url": "https://www.uber.com/blog/deepeta-how-uber-predicts-arrival-times/"
+    }
+   ],
+   "topics": [
+    "scaling-reads"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "hmm-map-matching",
+   "domain": "maps",
+   "apps": [
+    "Uber（CatchME）",
+    "Valhalla Meili"
+   ],
+   "title": "Map matching：用 HMM + Viterbi 把雜訊 GPS 點對到道路",
+   "naive": "直覺做法：每個 GPS 點直接 snap 到最近的路段",
+   "breaks": "哪裡會壞：GPS 有誤差，平行道路、高架/地面、交叉路口附近最近路段常是錯的；相鄰點各自 snap 可能得到不連通的路段序列；取樣稀疏時更糟",
+   "trick": "實際做法：HMM——emission probability 看 GPS 點到候選路段 snap 點的距離（Uber 用 haversine）；transition probability 看相鄰兩點的直線距離與『路網上可行駛距離』差異，差越大機率越低；用 Viterbi 找出最可能的路段序列",
+   "cost": "代價 / 取捨：每點要查多個候選路段並跑路網最短路，運算比 snap 重；稀疏取樣或地圖本身有誤時結果會不準（Uber 反過來利用異常低的 transition probability 偵測地圖錯誤）",
+   "alternatives": [
+    {
+     "name": "最近點 snap",
+     "pickIf": "只需粗略顯示、對精度不敏感，或取樣極密"
+    },
+    {
+     "name": "Kalman filter + 慣性資料",
+     "pickIf": "需要即時、逐點平滑的車內導航"
+    }
+   ],
+   "numbers": [
+    "Microsoft 論文的實驗資料：1 Hz 取樣、約 2 小時，並測試降低取樣率與增加雜訊的影響"
+   ],
+   "interviewUse": "被問『司機軌跡怎麼算里程/還原路線』：提 HMM map matching，說明為何不能單點 snap，以及稀疏取樣是主要失效模式。",
+   "sources": [
+    {
+     "title": "Improving Uber's Mapping Accuracy with CatchME",
+     "url": "https://www.uber.com/blog/mapping-accuracy-with-catchme/"
+    },
+    {
+     "title": "Hidden Markov Map Matching Through Noise and Sparseness (Newson & Krumm)",
+     "url": "https://www.microsoft.com/en-us/research/publication/hidden-markov-map-matching-noise-sparseness/"
+    }
+   ],
+   "topics": [
+    "geo"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "vector-tiles",
+   "domain": "maps",
+   "apps": [
+    "Google Maps",
+    "Mapbox",
+    "OpenStreetMap"
+   ],
+   "title": "地圖圖磚：z/x/y 金字塔、raster 與 vector tiles、CDN 快取",
+   "naive": "直覺做法：每次視窗移動，後端依 viewport 即時渲染一張地圖圖片",
+   "breaks": "哪裡會壞：每個使用者的 viewport 都不同，無法快取，渲染成本隨使用者線性增加；縮放/旋轉都要重新請求",
+   "trick": "實際做法：把世界預先切成固定格網的圖磚金字塔——zoom 0 一張涵蓋全球，zoom n 有 2^n × 2^n 張，以 /z/x/y 定址；同一張 tile 對所有人一樣，所以可長期放 CDN。raster tile 是 256×256 PNG；vector tile（Mapbox Vector Tile，Protocol Buffers）存 layer/feature 幾何與屬性，由 client 依 style 渲染，旋轉縮放平滑、可動態換樣式",
+   "cost": "代價 / 取捨：raster 簡單但樣式固定、高 DPI 與每種主題都要另產一套；vector 傳輸小且彈性高，但 client 要 GPU 渲染、實作複雜；更新資料要處理 tile 失效/版本化，離線預產全球高 zoom tile 儲存量大",
+   "alternatives": [
+    {
+     "name": "Raster tiles",
+     "pickIf": "簡單嵌入、低階裝置、不需動態樣式"
+    },
+    {
+     "name": "即時渲染",
+     "pickIf": "高度客製的一次性地圖（如行程報告圖）"
+    }
+   ],
+   "numbers": [
+    "zoom 0 = 1 張涵蓋全球，zoom n = 2^n × 2^n 張",
+    "raster tile 為 256×256 PNG；MVT 標準 extent 4096",
+    "zoom 0 赤道約 156,543 公尺/像素，每升一級減半"
+   ],
+   "interviewUse": "設計地圖顯示時直接說：預切 z/x/y 金字塔 + CDN，cache key 就是 tile 座標，hit rate 高；用 vector tile 讓 client 渲染以省頻寬並支援旋轉。",
+   "sources": [
+    {
+     "title": "Slippy map tilenames (OpenStreetMap Wiki)",
+     "url": "https://wiki.openstreetmap.org/wiki/Slippy_map_tilenames"
+    },
+    {
+     "title": "Mapbox Vector Tile Specification 2.1",
+     "url": "https://github.com/mapbox/vector-tile-spec/blob/master/2.1/README.md"
+    }
+   ],
+   "topics": [
+    "caching",
+    "blobs"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "geocoding",
+   "domain": "maps",
+   "apps": [
+    "Nominatim",
+    "Pelias"
+   ],
+   "title": "Geocoding / reverse geocoding：地址 ↔ 座標",
+   "naive": "直覺做法：用 SQL LIKE 或單純字串比對在地址表找文字",
+   "breaks": "哪裡會壞：地址寫法多樣（縮寫、順序、多語言、錯字）；LIKE 無法排序『重要性』（同名小鎮 vs 大城市）；門牌號碼不可能全部入庫",
+   "trick": "實際做法：Nominatim——匯入 OSM → 索引階段計算 address hierarchy 並依 importance 排名 → 前端 API 同時支援 search 與 reverse（座標查最近/包含的物件）。Pelias——基於 Elasticsearch，用 libpostal（機器學習）解析地址，並以 interpolation service 由街道上已知門牌推估未入庫的門牌座標",
+   "cost": "代價 / 取捨：匯入與索引耗時、資料品質取決於 OSM 覆蓋度；autocomplete 要低延遲需另外調 index；interpolation 的座標是估計值",
+   "alternatives": [
+    {
+     "name": "第三方 API（Google/Mapbox geocoding）",
+     "pickIf": "量不大、要高覆蓋率且不想維護資料管線"
+    },
+    {
+     "name": "自建 Nominatim/Pelias",
+     "pickIf": "量大、成本敏感或需資料自主"
+    }
+   ],
+   "numbers": [],
+   "interviewUse": "叫車/外送輸入地址時：geocode 一次後存座標，之後都用座標；說明 reverse geocoding 用空間索引查『點落在哪個行政區/最近道路』。",
+   "sources": [
+    {
+     "title": "Nominatim Basic Architecture",
+     "url": "https://nominatim.org/release-docs/3.2/develop/overview/"
+    },
+    {
+     "title": "Pelias（搜尋結果頁，未逐頁深讀）",
+     "url": "https://pelias.io/"
+    }
+   ],
+   "topics": [
+    "search",
+    "geo"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "batched-dispatch",
+   "domain": "maps",
+   "apps": [
+    "Uber"
+   ],
+   "title": "派單配對：逐單最近 vs 批次配對（batched matching）",
+   "naive": "直覺做法：乘客一下單就配對最近的空車（first-to-request / greedy）",
+   "breaks": "哪裡會壞：區域性最佳但全局不佳——把最近的司機給 A，可能讓 B 只能配到很遠的車，總等待時間變長；『最近』（直線或甚至路網距離）也不等於『最快到』",
+   "trick": "實際做法：下單後等待數秒，把一個時窗內的乘客與司機收成一批，以全局最佳（例如最小化總/平均等待時間）做指派，並考慮路況與地形而非單純距離",
+   "cost": "代價 / 取捨：用幾秒的延遲換整體效率，個別乘客等待配對的時間略增；批次大小/時窗要調——太短像 greedy，太長影響體驗；求解本身需要有效率的 assignment 演算法",
+   "alternatives": [
+    {
+     "name": "Greedy 最近司機",
+     "pickIf": "供需稀疏（鄉村、深夜），批次裡湊不到足夠配對選項"
+    },
+    {
+     "name": "批次 + 預測未來需求",
+     "pickIf": "高密度市場，可進一步 network-level 優化"
+    }
+   ],
+   "numbers": [
+    "Uber 官方頁面稱此技術每天『節省 10 年的人們時間』"
+   ],
+   "interviewUse": "說『我不會逐單配最近司機，而是 2–5 秒（時窗取捨由我決定）批次做二分圖指派』——點出 transaction-level vs network-level 最佳化。",
+   "sources": [
+    {
+     "title": "Uber Marketplace: Matching",
+     "url": "https://www.uber.com/us/en/marketplace/matching/"
+    }
+   ],
+   "topics": [
+    "contention"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "doordash-mip-dispatch",
+   "domain": "maps",
+   "apps": [
+    "DoorDash"
+   ],
+   "title": "外送派單：Mixed-Integer Programming 一次決定訂單與 Dasher 的指派與合併單",
+   "naive": "直覺做法：每張新單配給最近的 Dasher",
+   "breaks": "哪裡會壞：外送涉及餐廳備餐時間、合併多張單（batching）、取餐/送達時窗，逐單貪婪無法同時最佳化；單筆最近未必整體最有效率",
+   "trick": "實際做法：以 ML 估計各種時間（備餐、行駛等），餵進 mixed-integer program，一次決定『哪些訂單提供給哪些 Dasher』（含合併單）；用商業 solver 求解大規模 assignment",
+   "cost": "代價 / 取捨：模型複雜，ML 估計誤差會直接影響最佳化品質；需要商業 solver（授權成本）與時窗內即時求解的工程",
+   "alternatives": [
+    {
+     "name": "Hungarian / 二分圖匹配",
+     "pickIf": "只有 1:1 指派、沒有合併單與複雜限制"
+    },
+    {
+     "name": "Greedy 最近",
+     "pickIf": "早期產品、單量低"
+    }
+   ],
+   "numbers": [
+    "OR Society 案例稱使用 FICO Xpress 後求解速度快 10–100x",
+    "公司於 25+ 國營運（同頁所述）"
+   ],
+   "interviewUse": "外送比叫車多了『備餐時間』與『合併單』維度，所以不是單純二分圖；講 ML 預測 + MIP 的兩階段。",
+   "sources": [
+    {
+     "title": "OR Society Case Study: DoorDash On-Demand Logistics",
+     "url": "https://www.theorsociety.com/ORS/About-OR/Case-Studies/On-Demand-Logistics.aspx"
+    }
+   ],
+   "topics": [
+    "contention"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "h3-surge",
+   "domain": "maps",
+   "apps": [
+    "Uber"
+   ],
+   "title": "H3 六角格：以 hexagon 分區統計供需，計算 surge",
+   "naive": "直覺做法：用正方形格網（或行政區）切區域，統計各區供需",
+   "breaks": "哪裡會壞：正方形到鄰格有兩種距離（邊/角），平滑相鄰區域梯度時失真；行政區大小不一；使用者在移動時，格界造成量化誤差",
+   "trick": "實際做法：H3 把地球切成階層式六角格（64-bit index），六角格中心到所有鄰格距離一致，利於分析與平滑；Uber 以每個城市各 hexagon 內的供需計算 surge pricing",
+   "cost": "代價 / 取捨：六角格不能完美再細分（子格只近似包含）、有 12 個五邊形；解析度選擇影響噪音與反應速度——格太小供需樣本太稀、太大則定價不貼近區域",
+   "alternatives": [
+    {
+     "name": "Geohash / S2",
+     "pickIf": "只需 prefix 查詢或附近搜尋，不在意鄰格距離一致"
+    },
+    {
+     "name": "行政區",
+     "pickIf": "需與法規/稅務區域對齊"
+    }
+   ],
+   "numbers": [
+    "122 個 base cells、12 個 pentagon、16 個解析度、64-bit 整數編碼"
+   ],
+   "interviewUse": "回答 surge：把城市切成 H3 格，每格即時算供需比→價格倍率，並對相鄰格平滑避免邊界價差；說明為何選六角格。",
+   "sources": [
+    {
+     "title": "H3: Uber's Hexagonal Hierarchical Spatial Index",
+     "url": "https://www.uber.com/blog/h3/"
+    }
+   ],
+   "topics": [
+    "geo",
+    "counting"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "driver-location-rate",
+   "domain": "maps",
+   "apps": [
+    "Uber",
+    "Lyft"
+   ],
+   "title": "司機位置更新頻率與省電：依狀態調整取樣",
+   "naive": "直覺做法：所有司機固定高頻（例如每秒）回報高精度 GPS",
+   "breaks": "哪裡會壞：GPS 耗電、手機發熱；高頻上報讓後端寫入 QPS 暴增；閒置司機的精準位置對派單價值低",
+   "trick": "實際做法：依狀態調頻——等單時低頻、載客/導航時高頻；Android 提供 priority（high accuracy / balanced / low power / passive）與 interval，系統可依電量調整實際更新率，app 應在不需要時放慢 fastest interval",
+   "cost": "代價 / 取捨：低頻下位置較舊，派單與 ETA 變不準，需用速度外推或 map matching 補；高頻則是電量與後端寫入成本",
+   "alternatives": [
+    {
+     "name": "固定高頻",
+     "pickIf": "載客中、需要精準軌跡與計費"
+    },
+    {
+     "name": "事件觸發（移動超過 N 公尺才上報）",
+     "pickIf": "想省 QPS、位置變動稀疏"
+    }
+   ],
+   "numbers": [
+    "Android：HIGH_ACCURACY 約數呎、BALANCED 約 100 公尺、LOW_POWER 約 10 公里（官方文件）"
+   ],
+   "interviewUse": "估算位置寫入 QPS 時，主動說『依狀態調頻、閒置低頻』，並把最新位置放記憶體/Redis 而非每筆寫 DB。",
+   "sources": [
+    {
+     "title": "Android: Change location settings",
+     "url": "https://developer.android.com/develop/sensors-and-location/location/change-location-settings"
+    }
+   ],
+   "topics": [
+    "realtime",
+    "geo"
+   ],
+   "byAgents": true
+  }
+ ],
+ "quiz": [
+  {
+   "q": "Contraction Hierarchies 為什麼查詢能毫秒級，但不適合每分鐘都更新路況的路網？選什麼替代？",
+   "a": "預處理加 shortcut，查詢只走訪幾百節點；但 shortcut 綁定權重，路況一變需重建。改用 Customizable Route Planning / OSRM MLD：拓撲 partition 只做一次，路況更新只重跑 customization。代價是查詢略慢。",
+   "topic": "maps",
+   "kind": "取捨"
+  },
+  {
+   "q": "叫車派單選『每單即時配最近司機』還是『等幾秒批次配對』？各自代價？",
+   "a": "批次配對：以時窗內全局最小化總等待時間，避免 A 搶走 B 唯一近車；代價是個別乘客多等幾秒、時窗需調。供需稀疏（深夜/鄉村）時批次湊不出選擇，greedy 即可。",
+   "topic": "maps",
+   "kind": "情境"
+  },
+  {
+   "q": "ETA 要自己訓練端到端模型，還是用 routing engine 為基線再疊 ML？Uber DeepETA 怎麼做？",
+   "a": "DeepETA 預測 routing ETA 與真實值的殘差：可替換 routing engine、易加特徵、延遲可控（linear transformer、僅 ~0.25% 參數被存取）。代價是仍依賴 routing 品質。",
+   "topic": "maps",
+   "kind": "取捨"
+  },
+  {
+   "q": "為什麼 GPS 軌跡要用 HMM map matching，而不是每點 snap 到最近道路？",
+   "a": "單點 snap 在平行道路/路口易錯且序列可能不連通。HMM 用 emission（點到路段距離）加 transition（直線距離 vs 路網距離差），Viterbi 取最可能路段序列；稀疏取樣是主要失效模式。",
+   "topic": "maps",
+   "kind": "概念"
+  },
+  {
+   "q": "設計地圖顯示，為何用預切的 z/x/y 圖磚而非依 viewport 即時渲染？zoom n 有幾張 tile？",
+   "a": "tile 對所有人相同、可長期放 CDN，cache key 即座標；即時渲染無法快取。zoom n 有 2^n × 2^n 張（zoom 0 一張涵蓋全球）。Vector tile 再省頻寬並支援旋轉，代價是 client 渲染複雜。",
+   "topic": "maps",
+   "kind": "數字"
+  },
+  {
+   "q": "Uber surge 為何用 H3 六角格而非正方形格或行政區？",
+   "a": "六角格中心到所有鄰格距離一致，利於平滑相鄰格梯度並降低移動造成的量化誤差；行政區大小不一。代價是解析度選擇（太小樣本稀、太大不貼近區域）。",
+   "topic": "maps",
+   "kind": "取捨"
+  }
+ ]
+}

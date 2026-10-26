@@ -1,0 +1,490 @@
+{
+ "mechanisms": [
+  {
+   "id": "smtp-retry-bounce",
+   "domain": "email",
+   "apps": [
+    "SMTP (RFC 5321)"
+   ],
+   "title": "SMTP 投遞佇列：4yz 重試、5yz 立刻 bounce",
+   "naive": "收信失敗就固定間隔無限重試，或一律當成失敗退信",
+   "breaks": "4yz（暫時性）與 5yz（永久性）混為一談：暫時性錯誤太早退信會丟信；永久性錯誤一直重試浪費佇列並傷害寄件信譽。對同一個掛掉的目的地，每封排隊信都各自 timeout 重試，會把整個寄信系統拖住。",
+   "trick": "sender 必須 queue 並重試；RFC 5321 建議重試間隔至少 30 分鐘、放棄時間通常至少 4–5 天、第一小時約兩次嘗試再退到每 2–3 小時一次，並維護「連不上的 host 清單」而不是逐封重試。4yz 對應 DSN 的 Action: delayed，5yz 對應 failed（RFC 3463/3464 的 4.X.X / 5.X.X 分類）。",
+   "cost": "佇列要長期保存狀態（4–5 天 × 寄送量）；延遲退信讓使用者晚很多天才知道失敗，交易信（OTP）不適用這個節奏，要另設短 TTL。",
+   "alternatives": [
+    {
+     "name": "短 TTL + 快速失敗",
+     "pickIf": "OTP、登入驗證信：過期後重送毫無價值，數分鐘內失敗並通知上游改走其他 channel"
+    }
+   ],
+   "numbers": [
+    "重試間隔 SHOULD 至少 30 分鐘",
+    "give-up 時間通常至少 4–5 天",
+    "第一小時 2 次嘗試，之後每 2–3 小時 1 次"
+   ],
+   "interviewUse": "被問 email 投遞可靠性時，先講 SMTP 本身就是 store-and-forward + 重試，再區分 4yz/5yz 決定重試 vs 退信，這是 notification 系統 retry/DLQ 的對應物。",
+   "sources": [
+    {
+     "title": "RFC 5321 Simple Mail Transfer Protocol",
+     "url": "https://www.rfc-editor.org/rfc/rfc5321"
+    },
+    {
+     "title": "RFC 3463 Enhanced Mail System Status Codes",
+     "url": "https://www.rfc-editor.org/rfc/rfc3463"
+    },
+    {
+     "title": "RFC 3464 DSN",
+     "url": "https://www.rfc-editor.org/rfc/rfc3464"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "async-jobs"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "spf-envelope-limits",
+   "domain": "email",
+   "apps": [
+    "SPF (RFC 7208)"
+   ],
+   "title": "SPF：只驗 envelope，且有 10 次 DNS lookup 上限",
+   "naive": "在 DNS 的 SPF 記錄列出所有可寄信的來源，include 越多第三方越方便",
+   "breaks": "SPF 驗的是 HELO / MAIL FROM（envelope）而不是使用者看到的 From:，所以單靠 SPF 擋不了 From 偽造。include/a/mx/ptr/exists/redirect 加總超過 10 次 lookup 就不合規範，加入太多 SaaS 寄件源的網域會讓驗證失敗。轉寄會改變來源 IP，原始網域的 SPF 對轉寄後的連線自然不過。",
+   "trick": "SPF 只授權「哪些 IP 可代表這個 envelope 網域寄信」；實務上用子網域切分（行銷、交易各一個子網域）或整理 include 控制 lookup 數；softfail 只是弱訊號，規範建議不要僅憑它拒收。",
+   "cost": "整理後的 IP 清單要自己維護，供應商換 IP 會過期；子網域切分增加 DNS 管理量。",
+   "alternatives": [
+    {
+     "name": "依賴 DKIM 簽章",
+     "pickIf": "會被轉寄或經 mailing list 的信：DKIM 簽章跟著信走，不依賴連線 IP"
+    }
+   ],
+   "numbers": [
+    "include/a/mx/ptr/exists/redirect 合計最多 10 次 DNS lookup",
+    "每個 MX 記錄最多查 10 個 address record"
+   ],
+   "interviewUse": "講 email 驗證時先說 SPF 驗 envelope + IP、有 10 次 lookup 上限、轉寄會壞，自然帶出 DKIM 與 DMARC alignment 的必要性。",
+   "sources": [
+    {
+     "title": "RFC 7208 Sender Policy Framework",
+     "url": "https://www.rfc-editor.org/rfc/rfc7208"
+    }
+   ],
+   "topics": [
+    "auth"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "dkim-signing",
+   "domain": "email",
+   "apps": [
+    "DKIM (RFC 6376)"
+   ],
+   "title": "DKIM：簽 header + body hash，selector 做 key 輪替",
+   "naive": "靠 TLS 或 IP 白名單證明信沒被改",
+   "breaks": "TLS 只保護單一跳；IP 白名單擋不了轉寄。DKIM 只證明「簽章當下的內容沒變」，不加密、不保證端到端完整，簽章也可被原樣重放（x= 不是防重放機制）。",
+   "trick": "寄件端用私鑰簽指定 header（From 必須被簽）與 body hash（bh=），d= 宣告負責網域，s= selector 讓多把公鑰並存、可無縫輪替；收件端查 DNS 取公鑰驗證。簽章跟信走，轉寄不改內容就仍然有效。",
+   "cost": "mailing list 改 subject/footer 會讓簽章失效；l= 只簽 body 前綴有被附加內容的風險；重放攻擊需另外處理。",
+   "alternatives": [
+    {
+     "name": "SPF",
+     "pickIf": "沒有簽章能力的舊系統，且來源 IP 固定、不會被轉寄"
+    }
+   ],
+   "numbers": [
+    "RFC 6376 規定 From header MUST 被簽"
+   ],
+   "interviewUse": "說明 DKIM 與 SPF 互補：SPF 綁 IP、DKIM 綁內容與網域；key 輪替用 selector 雙鑰並存。",
+   "sources": [
+    {
+     "title": "RFC 6376 DKIM Signatures",
+     "url": "https://www.rfc-editor.org/rfc/rfc6376"
+    }
+   ],
+   "topics": [
+    "auth"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "dmarc-alignment",
+   "domain": "email",
+   "apps": [
+    "DMARC (RFC 7489)",
+    "Gmail",
+    "Yahoo"
+   ],
+   "title": "DMARC：把驗證綁到使用者看得到的 From 網域（alignment）",
+   "naive": "SPF 或 DKIM 任一個 pass 就視為可信",
+   "breaks": "SPF/DKIM pass 的網域可以和 From: 無關：攻擊者用自己的網域通過 SPF/DKIM，卻把 From 偽造成銀行。",
+   "trick": "DMARC 要求 SPF 或 DKIM 通過且其網域與 RFC5322.From alignment（relaxed 允許同 organizational domain，strict 需完全相同）；policy 分 none/quarantine/reject，pct 做漸進上線，rua 聚合報表用來在收緊前找出漏掉的合法寄件源。Gmail 對大量寄件者要求設 DMARC，Yahoo 要求至少 p=none。",
+   "cost": "reject 會誤殺轉寄與 mailing list（indirect mail flows），規範允許收件端在這種情況偏離 policy；沒看報表就直接 p=reject 會擋掉自己的合法信。",
+   "alternatives": [
+    {
+     "name": "p=none + 報表",
+     "pickIf": "還不確定自己有哪些寄件源，先蒐集 rua 報表再收緊"
+    }
+   ],
+   "numbers": [
+    "Yahoo：bulk 寄件者至少 p=none"
+   ],
+   "interviewUse": "設計寄件平台時說明：驗證三件套的最後一塊是 alignment；上線順序 none → quarantine → reject，並用 rua 報表驗證。",
+   "sources": [
+    {
+     "title": "RFC 7489 DMARC",
+     "url": "https://www.rfc-editor.org/rfc/rfc7489"
+    },
+    {
+     "title": "Yahoo Sender Hub Best Practices",
+     "url": "https://senders.yahooinc.com/best-practices/"
+    }
+   ],
+   "topics": [
+    "auth"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "arc-forwarding",
+   "domain": "email",
+   "apps": [
+    "ARC (RFC 8617)"
+   ],
+   "title": "ARC：讓轉寄者替「我收到時驗證是 pass」作證",
+   "naive": "轉寄/mailing list 照常轉信，收件端自己重新驗 SPF/DKIM",
+   "breaks": "轉寄改 IP 讓 SPF fail，改內容讓 DKIM fail，DMARC p=reject 的合法信被拒收。",
+   "trick": "每個中間跳加三個 header：ARC-Authentication-Results（記錄當時驗證結果）、ARC-Message-Signature、ARC-Seal（把鏈條簽起來）；最終收件端可驗證鏈完整，並依自己對各 sealer 的信任決定是否採信。",
+   "cost": "規範明說 ARC 不是 trust framework：鏈有效不代表內容可信，收件端要自己決定信任哪些 sealer；鏈一旦失敗不能修復；instance 上限 50，header 會變大。",
+   "alternatives": [
+    {
+     "name": "轉寄端改寫寄件者",
+     "pickIf": "自己是轉寄者且想讓 SPF 繼續通過（此替代方案為作者判斷，未於本次來源查證）"
+    }
+   ],
+   "numbers": [
+    "ARC instance 範圍 1–50"
+   ],
+   "interviewUse": "被問「轉寄為何會被擋」時：SPF 綁 IP、DKIM 綁內容，轉寄兩者都可能壞；ARC 是補救但需要信任鏈，不是萬靈丹。",
+   "sources": [
+    {
+     "title": "RFC 8617 ARC",
+     "url": "https://www.rfc-editor.org/rfc/rfc8617"
+    }
+   ],
+   "topics": [
+    "auth"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "ip-warmup",
+   "domain": "email",
+   "apps": [
+    "Amazon SES"
+   ],
+   "title": "新寄件 IP 的 warm-up：先低量給最活躍的人",
+   "naive": "買了專屬 IP 就直接全量寄",
+   "breaks": "沒有歷史的 IP 會被收件端視為可疑，信進垃圾桶甚至被擋；突然暴增的量同樣被限流或封鎖。",
+   "trick": "SES 的專屬 IP 自動 warm-up 按時間表逐步提高該 IP 的寄送比例（其餘走共享 IP）；文件建議先寄給最活躍的使用者壓低 complaint rate，觀察 bounce/throttle 後再放量，warm-up 結束後仍要對各家信箱供應商維持穩定量。",
+   "cost": "warm-up 期間吞吐受限，新產品上線日要提前數週準備；量小或不穩的寄件者養不起專屬 IP，共享 IP 反而更穩。",
+   "alternatives": [
+    {
+     "name": "共享 IP pool",
+     "pickIf": "寄送量小或不穩定，無法維持每天對各家固定量"
+    }
+   ],
+   "numbers": [
+    "SES 自動 warm-up 的比例在 45 天內逐步提高",
+    "不同供應商約 2 週到最多 6 週建立信譽",
+    "warm-up 後對每家信箱供應商每天約寄 1,000 封維持信譽"
+   ],
+   "interviewUse": "被問新 sender 平台冷啟動時，講 IP 信譽是歷史累積的資產，需 ramp-up 排程 + 先寄高互動名單。",
+   "sources": [
+    {
+     "title": "Amazon SES: Warming up dedicated IP addresses",
+     "url": "https://docs.aws.amazon.com/ses/latest/dg/dedicated-ip-warming.html"
+    }
+   ],
+   "topics": [
+    "scaling-writes",
+    "rate-limiting"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "bulk-sender-rules",
+   "domain": "email",
+   "apps": [
+    "Gmail",
+    "Yahoo"
+   ],
+   "title": "Gmail / Yahoo 大量寄件者規範：驗證 + 一鍵退訂 + 投訴率上限",
+   "naive": "退訂靠信件底部連結，投訴率沒人盯",
+   "breaks": "連結式退訂太難找，使用者改按「檢舉垃圾信」，直接拉高 spam rate 傷害整個網域信譽；GET 退訂連結還會被反垃圾軟體預取而誤退訂。",
+   "trick": "Gmail 定義近 5,000 封/24 小時為 bulk（身分永久），要求 SPF+DKIM+DMARC、PTR、TLS、行銷信帶 List-Unsubscribe 與 List-Unsubscribe-Post（RFC 8058，POST 避免掃描器誤觸，且這兩個 header 必須被 DKIM 簽）。spam rate 建議低於 0.1%、0.3% 以上加強執法；退訂 Gmail 要求 48 小時、Yahoo 要求 2 天內處理。",
+   "cost": "退訂處理必須變成近即時的 suppression 寫入路徑，行銷收入會下降；為壓 spam rate 要做名單衛生與 engagement 分群；量小的寄件者不屬 bulk 但驗證與 spam rate 仍適用。",
+   "alternatives": [
+    {
+     "name": "只做低量 transactional",
+     "pickIf": "不屬 bulk 與行銷範圍，退訂要求較寬，但驗證與 spam rate 仍適用"
+    }
+   ],
+   "numbers": [
+    "bulk 定義約 5,000 封/24 小時",
+    "spam rate 目標 <0.1%，>=0.3% 加強執法",
+    "退訂：Gmail 48 小時 / Yahoo 2 天",
+    "Gmail 與 Yahoo 的 spam rate 上限皆為 0.3%"
+   ],
+   "interviewUse": "設計 email 平台一定要有 suppression list 與退訂 POST endpoint；講出 0.1% / 0.3% 門檻說明為何投訴要即時回饋到發送策略。",
+   "sources": [
+    {
+     "title": "Gmail Email sender guidelines",
+     "url": "https://support.google.com/a/answer/81126"
+    },
+    {
+     "title": "Gmail Sender guidelines FAQ",
+     "url": "https://support.google.com/a/answer/14229414"
+    },
+    {
+     "title": "Yahoo Sender Hub",
+     "url": "https://senders.yahooinc.com/best-practices/"
+    },
+    {
+     "title": "RFC 8058 One-Click Unsubscribe",
+     "url": "https://www.rfc-editor.org/rfc/rfc8058"
+    }
+   ],
+   "topics": [
+    "rate-limiting",
+    "idempotency"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "transactional-bulk-split",
+   "domain": "email",
+   "apps": [
+    "Postmark"
+   ],
+   "title": "交易信與行銷信分流：獨立 IP pool 與 server",
+   "naive": "所有信共用同一組 IP / 網域寄出",
+   "breaks": "行銷信的投訴與 bounce 會拉低共用 IP 的信譽，導致密碼重設、OTP 這種關鍵信也進垃圾桶或延遲。",
+   "trick": "Postmark 用 Message Streams 把 transactional 與 broadcast 分在完全不同的 server 與 IP pool，兩種流量不混；信譽各自計算，行銷出問題不波及交易信。",
+   "cost": "多一組 IP 要各自 warm-up 與維護；量小時兩個 pool 都養不熟。",
+   "alternatives": [
+    {
+     "name": "共用 IP + 子網域分離",
+     "pickIf": "量小、養不起多組 IP，至少用不同寄件子網域與 DKIM d= 分開網域信譽（作者判斷）"
+    }
+   ],
+   "numbers": [],
+   "interviewUse": "在 notification system 的「高優先 vs campaign」隔離上，補充 email 的實體層：不只佇列隔離，連 IP 信譽也要隔離。",
+   "sources": [
+    {
+     "title": "Postmark: Introducing Message Streams",
+     "url": "https://postmarkapp.com/blog/feature-announcement-introducing-message-streams"
+    }
+   ],
+   "topics": [
+    "async-jobs",
+    "reliability"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "per-domain-throttle",
+   "domain": "email",
+   "apps": [
+    "Gmail",
+    "SMTP (RFC 5321)"
+   ],
+   "title": "大量寄送的 per-destination-domain 節流",
+   "naive": "全站統一速率限制，所有目的網域同速率發送",
+   "breaks": "Gmail 會回 421 4.7.28（偵測到來自你 IP 的異常寄送量）、421 4.7.0（IP/網域信譽低）；對一個網域過量就被限流，且慢的收件端會讓 worker 全卡在它身上。",
+   "trick": "佇列依目的網域分桶，各桶獨立並行度與速率；收到 4xx 就降速並依 RFC 5321 做延遲重試、記錄不可達主機清單，而不是逐封重試；550 5.7.1 這類信譽型永久錯誤則停送並檢查驗證與信譽。（自適應降速的具體演算法為作者設計判斷。）",
+   "cost": "每個網域的最佳速率是動態的，需要回饋控制，否則過度保守會讓行銷信延遲數小時；桶太多時排程複雜。",
+   "alternatives": [
+    {
+     "name": "統一速率",
+     "pickIf": "內部測試或量很小，收件網域集中度低"
+    }
+   ],
+   "numbers": [],
+   "interviewUse": "campaign fan-out 後說明：節流單位是「目的網域」而不是整體，用 4xx 回饋自適應降速。",
+   "sources": [
+    {
+     "title": "Gmail SMTP errors and codes",
+     "url": "https://knowledge.workspace.google.com/admin/support/troubleshooting/gmail-smtp-errors-and-codes"
+    },
+    {
+     "title": "RFC 5321 Simple Mail Transfer Protocol",
+     "url": "https://www.rfc-editor.org/rfc/rfc5321"
+    }
+   ],
+   "topics": [
+    "rate-limiting",
+    "scaling-writes"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "jmap-vs-imap",
+   "domain": "email",
+   "apps": [
+    "Fastmail",
+    "JMAP (RFC 8620)",
+    "Cyrus IMAP"
+   ],
+   "title": "JMAP：用 state string + /changes 取代 IMAP 的長連線同步",
+   "naive": "客戶端用 IMAP 長連線 + UID 同步，每種資料各走一套協定",
+   "breaks": "IMAP 對行動端不友善：往返多、斷線重連要重新比對。",
+   "trick": "JMAP 走 HTTPS + JSON，多個呼叫可 batch 並用 back-reference 串接；每種物件有 state string，/changes 回傳 created/updated/destroyed 的 id，靠 push 通知取代輪詢；Cyrus 3.0 加入基本 JMAP 支援，Fastmail 以 Cyrus 為後端。",
+   "cost": "伺服器要保存 state 變更歷史（規範建議能從 30 天內給過的 state 計算 changes，過期要 full resync）；既有客戶端與第三方工具仍以 IMAP 為主。",
+   "alternatives": [
+    {
+     "name": "IMAP",
+     "pickIf": "需要相容大量既有客戶端與第三方工具"
+    }
+   ],
+   "numbers": [
+    "建議能從 30 天內的 state 算出 changes",
+    "Session 建議 maxCallsInRequest 16、maxObjectsInGet/Set 500、maxConcurrentRequests 4"
+   ],
+   "interviewUse": "設計信箱同步時：用 per-account state + delta 查詢，比逐封比對高效，且天然支援離線與行動端。",
+   "sources": [
+    {
+     "title": "RFC 8620 JMAP",
+     "url": "https://www.rfc-editor.org/rfc/rfc8620"
+    },
+    {
+     "title": "Cyrus IMAP 3.0.0 Release Notes",
+     "url": "https://www.cyrusimap.org/imap/download/release-notes/3.0/x/3.0.0.html"
+    }
+   ],
+   "topics": [
+    "api-networking",
+    "realtime"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "tiered-email-search",
+   "domain": "email",
+   "apps": [
+    "Fastmail",
+    "Cyrus IMAP"
+   ],
+   "title": "信箱全文搜尋：per-user Xapian + 分層索引",
+   "naive": "每封信到達時即時寫入主索引",
+   "breaks": "Fastmail 實測即時索引的負載太高；單一巨大共用索引也難以搬移與壓縮。",
+   "trick": "一人一個 Xapian 資料庫，並分 temp（tmpfs，新信先寫進去）、meta、data、archive 四層；Xapian 可同時查多個資料庫所以搜尋立即可見新信；每小時檢查 tmpfs，超過 50% 就立刻 compact，否則在安靜時段壓縮。",
+   "cost": "新信暫存在記憶體，tmpfs 遺失就要重建索引；compaction 要排程控管 IO；per-user 索引不適合跨使用者的全域搜尋。",
+   "alternatives": [
+    {
+     "name": "集中式搜尋叢集",
+     "pickIf": "需要跨租戶管理員搜尋或 e-discovery，且能接受索引寫入成本（作者判斷）"
+    }
+   ],
+   "numbers": [
+    "tmpfs 超過 50% 立刻 compact",
+    "範例使用者 >500,000 封信、archive 索引 >3GB、compact 約 4 分 52 秒"
+   ],
+   "interviewUse": "說明 write-heavy 的索引用「先寫小的暫存層，再批次合併」，並強調 search 是 per-user 隔離。",
+   "sources": [
+    {
+     "title": "Fastmail: Email Search System",
+     "url": "https://fastmail.com/blog/email-search-system"
+    },
+    {
+     "title": "Fastmail storage architecture",
+     "url": "https://www.fastmail.help/hc/en-us/articles/1500000278242-The-Fastmail-storage-architecture"
+    }
+   ],
+   "topics": [
+    "search",
+    "scaling-writes"
+   ],
+   "byAgents": false
+  },
+  {
+   "id": "thread-grouping",
+   "domain": "email",
+   "apps": [
+    "JMAP (RFC 8621)",
+    "Cyrus IMAP",
+    "Fastmail"
+   ],
+   "title": "Thread 歸併：Message-ID 鏈 + 正規化 subject",
+   "naive": "只用 subject 相同就併成同一串",
+   "breaks": "不同人用同樣的 subject（例如 Invoice）會被誤併；只靠 References 又會因客戶端遺漏 header 而拆串。",
+   "trick": "RFC 8621 定義兩封信屬同串須同時滿足：Message-Id / In-Reply-To / References 有共同 id，且去掉 Re:/Fwd:/[list] 前綴後 subject 相同；threadId 由 server 指派且不可變。Cyrus 的 conversations 另有 conversations_max_thread（預設 100）超過就分串，與 conversations_expire_after（預設 90d）限制追蹤資訊保存期。",
+   "cost": "歸併是 server 端投遞時計算，threadId immutable，所以誤併無法事後糾正；上限切串會讓超長討論被拆開。一封信可屬於多個 mailbox（labels），不是 IMAP 的單一資料夾。",
+   "alternatives": [
+    {
+     "name": "純 subject 歸併",
+     "pickIf": "資料不完整且可接受誤併，例如匯入舊系統信件（作者判斷）"
+    }
+   ],
+   "numbers": [
+    "Cyrus conversations_max_thread 預設 100",
+    "conversations_expire_after 預設 90d"
+   ],
+   "interviewUse": "談信箱資料模型時：thread 是投遞時計算的一等公民，用 Message-ID 鏈而不是 subject。",
+   "sources": [
+    {
+     "title": "RFC 8621 JMAP for Mail",
+     "url": "https://www.rfc-editor.org/rfc/rfc8621"
+    },
+    {
+     "title": "Cyrus imapd.conf",
+     "url": "https://www.cyrusimap.org/imap/reference/manpages/configs/imapd.conf.html"
+    }
+   ],
+   "topics": [
+    "search",
+    "storage-choice"
+   ],
+   "byAgents": false
+  }
+ ],
+ "quiz": [
+  {
+   "q": "OTP 驗證信與行銷 newsletter 為何要分 IP pool / server 寄？共用有何風險？",
+   "a": "行銷信的投訴與 bounce 會拉低共用 IP 的信譽，使 OTP 延遲或進垃圾桶。Postmark 的 Message Streams 即把兩類流量分到不同 IP pool。代價是多一組 IP 要 warm-up，量小時養不熟，可改用子網域分離。",
+   "topic": "email",
+   "kind": "取捨"
+  },
+  {
+   "q": "收到某網域 MX 回 421 4.7.28（異常寄送量），該怎麼處理？為什麼不選全站統一降速？",
+   "a": "只對該目的網域的佇列降速並延遲重試（4xx，RFC 5321 建議間隔至少 30 分鐘），其他網域不受影響。統一降速會拖慢所有人，且無法針對個別網域自適應。代價是每個網域要獨立狀態與回饋控制。",
+   "topic": "email",
+   "kind": "情境"
+  },
+  {
+   "q": "為什麼 SPF 與 DKIM 都 pass 仍可能偽造 From？DMARC 補了什麼？",
+   "a": "SPF 驗 envelope（MAIL FROM/HELO）、DKIM 驗簽章網域 d=，兩者網域都可與使用者看到的 From: 無關。DMARC 要求通過者的網域與 From alignment。代價：p=reject 會誤殺轉寄與 mailing list，需先用 rua 報表與 pct 漸進上線。",
+   "topic": "email",
+   "kind": "概念"
+  },
+  {
+   "q": "Gmail 對大量寄件者的 spam rate 門檻是多少？超標時寄件平台該怎麼回應？",
+   "a": "建議低於 0.1%，0.3% 以上加強執法；退訂 Gmail 要求 48 小時、Yahoo 要求 2 天內處理。平台應即時寫入 suppression list、對高投訴名單降頻，並支援 RFC 8058 一鍵退訂（POST）。",
+   "topic": "email",
+   "kind": "數字"
+  },
+  {
+   "q": "轉寄信被 DMARC p=reject 擋掉，ARC 能解嗎？它的限制是什麼？",
+   "a": "ARC 讓中間跳封存當時的驗證結果並簽成鏈，最終收件端可據此採信。但規範明說它不是 trust framework：收件端必須自己決定信任哪些 sealer，鏈壞了無法修復，instance 上限 50。",
+   "topic": "email",
+   "kind": "取捨"
+  },
+  {
+   "q": "信箱全文搜尋為何不在新信到達時就即時寫入主索引？Fastmail 怎麼做？",
+   "a": "Fastmail 發現即時索引的負載太高。做法是 per-user Xapian，新信先寫 tmpfs 的 temp 層，多資料庫同時查詢保證可立即搜尋，再於 tmpfs 超過 50% 時或安靜時段批次 compact。代價是 tmpfs 遺失要重建索引。",
+   "topic": "email",
+   "kind": "情境"
+  }
+ ]
+}

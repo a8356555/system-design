@@ -1,0 +1,548 @@
+{
+ "mechanisms": [
+  {
+   "id": "auth-server-prediction-reconciliation",
+   "apps": [
+    "Half-Life",
+    "VALORANT"
+   ],
+   "title": "Authoritative server + client-side prediction + server reconciliation",
+   "naive": "直覺做法：client 只送輸入、等 server 回狀態才更新畫面（dumb client），或乾脆信任 client 自報位置/血量。",
+   "breaks": "Dumb client：50ms RTT 就會「按了右鍵但 0.1 秒內沒反應」，延遲越高越不可玩。信任 client：被改過的 client 可謊報位置與血量，作弊者毀掉其他人的對局。",
+   "trick": "Server 保持唯一權威（Valve 明說因作弊風險「fall back to requiring an authoritative server」；VALORANT 原則「server 絕不信任 client 對世界的視角」）。Client 為每個輸入編序號並存起來，本地立刻用與 server 相同的移動程式碼預測；收到 server 的狀態與「最後處理的輸入序號」後，丟掉已確認的輸入，從權威狀態重放尚未確認的輸入。Half-Life 的 client 與 server 共用同一份玩家移動程式碼，以減少預測偏差。",
+   "cost": "預測錯誤時會有 rubber-banding（被拉回）。要維護 client 端輸入歷史與重放邏輯，且 client 與 server 的模擬必須幾乎一致，否則持續修正。預測只適用於「自己」的操作；打別人仍受延遲影響（要靠 lag compensation）。回合制、低操作頻率的遊戲不需要這套複雜度。",
+   "alternatives": [
+    {
+     "name": "Dumb client（純等 server）",
+     "pickIf": "回合制或延遲不敏感的玩法，如棋牌"
+    },
+    {
+     "name": "Client-authoritative / 信任 client",
+     "pickIf": "合作 PvE、非競技，且作弊成本可接受；或 P2P 小遊戲"
+    }
+   ],
+   "numbers": [
+    "Gambetta：50ms RTT 下玩家感到約 0.1 秒（a tenth of a second）無回應",
+    "Valve：client 50 fps、RTT 100ms 時，client 會有 5 個尚未確認的 user command 需要重放"
+   ],
+   "interviewUse": "設計即時對戰時先講「server 權威防作弊，但為了手感 client 預測自己的移動、用序號重放未確認輸入來對帳」，一句話帶出安全與延遲兩邊的取捨。",
+   "sources": [
+    {
+     "title": "Gabriel Gambetta: Client-Server Game Architecture",
+     "url": "https://www.gabrielgambetta.com/client-server-game-architecture.html"
+    },
+    {
+     "title": "Gabriel Gambetta: Client-Side Prediction and Server Reconciliation",
+     "url": "https://www.gabrielgambetta.com/client-side-prediction-server-reconciliation.html"
+    },
+    {
+     "title": "Valve (Yahn Bernier): Latency Compensating Methods in Client/Server In-game Protocol Design and Optimization",
+     "url": "https://www.gamedevs.org/uploads/latency-compensation-in-client-server-protocols.pdf"
+    },
+    {
+     "title": "Riot: Peeking into VALORANT's Netcode",
+     "url": "https://www.riotgames.com/en/news/peeking-valorants-netcode"
+    }
+   ],
+   "topics": [
+    "realtime"
+   ],
+   "domain": "gaming",
+   "byAgents": false
+  },
+  {
+   "id": "tick-rate-bandwidth",
+   "apps": [
+    "VALORANT",
+    "Half-Life"
+   ],
+   "title": "Tick rate 與 bandwidth / CPU / 延遲的三方取捨",
+   "naive": "直覺做法：tick 越高越好，每 tick 把完整世界狀態送給每個玩家。",
+   "breaks": "Snapshot 頻率拉高，頻寬與 server CPU 線性增加（Gaffer 示範 60 packets/s 約 11.6 Mbit/s，10 packets/s 約 2 Mbit/s）。更高的 tick 也讓 server 每個 frame 的預算變小。反過來 tick 太低，client 需要更深的 interpolation buffer，操作延遲變大。",
+   "trick": "依遊戲類型選：VALORANT 用 128 Hz server tick，並盡量縮小 server 與 client 端 buffering（server 約 2 frames、client 約 3 frames）以壓低 peeker's advantage。Half-Life 預設每位玩家每秒 20 次更新，玩家可自行要求更多（上限內），不強迫所有人用最低公因數。Interpolation buffer 約需 3 倍 send interval，tick 越高 buffer 越短。",
+   "cost": "高 tick 要花更多 server 核心與出口頻寬，單場成本上升；若玩家端 ping 本來就高（例如 100ms+），高 tick 省下的幾 ms 感受不到，不划算。Buffer 越小越吃網路抖動。",
+   "alternatives": [
+    {
+     "name": "低 tick（10–20/s）+ 較深 interpolation buffer",
+     "pickIf": "玩家數多、動作節奏慢（大逃殺、MMO），頻寬與 CPU 是主要成本"
+    },
+    {
+     "name": "Delta compression / 只送變動",
+     "pickIf": "想提高更新率但頻寬受限"
+    }
+   ],
+   "numbers": [
+    "VALORANT：128 Hz server tick；35ms ping、60 FPS client 下可縮減約 40ms（28%）peeker's advantage，144 FPS 約 71ms（49%）",
+    "Gaffer：60 pps 約 11.6 Mbit/s、10 pps 約 2 Mbit/s；interpolation buffer：10 pps 需 300ms（+50ms jitter）、30 pps 150ms、60 pps 85ms",
+    "Half-Life 預設 20 updates/s，最高可請求 50 updates/s"
+   ],
+   "interviewUse": "被問「tick rate 怎麼定」時，講成三角取捨：tick ↑ → 延遲 ↓ 但頻寬與 CPU ↑；競技 FPS 吃高 tick，大房間遊戲用低 tick + interpolation。",
+   "sources": [
+    {
+     "title": "Riot: Peeking into VALORANT's Netcode",
+     "url": "https://www.riotgames.com/en/news/peeking-valorants-netcode"
+    },
+    {
+     "title": "Gaffer On Games: Snapshot Interpolation",
+     "url": "https://gafferongames.com/post/snapshot_interpolation/"
+    },
+    {
+     "title": "Valve (Yahn Bernier): Latency Compensating Methods in Client/Server In-game Protocol Design and Optimization",
+     "url": "https://www.gamedevs.org/uploads/latency-compensation-in-client-server-protocols.pdf"
+    }
+   ],
+   "topics": [
+    "realtime"
+   ],
+   "domain": "gaming",
+   "byAgents": false
+  },
+  {
+   "id": "entity-interpolation",
+   "apps": [
+    "Half-Life"
+   ],
+   "title": "Entity interpolation：把別人畫在「過去」換取平滑",
+   "naive": "直覺做法：收到 server 更新就直接把其他玩家畫在最新位置（或 extrapolate 外插預測）。",
+   "breaks": "更新只有每秒十幾到二十次，直接畫會瞬移抖動；extrapolate 假設等速運動，但玩家會瞬間轉向與急停，預測常常錯並產生修正跳動。",
+   "trick": "Client 緩衝幾十到上百 ms，把其他玩家渲染在過去，於最近兩筆（或多筆 position history）更新之間插值。Half-Life 預設以 100ms interpolate 玩家；若緩衝夠長，連漏掉一筆更新也能繼續插值。",
+   "cost": "你看到的對手永遠是過去的位置，瞄準時要由 server 做 lag compensation 補償這段時間；buffer 越長越平滑但對手越「落後」。Extrapolate 在高速可預測物體（載具）才划算。",
+   "alternatives": [
+    {
+     "name": "Extrapolation / dead reckoning",
+     "pickIf": "載具、飛彈等運動可預測的物體"
+    },
+    {
+     "name": "不插值（高頻直送）",
+     "pickIf": "tick 夠高且頻寬足夠，例如區網或小房間"
+    }
+   ],
+   "numbers": [
+    "Half-Life：預設 20 updates/s，client 以 100ms interpolate；10 updates/s 時 100ms 插值延遲",
+    "QuakeWorld 把 extrapolation 限制在 100ms（Valve 論文引述）"
+   ],
+   "interviewUse": "在講完 client prediction 後補一句：自己用預測、別人用內插（畫在過去），所以射擊判定要靠 server 回溯。",
+   "sources": [
+    {
+     "title": "Gabriel Gambetta: Entity Interpolation",
+     "url": "https://www.gabrielgambetta.com/entity-interpolation.html"
+    },
+    {
+     "title": "Valve (Yahn Bernier): Latency Compensating Methods in Client/Server In-game Protocol Design and Optimization",
+     "url": "https://www.gamedevs.org/uploads/latency-compensation-in-client-server-protocols.pdf"
+    }
+   ],
+   "topics": [
+    "realtime"
+   ],
+   "domain": "gaming",
+   "byAgents": false
+  },
+  {
+   "id": "lag-compensation",
+   "apps": [
+    "Half-Life",
+    "Counter-Strike",
+    "Team Fortress"
+   ],
+   "title": "Lag compensation：server 回溯其他玩家 hitbox 到射擊當下",
+   "naive": "直覺做法：server 用「收到射擊指令那一刻」的世界狀態做 raycast 判定。",
+   "breaks": "玩家看到的是過去（延遲 + interpolation），瞄準對方卻因為對方已移動而射空；必須預判目標位置（lead the target），且不同延遲的玩家手感不一致。",
+   "trick": "Server 先估算該玩家的延遲，找出他當時收到的世界更新，再把其他玩家倒回到他送出指令時（需涵蓋連線延遲與 client 使用的 interpolation 量）的位置，執行射擊 raycast，結束後把大家移回現在。連存活、蹲下等狀態也要一起倒回。",
+   "cost": "對被打的一方不公平：低延遲玩家躲到掩體後仍可能被高延遲玩家打中（社群稱 shot around a corner）。Valve 的結論是這是遊戲設計取捨，Half-Life/TF/CS 認為利大於弊。飛行道具（projectile）難以回溯，Valve 選擇不做；需限制可回溯的最大時間，避免極高 ping 玩家獲利。",
+   "alternatives": [
+    {
+     "name": "不補償，玩家自己 lead target",
+     "pickIf": "想讓高延遲玩家吃虧、或有 projectile 為主的武器"
+    },
+    {
+     "name": "Client-authoritative 命中判定",
+     "pickIf": "非競技環境，且能接受外掛可偽造命中（作弊風險高）"
+    }
+   ],
+   "numbers": [
+    "Valve 論文：極端案例中玩家延遲約 500ms 時，會出現「被繞角擊中」的情形",
+    "Valve 論文：projectile 不做 lag compensation"
+   ],
+   "interviewUse": "講射擊判定時直接說：server 用玩家延遲 + interpolation 量回溯 hitbox，這讓射手手感好，代價是掩體後的人偶爾被「事後」打中，這是產品選擇不是 bug。",
+   "sources": [
+    {
+     "title": "Valve (Yahn Bernier): Latency Compensating Methods in Client/Server In-game Protocol Design and Optimization",
+     "url": "https://www.gamedevs.org/uploads/latency-compensation-in-client-server-protocols.pdf"
+    },
+    {
+     "title": "Gabriel Gambetta: Lag Compensation",
+     "url": "https://www.gabrielgambetta.com/lag-compensation.html"
+    }
+   ],
+   "topics": [
+    "realtime"
+   ],
+   "domain": "gaming",
+   "byAgents": false
+  },
+  {
+   "id": "lockstep-vs-snapshot",
+   "apps": [
+    "Deterministic lockstep",
+    "Snapshot interpolation"
+   ],
+   "title": "Deterministic lockstep vs snapshot 同步：RTS 與 FPS 的分水嶺",
+   "naive": "直覺做法：不管遊戲類型，一律每 tick 廣播所有物體的狀態。",
+   "breaks": "物件數量大（RTS 上千單位）時狀態同步的頻寬隨物件數增長；而在 FPS 用 lockstep 則所有人必須等最慢的輸入，延遲無法掩蓋。",
+   "trick": "Lockstep：只同步輸入，各端執行完全相同的模擬，頻寬只與輸入大小成正比、與物件數無關，要求 bit-level 的確定性（浮點、編譯器、架構差異都會破壞）。Snapshot：server 權威，送狀態，client 內插，容忍各端模擬不同。Lockstep 要有 playout delay buffer 平滑抖動（例如 100ms），延遲換穩定。",
+   "cost": "Lockstep：確定性很難維護（desync 難除錯），所有玩家推進速度被最慢者限制，中途加入與觀戰需要重放或存檔；輸入有 playout delay。Snapshot：頻寬與物件數成正比，需 interest management。物件少、動作快的 FPS 用 snapshot；單位極多的 RTS 才值得吃 lockstep 的確定性成本。",
+   "alternatives": [
+    {
+     "name": "Snapshot + 內插",
+     "pickIf": "玩家少、需要 server 權威與防作弊（FPS）"
+    },
+    {
+     "name": "Rollback netcode",
+     "pickIf": "格鬥遊戲：兩人、輸入少，需要超低輸入延遲（此條目的來源未涵蓋，屬我的判斷）"
+    }
+   ],
+   "numbers": [
+    "Gaffer：每 frame 輸入 6 bits；60 fps、最差 2 秒 RTT 需緩衝 720 bits（90 bytes）；壓縮後最差 15 bytes",
+    "Gaffer 示範：2 秒延遲、25% 封包遺失下 UDP lockstep 仍可平順播放"
+   ],
+   "interviewUse": "被問 RTS 怎麼同步幾千個單位時，答「同步輸入不同步狀態」，並主動說出代價是確定性與 desync；FPS 則反過來用 snapshot。",
+   "sources": [
+    {
+     "title": "Gaffer On Games: Deterministic Lockstep",
+     "url": "https://gafferongames.com/post/deterministic_lockstep/"
+    },
+    {
+     "title": "Gaffer On Games: Snapshot Interpolation",
+     "url": "https://gafferongames.com/post/snapshot_interpolation/"
+    }
+   ],
+   "topics": [
+    "realtime"
+   ],
+   "domain": "gaming",
+   "byAgents": false
+  },
+  {
+   "id": "udp-custom-reliability",
+   "apps": [
+    "League of Legends",
+    "VALORANT",
+    "Legends of Runeterra"
+   ],
+   "title": "UDP + 自訂可靠層：不要讓舊封包卡住新狀態",
+   "naive": "直覺做法：遊戲全部走 TCP，反正可靠有序。",
+   "breaks": "TCP 掉包時整條連線等重送（head-of-line blocking）；Gaffer 估計 125ms ping 下至少約 1/5 秒的停滯，最壞半秒以上。動作遊戲裡 1 秒前的位置已無用，重送是浪費。",
+   "trick": "走 UDP，自己在上面加 sequence 與 ack，用 ack bitfield（ack + 32-bit 欄位涵蓋前 32 個封包）讓 ack 備援；只對真正需要可靠的訊息（聊天、購買）重送，位置類狀態讓新封包取代舊封包。Gaffer 的簡單擁塞控制是在約 30 與 10 packets/s 兩檔之間依 RTT 切換。Riot：快節奏的 League、VALORANT 用 UDP，較慢的 Legends of Runeterra 用 TCP。",
+   "cost": "要自己實作並維護可靠性、擁塞控制、NAT/防火牆穿越；比 TCP 容易寫出公平性與擁塞問題。回合制/卡牌遊戲 TCP（或 WebSocket）就夠，自訂 UDP 不值得。混用 TCP 與 UDP 也不建議：TCP 會導致 UDP 掉包。",
+   "alternatives": [
+    {
+     "name": "TCP / WebSocket",
+     "pickIf": "回合制、卡牌、延遲不敏感，且重視實作成本"
+    },
+    {
+     "name": "QUIC / 現成可靠 UDP 函式庫",
+     "pickIf": "不想自己從頭寫可靠層，但仍要避開 HOL blocking（本條來源未涵蓋，屬我的判斷）"
+    }
+   ],
+   "numbers": [
+    "Gaffer：125ms ping 下 TCP 掉包停滯至少約 1/5 秒，最壞 0.5 秒以上",
+    "Gaffer：ack bitfield 涵蓋前 32 個封包；擁塞控制在 30 / 10 packets/s 間切換"
+   ],
+   "interviewUse": "答「即時位置走 UDP，新資料覆蓋舊資料；只有少數關鍵事件做 ack + 重送」，並點出為什麼 TCP 的有序保證反而是問題。",
+   "sources": [
+    {
+     "title": "Gaffer On Games: Why Not TCP for Games",
+     "url": "https://gafferongames.com/post/udp_vs_tcp/"
+    },
+    {
+     "title": "Gaffer On Games: Reliability and Congestion Avoidance over UDP",
+     "url": "https://gafferongames.com/post/reliability_ordering_and_congestion_avoidance_over_udp/"
+    },
+    {
+     "title": "Riot: Leveling Up Networking for a Multi-Game Future",
+     "url": "https://www.riotgames.com/en/news/leveling-networking-multi-game-future"
+    }
+   ],
+   "topics": [
+    "realtime",
+    "api-networking"
+   ],
+   "domain": "gaming",
+   "byAgents": false
+  },
+  {
+   "id": "trueskill-matchmaking",
+   "apps": [
+    "Xbox Live"
+   ],
+   "title": "TrueSkill：用不確定性取代單一 Elo 分數做配對",
+   "naive": "直覺做法：每人一個 Elo 分數，配對時找分數差最小的對手。",
+   "breaks": "Elo 無法分辨「高分且穩定」與「新帳號分數相同但不確定」；也不自然處理多人隊伍與平手。新玩家要很多場才收斂。",
+   "trick": "TrueSkill 對每位玩家維護技能的平均值 μ 與不確定度 σ（貝氏推論，因子圖 message passing）；用保守估計排名；能由隊伍勝負反推個人技能，並計算配對的 draw probability / match quality，提前判斷一場比賽是否勢均力敵。論文指出該系統用於 Xbox Live 的配對與排名。",
+   "cost": "推論比 Elo 複雜、較難向玩家解釋；一旦把配對品質門檻設嚴，等待時間上升。常見做法是隨等待時間放寬技能範圍並設上限（此為業界通用做法，來源未直接涵蓋，屬我的判斷）。1v1 且玩家基數小的遊戲，Elo 就夠。",
+   "alternatives": [
+    {
+     "name": "Elo",
+     "pickIf": "1v1、玩家基數穩定、需要簡單可解釋的分數"
+    },
+    {
+     "name": "依等待時間放寬配對範圍",
+     "pickIf": "人口稀薄的時段或區域，寧可略不公平也不要等太久"
+    }
+   ],
+   "numbers": [],
+   "interviewUse": "提到配對時先說「分數要有不確定度，新玩家波動大」，再講等待時間 vs 公平性：範圍隨等待時間放寬並設硬上限。",
+   "sources": [
+    {
+     "title": "TrueSkill: A Bayesian Skill Rating System (NeurIPS 2006)",
+     "url": "https://papers.nips.cc/paper_files/paper/2006/file/f44ee263952e65b3610b8ba51229d1f9-Paper.pdf"
+    }
+   ],
+   "topics": [
+    "contention"
+   ],
+   "domain": "gaming",
+   "byAgents": false
+  },
+  {
+   "id": "agones-fleet-allocation",
+   "apps": [
+    "Agones"
+   ],
+   "title": "Game server fleet：預熱 Ready 池 + Allocation 認領",
+   "naive": "直覺做法：有人要開局才建立新的 server 實例（或用通用 autoscaler 依 CPU 擴縮）。",
+   "breaks": "啟動 server（拉 image、載入地圖）要時間，玩家配對完要等；CPU 指標無法反映「已有玩家的 server 不能被縮掉」，縮容可能砍掉進行中的對局。",
+   "trick": "Agones（Kubernetes-native）把 game server 當成 CRD：Fleet 維護一池預熱的 GameServer（Ready）；配對完成後建立 GameServerAllocation，以 label selector 從池中認領，回傳 IP 與 port，並將 server 轉為 Allocated，代表有玩家，不應被移除，直到 server 呼叫 SDK.Shutdown() 或被手動刪除。結束後進入 Shutdown。Allocation 是 create-only 且不保存，出於效能考量。",
+   "cost": "預熱池要付閒置成本，池太小則尖峰時 Allocation 失敗（回 UnAllocated），池太大浪費。有狀態 session 綁死單一 server，部署/縮容時需 drain。小規模或一天只有幾場對局時，直接按需啟動更省。",
+   "alternatives": [
+    {
+     "name": "按需啟動 server",
+     "pickIf": "對局稀少、可接受啟動延遲"
+    },
+    {
+     "name": "固定機器池 + 自建 allocator",
+     "pickIf": "不使用 Kubernetes、規模與機型固定"
+    }
+   ],
+   "numbers": [],
+   "interviewUse": "說「配對完成後不是現開 server，而是從預熱 Ready 池原子認領一台標成 Allocated，並以 Fleet 維持緩衝」，並補一句 Allocated 的 server 絕不能被縮容。",
+   "sources": [
+    {
+     "title": "Agones docs: Create a Game Server Fleet",
+     "url": "https://agones.dev/site/docs/getting-started/create-fleet/"
+    }
+   ],
+   "topics": [
+    "scaling-writes",
+    "contention"
+   ],
+   "domain": "gaming",
+   "byAgents": false
+  },
+  {
+   "id": "riot-direct-anycast",
+   "apps": [
+    "Riot Games",
+    "League of Legends",
+    "VALORANT"
+   ],
+   "title": "Riot Direct：自建骨幹網與 anycast 入口，繞過 ISP 的「最便宜路徑」",
+   "naive": "直覺做法：把 game server 放在雲端區域，靠公網 ISP 路由到玩家。",
+   "breaks": "Backbone 與 ISP 的 routing 選便宜的路，不是低延遲的路。Riot 舉例：舊金山到波特蘭本應約 14ms，實際繞經洛杉磯、丹佛、西雅圖變成 70ms。BGP 還有 session age 偏好、非對稱路由等問題。",
+   "trick": "Riot 在多個網路交換點租用 colo、dark fiber 與波長服務，與眾多 ISP 在多地直接 peering（只在一地與 Comcast peering，遠處玩家仍會繞出網路），讓流量盡早進入自家骨幹。後續為 VALORANT 導入 anycast：玩家連到同一個 IP，被導向最近的 PoP，game server 使用私有 IP 並經 NAT，回程流量也走 Riot Direct，同時把 DDoS 分散到多個 PoP。",
+   "cost": "需要多年的 ISP 談判（Riot 提到有的合約談了將近八個月）、機房與頻寬成本，只有玩家基數夠大才划算；一般團隊用雲端的 global accelerator / 多區域部署即可。",
+   "alternatives": [
+    {
+     "name": "多區域雲端部署 + 延遲式選區",
+     "pickIf": "沒有規模自建網路，先靠把 server 放近玩家"
+    },
+    {
+     "name": "第三方遊戲加速/中繼網路",
+     "pickIf": "想改善特定區域路徑但不自建（本條來源未涵蓋，屬我的判斷）"
+    }
+   ],
+   "numbers": [
+    "SF 到 Portland：約 14ms 理想路徑，實際繞路 70ms（增加 500%）",
+    "把 game server 移到 Chicago 前：80ms 以下玩家比例九個月內由 31% 提升到 50%；移至 Chicago 後隔夜達 80%",
+    "VALORANT 目標：35ms ping 涵蓋 70% 玩家",
+    "網路曾承受 500Gb/s DDoS（Riot 網路文章）",
+    "League 在 9 個集中據點營運（Chicago、Amsterdam、Tokyo、Seoul、São Paulo、Santiago、Istanbul、Miami、Sydney）"
+   ],
+   "interviewUse": "被問全球低延遲時，先講「選區 + 就近入口」，若是 Riot 等級再補「自建骨幹 + anycast」，並說明這是規模才有的投資。",
+   "sources": [
+    {
+     "title": "Riot: Fixing the Internet for Real-Time Applications, Part I",
+     "url": "https://www.riotgames.com/en/news/fixing-internet-real-time-applications-part-i"
+    },
+    {
+     "title": "Riot: Fixing the Internet for Real-Time Applications, Part II",
+     "url": "https://www.riotgames.com/en/news/fixing-internet-real-time-applications-part-ii"
+    },
+    {
+     "title": "Riot: Leveling Up Networking for a Multi-Game Future",
+     "url": "https://www.riotgames.com/en/news/leveling-networking-multi-game-future"
+    },
+    {
+     "title": "Riot: Peeking into VALORANT's Netcode",
+     "url": "https://www.riotgames.com/en/news/peeking-valorants-netcode"
+    }
+   ],
+   "topics": [
+    "api-networking",
+    "geo"
+   ],
+   "domain": "gaming",
+   "byAgents": false
+  },
+  {
+   "id": "fog-of-war-anticheat",
+   "apps": [
+    "VALORANT"
+   ],
+   "title": "Fog of War：用 server 端可見性抑制 wallhack",
+   "naive": "直覺做法：server 把所有玩家位置都送給每個 client，由 client 決定要不要畫。",
+   "breaks": "Wallhack 直接讀記憶體中的敵人位置，client 端偵測永遠追不完。",
+   "trick": "VALORANT 的 server 只在敵人可能被看見時才把其位置送給 client。為避免 peeker's advantage 式的突然出現，把 actor 的 bounding box 以速度乘上略大於預期 ping 的 look-ahead 時間擴張，在敵人轉角前就先送資料。早期用大量 raycast，後來改用預先計算的 Potentially Visible Sets（PVS）查表。",
+   "cost": "每 frame 都要做可見性判斷，會吃 server CPU，Riot 初版就花掉約一半 server frame time。look-ahead 設太大等於漏資訊、太小則敵人會彈出（pop-in）；腳步聲等非視覺資訊也要另外處理。地圖簡單或玩家少的遊戲，此成本不一定值得。",
+   "alternatives": [
+    {
+     "name": "Client 端反作弊（偵測注入/讀取記憶體）",
+     "pickIf": "無法在 server 端隱藏資訊，或可見性判斷成本過高"
+    },
+    {
+     "name": "不做，信任 client 渲染",
+     "pickIf": "非競技、作弊影響低"
+    }
+   ],
+   "numbers": [
+    "初版約 50% server frame time、每 frame 350+ 次 relevancy 計算；最終版少於 2% server frame time（改用 PVS）"
+   ],
+   "interviewUse": "講反作弊的第一原則：不要把 client 不該知道的資料送出去。Fog of War 是把防作弊搬到 server 的實例，代價是 CPU 與延遲處理。",
+   "sources": [
+    {
+     "title": "Riot: Demolishing Wallhacks with VALORANT's Fog of War",
+     "url": "https://www.riotgames.com/en/news/demolishing-wallhacks-valorants-fog-war"
+    }
+   ],
+   "topics": [
+    "realtime"
+   ],
+   "domain": "gaming",
+   "byAgents": false
+  },
+  {
+   "id": "kernel-anticheat-tradeoff",
+   "apps": [
+    "VALORANT",
+    "Riot Vanguard"
+   ],
+   "title": "Kernel-mode 反作弊（Vanguard）：偵測能力 vs 信任與穩定性",
+   "naive": "直覺做法：用 user-mode 反作弊程式掃描遊戲行程。",
+   "breaks": "作弊工具若在 kernel 層運作，user-mode 程式看不到也攔不住。Server 端驗證也抓不到「只讀取資訊」的外掛（如 wallhack、自動瞄準輔助）。",
+   "trick": "Vanguard 以 kernel-mode driver 執行，與 server 端偵測、封鎖流程搭配運作。Riot 公開表示：若 Windows 的 VBS、IOMMU 等安全功能持續發展，「kernel level anti-cheats 將不再必要」，並已投入研究這些替代機制。",
+   "cost": "使用者須信任一個擁有最高權限的第三方 driver：隱私疑慮、當機/相容性風險、被攻擊時的影響面大。這招只對高競技、作弊誘因強的遊戲有意義；休閒或 PvE 遊戲不應付這個代價。Server 權威與 Fog of War 能減少對 kernel 反作弊的依賴，但不能取代。",
+   "alternatives": [
+    {
+     "name": "Server 端驗證 + 行為分析",
+     "pickIf": "作弊多為數值偽造、可由 server 判斷；不想要求使用者安裝高權限軟體"
+    },
+    {
+     "name": "OS 層硬體安全功能（VBS/IOMMU/TPM/Secure Boot）",
+     "pickIf": "希望降低對 kernel driver 的依賴；Riot 已朝此方向研究"
+    }
+   ],
+   "numbers": [
+    "Riot 公開：四年封鎖 360 萬個作弊帳號、約每 37 秒一次封鎖、4% 的封鎖因帳號遭盜用而撤銷"
+   ],
+   "interviewUse": "被問反作弊時分層回答：先 server 權威與資訊隱藏，再談 client 偵測；kernel driver 是最後一層，要明說它的信任成本。",
+   "sources": [
+    {
+     "title": "VALORANT: Vanguard x VALORANT",
+     "url": "https://playvalorant.com/en-us/news/game-updates/vanguard-x-valorant/"
+    }
+   ],
+   "topics": [
+    "auth"
+   ],
+   "domain": "gaming",
+   "byAgents": false
+  },
+  {
+   "id": "replication-graph-interest-management",
+   "apps": [
+    "Fortnite",
+    "Unreal Engine"
+   ],
+   "title": "Replication Graph：大逃殺的 relevancy 不能每個連線各算一次",
+   "naive": "直覺做法：每個 actor 對每個 client 連線各自判斷「這個 client 需要我嗎」，再決定是否同步。",
+   "breaks": "Fortnite Battle Royale 每局開始有 100 個連線與約 50,000 個 replicated actor；逐連線逐 actor 檢查會把 server CPU 變成瓶頸。",
+   "trick": "Unreal 的 Replication Graph 用持久的 node 按需建立「要複製給各 client 的 actor 清單」，並把結果跨多個 frame、跨 client 連線共享；開發者依角色、位置、狀態組織 actor（例如以空間格子分群）。",
+   "cost": "需要為遊戲設計自訂的 graph 與 node，規則複雜，錯誤會讓玩家看不到該看的東西；小房間遊戲（例如 10 人對戰）預設逐連線 relevancy 就夠，無需引入。",
+   "alternatives": [
+    {
+     "name": "預設逐 actor / 逐連線 relevancy",
+     "pickIf": "玩家與 actor 數量小（小隊對戰）"
+    },
+    {
+     "name": "空間分區 / 格子式 interest management",
+     "pickIf": "自研引擎，需要依位置縮小同步範圍"
+    }
+   ],
+   "numbers": [
+    "Fortnite Battle Royale：開局 100 個連線、約 50,000 個 replicated actor"
+   ],
+   "interviewUse": "講大房間遊戲同步時，直接提 interest management：不要對每個玩家各算一遍「誰跟我有關」，改成共享、以空間/角色分組的複製清單。",
+   "sources": [
+    {
+     "title": "Epic: Replication Graph in Unreal Engine",
+     "url": "https://dev.epicgames.com/documentation/en-us/unreal-engine/replication-graph-in-unreal-engine"
+    }
+   ],
+   "topics": [
+    "scaling-reads",
+    "fanout"
+   ],
+   "domain": "gaming",
+   "byAgents": false
+  }
+ ],
+ "quiz": [
+  {
+   "q": "FPS 為什麼要 server 權威 + client-side prediction，而不是單純等 server 回應？各自解決什麼、代價是什麼？",
+   "a": "Server 權威防作弊（不信任 client 自報狀態）；等 server 回應會讓操作有一個 RTT 的延遲感。Client prediction 讓自己的移動立即反應，代價是預測錯誤時 server 對帳會把你拉回（rubber-banding），且需維護輸入歷史與重放。",
+   "topic": "gaming",
+   "kind": "取捨"
+  },
+  {
+   "q": "玩家 A 延遲 100ms、對面 B 躲到牆後才被判定命中。這是 bug 嗎？server 為什麼要這樣設計？",
+   "a": "是設計取捨：lag compensation 讓 server 把 B 的 hitbox 回溯到 A 開槍時 A 看到的位置，讓射手瞄哪打哪、不用預判。代價是被打的一方會覺得被「繞角」擊中。Valve 認為對 Half-Life/TF/CS 利大於弊；可以限制最大回溯時間降低對高 ping 玩家的偏袒。",
+   "topic": "gaming",
+   "kind": "情境"
+  },
+  {
+   "q": "RTS 有上千單位、FPS 只有十幾位玩家，同步策略應如何選？為什麼 lockstep 不適合 FPS？",
+   "a": "RTS 用 deterministic lockstep：只同步輸入，頻寬與單位數無關，代價是 bit-level 確定性與 desync 風險，且被最慢玩家拖慢。FPS 用 server 權威 snapshot + 內插：容忍各端模擬差異、能防作弊、可做 client 預測，物件少所以頻寬可接受。",
+   "topic": "gaming",
+   "kind": "取捨"
+  },
+  {
+   "q": "面試官問：配對系統想讓大家都配到實力相近的對手，但半夜人很少，怎麼辦？",
+   "a": "分數用 TrueSkill 類（μ 與 σ）區分新手與穩定玩家，配對品質門檻隨等待時間放寬並設硬上限（跨區/跨分段），必要時降低 ping 或人數要求；用等待時間分佈的監控調整放寬曲線。取捨是公平性對等待時間，放寬太快會有一邊倒的對局。",
+   "topic": "gaming",
+   "kind": "情境"
+  },
+  {
+   "q": "Agones 的 Fleet 中，Ready 與 Allocated 的 game server 為什麼要區分？縮容時為什麼不能只看 CPU？",
+   "a": "Ready 是預熱可認領的池；配對完成後以 GameServerAllocation 認領，變 Allocated，代表有玩家，不能被移除，直到 server 呼叫 SDK.Shutdown() 或手動刪除。只看 CPU 會誤砍進行中的對局，所以要由 server 自己表達生命週期狀態。",
+   "topic": "gaming",
+   "kind": "概念"
+  },
+  {
+   "q": "VALORANT 為何要做 Fog of War 而不是只靠 client 反作弊？它的代價是什麼？",
+   "a": "Wallhack 只讀取 client 端已有的敵人位置，client 偵測追不完；Fog of War 讓 server 不送 client 不該知道的位置。代價是 server 每 frame 的可見性運算（Riot 初版約佔一半 server frame time，後改 PVS 降到 2% 以下）與 look-ahead 的調校（避免敵人突然彈出）。",
+   "topic": "gaming",
+   "kind": "取捨"
+  }
+ ]
+}

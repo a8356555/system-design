@@ -1,0 +1,543 @@
+[
+  {
+    "id": "contention",
+    "title": "併發搶資源（Contention）",
+    "group": "正確性",
+    "oneLiner": "多個請求同時改同一份資料時，用什麼機制讓「檢查 + 寫入」變成原子，且不讓熱點把吞吐拖垮。",
+    "question": "兩個人同時搶最後一張票（或最後一雙限量鞋）怎麼辦？10 萬人搶同一個 stock row 呢？",
+    "signals": ["最後一張票 / 最後一件", "不能超賣、不能 double booking", "拍賣出價必須高於目前最高價", "帳戶餘額扣款", "同時預約同一資源", "flash sale、搶購、熱門場次"],
+    "options": [
+      {
+        "name": "原子條件寫入（Conditional write / 原子 UPDATE）",
+        "how": "把檢查放進寫入條件：`UPDATE ... SET seats = seats - 1 WHERE id=? AND seats > 0`，看 affected rows；同類還有 UNIQUE constraint、DynamoDB ConditionExpression、Redis SET NX。",
+        "bestWhen": "不變量只牽涉單一列、單一 DB，且條件能寫成一個 predicate（單列計數、庫存、拍賣 CAS `WHERE max < :amt`）。",
+        "cost": "幾乎沒有額外延遲與元件，是最便宜的解；但所有請求仍打同一列。",
+        "failure": "跨表、跨服務的不變量表達不了；同一列極高併發時變 hot row——Shopify 第一次搬進 MySQL 用單列 counter，flash sale 時數千 checkout 排在同一把 row lock 上慢到爬。",
+        "scale": "一般流量的預設解；到 flash sale 等級的單一熱點要改拆列或前置 Redis / 佇列。"
+      },
+      {
+        "name": "悲觀鎖（SELECT ... FOR UPDATE）＋ 變形 SKIP LOCKED",
+        "how": "交易內先鎖住列，其他交易等待；Shopify 變形：一個可預約單位一列，`FOR UPDATE SKIP LOCKED` 讓不同買家鎖不同列並行提交。",
+        "bestWhen": "衝突機率高、臨界區只有毫秒級、錯了代價大（轉帳、庫存帳本），且需要和帳本同一個 transaction 提交。",
+        "cost": "等鎖限制吞吐、佔 connection；SKIP LOCKED 版本要維護 replenishment 程序補池（每 item 上限 1,000 列）並 on-call。",
+        "failure": "鎖持有太久（交易內呼叫外部 API、等使用者付款）→ 吞吐崩潰、connection pool 耗盡，Ticketmaster 把鎖拿到付款完成是爛解；不同順序取鎖 → deadlock；MySQL REPEATABLE READ 的 gap lock 會撞上 replenishment 插入而死鎖。",
+        "scale": "只用於短 transaction；Shopify 的 SKIP LOCKED 設計撐過 Black Friday 2025（高峰 $5.1M / 分鐘）。"
+      },
+      {
+        "name": "樂觀鎖（OCC / version + CAS）",
+        "how": "讀出 version，寫入時 `WHERE id=? AND version=N`，affected rows = 0 代表被搶先，重讀後 retry 或回報失敗；HTTP ETag / If-Match 同模型。",
+        "bestWhen": "讀多寫少、衝突率低（判準：衝突率只有幾 % 以下）。",
+        "cost": "不鎖、無衝突時延遲最好；衝突時整段讀改寫白做，需要 retry 邏輯。",
+        "failure": "高衝突時 retry storm，反而比悲觀鎖差；若比對的是值而非單調遞增 version，會有 ABA 誤判。",
+        "scale": "低衝突場景任意規模；熱點資源不適用。"
+      },
+      {
+        "name": "提高 isolation level：同庫單一 SERIALIZABLE transaction",
+        "how": "把相關資料（orders + inventory）共置在同一個 ACID DB，用 SERIALIZABLE 跑一個 transaction，DB 偵測衝突後 abort 其中一個。",
+        "bestWhen": "多列不變量（一張訂單含 A+B+C 多個商品、write skew），且資料可以放同一個 DB（Gopuff 的選擇）。",
+        "cost": "吞吐下降、應用必須處理 serialization failure 的 retry；inventory 與 orders 的擴展被綁在一起，不能各自選最佳 store。",
+        "failure": "以為「有 ACID 就沒併發問題」卻用預設 Read Committed——它不擋 lost update 與 write skew；不同 DB 的 RR 行為不一樣（Postgres 會報 serialization failure，MySQL InnoDB 不同）。",
+        "scale": "單一 primary 的寫入上限內（Postgres 單機寫入經驗量級 10^3~10^4 TPS，by agents）；可按 region 分區。"
+      },
+      {
+        "name": "Redis 原子操作 / 分散式鎖 + TTL（預留）",
+        "how": "`SET ticketId userId NX EX 600` 暫時佔位，或 Lua script 原子 `DECR` 庫存並寫 reservation；TTL 到期自動釋放，DB 的條件寫入當最後防線。",
+        "bestWhen": "需要「暫時保留」跨越使用者思考 / 付款時間（Ticketmaster 預留 10 分鐘），或要在 DB 前擋掉絕大多數失敗請求（flash sale 只讓 ~10,000 個成功者寫 DB）。",
+        "cost": "多一個元件與一致性問題（Redis 與 DB 雙寫、需對帳）；read path 要多查 Redis 才能畫出保留座位。",
+        "failure": "TTL 在付款中過期 → 兩人都付款，只能靠 DB OCC 讓一人成功、另一人退款；GC pause 的舊持有者仍寫入 → 需要 fencing token；Redis 無法與 DB 帳本同 transaction 提交（Shopify 因此搬離 Redis）。",
+        "scale": "單 Redis 節點約 10 萬 ops/s（flash-sale 補充）；更高需庫存分段成多個 counter。"
+      },
+      {
+        "name": "佇列序列化 / 按 key 單一 writer",
+        "how": "把同一資源的寫入路由到同一 partition（Kafka 以 auctionId 分區）由單一 consumer 依序處理，併發直接消失；搭配 virtual waiting room 只放行與庫存相當的流量。",
+        "bestWhen": "極高衝突的單一熱點（flash sale、熱門拍賣最後幾分鐘），或需要公平排隊與削峰。",
+        "cost": "寫入變非同步，要另外設計結果回傳（SSE / WebSocket 推排隊進度）；單一 key 的吞吐上限 = 單一 partition 的處理速度。",
+        "failure": "佇列積壓、使用者等太久而流失；consumer crash 後從 offset 重放，處理不 idempotent 就會重複扣。",
+        "scale": "1,000 萬並行拍賣多數冷門，總量不是問題；瓶頸在單一熱門 key，通常一場拍賣的出價速率單分區撐得住。"
+      }
+    ],
+    "decisionGuide": [
+      {"if": "不變量是單列、單 DB、能寫成一個條件", "then": "原子條件寫入（UPDATE ... WHERE stock > 0）", "why": "零額外元件，race window 直接消失；先用最便宜的解。"},
+      {"if": "衝突率低、讀多寫少", "then": "OCC（version 欄位）", "why": "不鎖、延遲最好；衝突少時 retry 成本可忽略。"},
+      {"if": "衝突高、錢相關、臨界區毫秒級", "then": "悲觀鎖 SELECT FOR UPDATE（熱點拆成一單位一列 + SKIP LOCKED）", "why": "保證序列化；拆列把一把鎖分散成一池鎖。"},
+      {"if": "多列 / 多表不變量，資料可共置", "then": "同庫 SERIALIZABLE 單一 transaction", "why": "避開分散式鎖的 crash 中間狀態與死結（Gopuff）。"},
+      {"if": "需要跨越分鐘級的暫時保留（使用者在付款）", "then": "Redis SET NX EX 或 DB 的 status + expires_at（implicit expiry），DB 條件寫入兜底", "why": "DB 鎖只能用在瞬間交易；過期寫進資料本身，清掃延遲不影響正確性。"},
+      {"if": "單一熱點承受千萬級瞬間流量", "then": "waiting room 削峰 + Redis 原子扣減 / 按 key 佇列序列化", "why": "別讓流量碰 DB；把併發變成順序。"}
+    ],
+    "defaultAnswer": "先用 DB 原子條件寫入（或短 transaction + OCC），把正確性留在 DB；只有出現跨使用者思考時間或熱點時才加 Redis 預留 / 佇列，且 DB 仍是最後防線。",
+    "interviewScript": "我先問衝突率：衝突低就用 version 做 OCC，高就用短的 row lock，單列庫存直接 `UPDATE ... WHERE stock > 0` 看 affected rows。結帳要保留 10 分鐘，我不會用 DB 鎖撐那麼久，會用 Redis `SET NX EX` 或 expires_at 欄位做預留，但最終仍以 DB 的條件寫入防 double booking——Redis 掛了只是體驗降級。到 Taylor Swift 等級的流量，我會在前面加 virtual waiting queue，只放行與庫存相當的人。",
+    "pitfalls": [
+      "check-then-act：先 SELECT 再 UPDATE，兩人都讀到 1 → 賣出 -1 張。",
+      "用 SELECT FOR UPDATE 鎖到使用者付款完成（長交易、deadlock、crash 後鎖狀態不明）。",
+      "以為 ACID 就安全，卻用預設 Read Committed，lost update 照樣發生。",
+      "一開始就上 Redlock / 分散式鎖，其實單 DB 條件寫入就夠。",
+      "分散式鎖沒有 TTL 與 fencing token，舊持有者 GC pause 後仍寫入。",
+      "Redis 預留沒有 DB 兜底，Redis 一掛就超賣。"
+    ],
+    "cases": [
+      {"name": "Ticketmaster", "ref": "hellointerview-breakdowns/ticketmaster.md", "note": "從長 DB 鎖（爛）→ status+cron（好）→ implicit expiry / Redis SET NX EX 10 分鐘（很好）；DB OCC 永遠是最後防線，Redis 掛了不會 double booking。"},
+      {"name": "Shopify Inventory Reservations", "ref": "hellointerview-learn/in-the-wild/shopify-inventory-reservations.md", "note": "因 reservation 必須與帳本同 transaction 提交而離開 Redis；單列 counter 成 hot row 後改一單位一列 + SKIP LOCKED，並改用 READ COMMITTED 避開 gap lock 死鎖。"},
+      {"name": "Gopuff", "ref": "hellointerview-breakdowns/gopuff.md", "note": "兩個 store + 分散式鎖有 crash 中間狀態與 A+B 死結問題，改把 orders 與 inventory 共置同一 Postgres 用 SERIALIZABLE 單交易。"},
+      {"name": "Flash Sale", "ref": "hellointerview-breakdowns/flash-sale.md", "note": "10,000 件庫存、數千萬人幾秒內湧入：waiting room 削峰 + Redis Lua 原子扣減，只有成功者寫 DB；DB 條件更新兜底（Premium，細節為補充）。"},
+      {"name": "Online Auction", "ref": "hellointerview-breakdowns/online-auction.md", "note": "出價用 CAS `WHERE max < :amt`，熱門拍賣改以 auctionId 分區交給單一 writer 序列化，避免鎖爭用 retry 風暴（Premium，細節為補充）。"}
+    ],
+    "sources": [
+      "hellointerview-learn/patterns/dealing-with-contention.md",
+      "cross-cutting-patterns.md",
+      "hellointerview-breakdowns/ticketmaster.md",
+      "hellointerview-breakdowns/gopuff.md",
+      "hellointerview-learn/in-the-wild/shopify-inventory-reservations.md",
+      "hellointerview-breakdowns/flash-sale.md",
+      "hellointerview-breakdowns/online-auction.md",
+      "hellointerview-learn/deep-dives/postgres.md"
+    ],
+    "byAgents": false
+  },
+  {
+    "id": "consistency",
+    "title": "一致性等級（Consistency / CAP / PACELC）",
+    "group": "正確性",
+    "oneLiner": "每一份資料「讀到舊值」能不能接受、能接受多舊，決定你要付多少延遲與可用性的代價。",
+    "question": "這個系統要 consistency 還是 availability？使用者發文後重新整理卻看不到自己的文章怎麼辦？",
+    "signals": ["NFR 階段：「每次讀都要看到最新寫入嗎？」", "有 read replica、cache、CDC 下游", "多區 / 跨資料中心部署", "訂票、庫存、金融 vs 讚數、觀看數、profile", "「發文後自己要馬上看到」", "同一系統裡有的功能要準、有的要快"],
+    "options": [
+      {
+        "name": "Eventual consistency（非同步 replica / CDC）",
+        "how": "寫主庫，非同步複製到 read replica、cache、搜尋索引；停止寫入後最終一致。",
+        "bestWhen": "短暫看到舊資料不會造成災難：讚數、觀看數、profile 頭貼、Yelp 營業時間、DNS。",
+        "cost": "最低延遲、最高可用、最容易跨區與擴讀。",
+        "failure": "replication lag 期間讀到舊值；使用者讀到新值後換到落後的 replica 又看到舊值（時光倒流）；拿舊值做寫入決策會出錯。",
+        "scale": "擴讀的標準做法；lag 從幾秒到幾分鐘不等（定性）。"
+      },
+      {
+        "name": "Session 保證（Read-your-writes / Monotonic reads）",
+        "how": "只保證「自己寫的自己讀得到」：寫後的讀路由回 primary、sticky session 綁同一 replica，或 client 帶寫入的 version / LSN，replica 追上才回。",
+        "bestWhen": "社群發文、改個人資料：自己要馬上看到，別人晚一點無妨。",
+        "cost": "部分讀流量回到 primary 或被綁定，負載較不均；要在 client 或 gateway 多記一個 version。",
+        "failure": "換裝置 / session 失效後保證消失；路由回 primary 的比例過高時，primary 又被讀流量壓垮。",
+        "scale": "任何有 read replica 的系統都可加，成本隨「寫後立即讀」的比例上升。"
+      },
+      {
+        "name": "Quorum 可調（W + R > N）",
+        "how": "N 份副本，寫要 W 份 ack、讀要 R 份；W + R > N 時讀寫集合必有交集，讀一定碰到最新值。",
+        "bestWhen": "leaderless 儲存（Cassandra 類）想按 query 在延遲與一致性間滑動，例如讀多寫少用 W=3、R=1。",
+        "cost": "每次讀寫都要等多個副本，延遲由最慢的那幾份決定。",
+        "failure": "設成 W=1、R=1（1+1<3）只剩最終一致卻以為是強一致；分區時湊不到 quorum 只能拒絕（變 CP）。",
+        "scale": "常見預設 N=3、W=2、R=2。"
+      },
+      {
+        "name": "Strong / Linearizable（單 leader 同步、Spanner、ZK/etcd）",
+        "how": "所有讀都反映最新寫入，像單機：單一 DB instance、同步複製，或 Spanner / ZooKeeper / etcd 這類共識系統。",
+        "bestWhen": "stale 會造成災難：訂位、庫存、order book、餘額、鎖與 leader election 這類「全體必須同意」的小資料。",
+        "cost": "延遲最高（每次寫都要協調，PACELC 的 Else 也在付 latency 稅）、跨區困難、可用性差；同步複製 RPO≈0 但寫延遲增加。",
+        "failure": "網路分區時只能拒絕服務（CP）；整個系統一刀切選強一致 → 讚數、瀏覽也付同樣代價，擴不出去。",
+        "scale": "ZK/etcd 只適合資料量小、寫吞吐有限的協調資料；大量業務資料用單 leader + 分區。"
+      },
+      {
+        "name": "交易 isolation level（Read Committed → Snapshot → Serializable）",
+        "how": "單一 DB 內決定並發交易能看到彼此多少：RC 擋 dirty read；Snapshot / RR 讀一致快照（MVCC，讀不擋寫）；Serializable 偵測衝突後 abort。",
+        "bestWhen": "多筆讀寫要像依序執行：多列不變量（write skew）用 Serializable，報表類長讀用 Snapshot。",
+        "cost": "越強吞吐越低、abort 越多，應用必須寫 retry；MVCC 下長交易累積舊版本、阻擋 vacuum 造成 bloat。",
+        "failure": "多數 DB 預設 Read Committed，卻期待完全沒有併發異常；把 atomicity（全做或全不做）誤當成併發正確性（那是 isolation 的事）；MySQL RR 的 gap lock 造成死鎖。",
+        "scale": "單一 DB 內的旋鈕；跨服務一致性不由 DB 負責（改走 saga / outbox）。"
+      },
+      {
+        "name": "選擇性一致性（同系統按功能拆）",
+        "how": "對每個資料項分別指定等級：只在不能出錯的路徑用強一致，其他路徑走 cache / replica 的最終一致。",
+        "bestWhen": "幾乎所有面試題：Ticketmaster 訂位強一致、瀏覽高可用；Tinder 互相右滑的 match 強一致、feed 可 stale；拍賣出價寫入強一致、最高價顯示稍晚可接受。",
+        "cost": "要維護兩條路徑（強一致寫入端 + 最終一致讀取端）與兩套儲存（如 Redis Lua + Cassandra）。",
+        "failure": "邊界畫錯：用 cache 或 replica 的舊值去判斷能不能接受寫入（例如出價接受與否以顯示值為準）；強一致層（Redis）資料遺失時沒有 durable 層可重建。",
+        "scale": "senior / staff 訊號；規模越大越必要。"
+      }
+    ],
+    "decisionGuide": [
+      {"if": "短暫讀到舊資料會造成災難（重複訂位、超賣、錯價成交）", "then": "該路徑用強一致（單 leader / 同庫 transaction / 共識）", "why": "CAP 判準：分區時寧可拒絕也不給錯答案。"},
+      {"if": "舊資料只是體驗略差（讚數、頭貼、營業時間）", "then": "Eventual：read replica、cache、CDC", "why": "換低延遲、高可用、容易跨區。"},
+      {"if": "使用者要馬上看到自己剛寫的內容", "then": "Read-your-writes：寫後讀回 primary 或帶 version / LSN", "why": "只花在需要的那一條讀路徑，不必全站強一致。"},
+      {"if": "多區部署、平常沒有分區", "then": "用 PACELC 講：Else 時在 latency 與 consistency 間取捨", "why": "分區是罕見事件，真正每天在付的是強一致的協調延遲。"},
+      {"if": "單一 DB 內有多列不變量", "then": "Serializable（或明確鎖）並寫 retry", "why": "Read Committed 不擋 lost update / write skew。"},
+      {"if": "同一個系統功能需求不一", "then": "選擇性一致性：寫入端強一致、讀取端最終一致", "why": "把昂貴的保證只花在真正需要的地方。"}
+    ],
+    "defaultAnswer": "按功能拆：核心交易路徑（訂位、扣款、match）強一致，瀏覽與計數走 replica / cache 的最終一致，並對「自己剛寫的」補 read-your-writes。",
+    "interviewScript": "分區一定會發生，所以 CAP 實際上是「分區時選 C 還是 A」，而平常沒分區時是 PACELC 的延遲與一致性取捨。這題我不會整個系統一刀切：訂票交易優先 consistency，用單一 Postgres 的短 transaction；瀏覽活動優先 availability，走 cache 和 read replica，可以容忍幾秒的舊資料。代價是讀寫兩條路徑要分開維護，而且我要確保接受訂位的判斷一定讀 primary，不讀 cache。",
+    "pitfalls": [
+      "說「CA 系統」或「三選二」——P 不能放棄。",
+      "把 CAP 的 C 和 ACID 的 C 混為一談。",
+      "整個系統一刀切選強一致，或選了強一致卻不講延遲與可用性代價。",
+      "只講 CAP 不講 PACELC，忽略平時的 latency 稅。",
+      "有 read replica 卻沒處理 read-your-writes（發文後看不到自己的文）。",
+      "用預設 Read Committed 卻以為沒有併發異常。"
+    ],
+    "cases": [
+      {"name": "Ticketmaster", "ref": "hellointerview-breakdowns/ticketmaster.md", "note": "NFR 直接拆：搜尋 / 瀏覽優先 availability，訂票優先 consistency；讀寫比 100:1，讀路徑大量 cache。"},
+      {"name": "Tinder", "ref": "hellointerview-breakdowns/tinder.md", "note": "選擇性一致性典範：match 用 Redis Lua 原子「寫自己 + 讀對方」，Cassandra 當 durable source；feed 預先計算、容許 stale。原文也提另一選擇：放棄強一致、靠對帳 job 補漏掉的 match。"},
+      {"name": "Online Auction", "ref": "hellointerview-breakdowns/online-auction.md", "note": "出價接受與否以強一致寫入端為準，最高價推播是 AP 體驗可稍晚（Premium，細節為補充）。"},
+      {"name": "Gopuff", "ref": "hellointerview-breakdowns/gopuff.md", "note": "Availability 讀 read replica、Orders 寫 leader 用 SERIALIZABLE transaction，讀寫一致性分級。"},
+      {"name": "Bitly", "ref": "hellointerview-breakdowns/bitly.md", "note": "明確寫 availability > consistency（99.99%），redirect 可大量 cache / CDN，唯一性由 DB UNIQUE 兜底。"}
+    ],
+    "sources": [
+      "hellointerview-learn/core-concepts/cap-theorem.md",
+      "cross-cutting-patterns.md",
+      "hellointerview-learn/deep-dives/postgres.md",
+      "hellointerview-learn/deep-dives/zookeeper.md",
+      "threads-chunhao2026/posts.md",
+      "hellointerview-breakdowns/tinder.md",
+      "hellointerview-breakdowns/ticketmaster.md"
+    ],
+    "byAgents": false
+  },
+  {
+    "id": "multistep",
+    "title": "多步驟流程與分散式交易（Multi-step / Saga）",
+    "group": "正確性",
+    "oneLiner": "一個業務動作要跨多個 DB、服務或外部系統，而且可能歷時數秒到數天時，怎麼讓它在 crash、重試、部署之下仍然走完或正確補償。",
+    "question": "扣款成功後 server crash 了，新 server 怎麼知道扣過沒？下單→扣款→保留庫存→出貨，中間一步失敗怎麼辦？",
+    "signals": ["訂單 / 付款 / 出貨流程", "要寫 DB 又要發 Kafka event（雙寫）", "呼叫外部 PSP、交易所、card network", "要等人或外部 webhook（數分鐘到數天）", "失敗要退款 / 釋放庫存", "AI agent 多步驟 pipeline、影片處理 DAG"],
+    "options": [
+      {
+        "name": "單機 DB transaction（把資料共置）",
+        "how": "把需要一起成功的資料放進同一個 ACID DB，一個短 transaction 搞定；不能共置就不是這個選項。",
+        "bestWhen": "所有步驟都只改同一個 DB 的資料（Gopuff orders + inventory、Shopify reservation + 帳本）。",
+        "cost": "最簡單、最強保證；代價是資料必須共置，擴展被綁在一起，不能各自選最佳 store。",
+        "failure": "流程一旦牽涉外部呼叫就無效；把外部 API 呼叫包進 transaction 會變成長交易拖垮吞吐。",
+        "scale": "受限於單一 primary 的寫入能力；分片後跨 shard 交易困難，要把單筆業務設計在單一 shard 內完成。"
+      },
+      {
+        "name": "Transactional outbox（+ poller / CDC relay）",
+        "how": "業務寫入與「待發事件」在同一個 DB transaction 寫進 outbox 表，再由 poller 或 CDC（Debezium Outbox Event Router）轉發到 Kafka。",
+        "bestWhen": "要「更新 DB + 通知下游」且不能丟事件：job scheduler 狀態改 QUEUED + 發 queue、payment 狀態更新 + 發事件。",
+        "cost": "要改 app 寫 outbox、多維運一個 relay；下游只拿到 at-least-once，必須冪等。",
+        "failure": "relay 落後時事件延遲；下游不去重就重複處理；只能「事後修復」，Shopify 指出 flash sale 中短暫不一致就可能重複賣，所以不適合取代同庫原子性。",
+        "scale": "用一個系統的原子性換兩個系統的一致性；吞吐取決於 relay 與 Kafka。"
+      },
+      {
+        "name": "Two-phase commit（2PC）",
+        "how": "協調者先讓所有參與者 prepare（鎖住資源），全部同意才 commit，否則全部 abort。",
+        "bestWhen": "少數幾個都支援 2PC 協定的同質儲存，且需要原子提交；Flink 的 two-phase commit sink 是框架內的應用。",
+        "cost": "鎖資源時間長、延遲高、協調者是單點；所有參與者都得實作協定。",
+        "failure": "協調者在 prepare 後掛掉，參與者卡在鎖住狀態；Redis、外部 PSP、card network 根本不支援 2PC（Shopify、Payment 都因此排除）。",
+        "scale": "只在同一資料庫或少數同質系統內考慮；跨異質服務、跨外部網路不可行。"
+      },
+      {
+        "name": "Saga — Choreography（事件驅動）",
+        "how": "每步是本地交易並發事件（OrderCreated → PaymentService → PaymentSucceeded → InventoryService …），失敗時各服務聽事件執行補償。",
+        "bestWhen": "步驟少（3–4 步）、團隊自治、已有 Kafka 事件流。",
+        "cost": "低耦合、無中央單點；但流程散落各服務，看不到全貌、難除錯。",
+        "failure": "循環依賴；timeout、人工步驟、版本演進難做；補償邏輯分散，沒人知道某筆訂單卡在哪；沒有 isolation，中間狀態被其他人看見。",
+        "scale": "步驟數一多就失控，轉向 orchestration。"
+      },
+      {
+        "name": "Saga — Orchestration（自建持久化狀態機）",
+        "how": "中央 orchestrator 每步前後把狀態寫 DB（created → processing → succeeded / failed / unknown），定義重試、timeout、補償；recovery job 掃描卡住的 instance。",
+        "bestWhen": "金流、下單這類要可稽核、要處理「外部結果未知」的流程（Payment、Robinhood）。",
+        "cost": "要自己寫狀態機、timer、poller、recovery job，等於在自建 workflow engine。",
+        "failure": "orchestrator crash 且狀態沒持久化 → 流程遺失；timeout 後盲目重送 → 重複扣款（應標 unknown 後去查詢）；補償本身失敗或不冪等 → 二次退款；不可逆步驟（寄信）沒排在最後。",
+        "scale": "流程數多、等待時間長時，自建 timer 與 poller 的負擔快速上升。"
+      },
+      {
+        "name": "Durable execution（Temporal / Step Functions）",
+        "how": "用一般程式碼寫 workflow，引擎把每個 activity、timer、signal 的結果記進 event history；worker crash 後別台 replay 程式碼，已完成步驟直接回放結果。",
+        "bestWhen": "多步驟、要等外部事件或長時間（Uber 等司機 10 秒、訂單 timer 5 天）、要從部分執行恢復（YouTube 轉碼 DAG）——也就是你發現自己開始自建 state machine 時。",
+        "cost": "多一套平台（History / Matching / Frontend 服務與其 DB）；workflow code 必須 deterministic（不能直接讀時鐘、隨機、查 DB）；Step Functions 有 DSL 限制、按次計價、lock-in。",
+        "failure": "非 deterministic code 讓 replay 走錯分支；activity 是 at-least-once，外部副作用不冪等仍會重複扣款；改 workflow 沒做 versioning 會破壞執行中的 instance；history 塞大 payload 撞上限（約 50K events / 50MB，by agents）。",
+        "scale": "等待中的 workflow 只佔 DB 空間不佔 worker；瓶頸在 state 更新時要加 History / DB 容量而非 worker。"
+      }
+    ],
+    "decisionGuide": [
+      {"if": "所有步驟只改同一個 DB", "then": "單一短 transaction（必要時把資料共置）", "why": "最強保證、最少元件；不要為了 database-per-service 自找分散式交易。"},
+      {"if": "要更新 DB 並發事件給下游", "then": "Transactional outbox + 冪等 consumer", "why": "雙寫無法原子，換順序只是換失敗類型。"},
+      {"if": "流程跨異質服務或外部系統（PSP、交易所）", "then": "Saga + 補償 + 對帳，不用 2PC", "why": "外部系統不支援 2PC；2PC 鎖久且協調者單點。"},
+      {"if": "3–4 步、團隊自治、已有事件流", "then": "Choreography", "why": "低耦合；步驟再多就難追蹤。"},
+      {"if": "步驟多、要等人 / webhook / 數天、需要可觀測", "then": "Orchestration，優先 durable execution（Temporal）", "why": "否則要自建狀態追蹤、timer、重試與 crash 恢復。"},
+      {"if": "只是單一獨立的背景 job", "then": "Queue + worker（SQS）即可", "why": "Temporal 的價值在協調多步驟，單一 job 用它是過度設計。"}
+    ],
+    "defaultAnswer": "能共置就用單一 transaction；跨服務的長流程用 orchestration saga（說會用 Temporal 並解釋 replay），每步帶 idempotency key、定義補償，最後以對帳兜底。",
+    "interviewScript": "扣款、保留庫存、出貨跨了三個系統，外部 PSP 不支援 2PC，所以我用 saga：每步是本地交易並定義補償，例如付款失敗就釋放庫存。我會用 Temporal 之類的 durable execution 當 orchestrator，worker crash 後靠 event history replay 續跑，不用自己寫 recovery job；代價是 workflow code 要 deterministic，而且 activity 是 at-least-once，所以每次呼叫 Stripe 都帶 workflowId+stepId 當 idempotency key。外部呼叫 timeout 時我標成 unknown 去查詢，不盲目重送，日終再跟 acquirer 對帳。",
+    "pitfalls": [
+      "先寫 DB 再發 Kafka（或反過來）沒有 outbox，crash 在中間就不一致。",
+      "跨外部系統提 2PC。",
+      "外部呼叫 timeout 就重送新請求，造成重複扣款。",
+      "補償動作不冪等，重試時二次退款；把不可逆步驟（寄信）放在中間。",
+      "以為用了 Temporal 就不需要 idempotency。",
+      "單一背景 job 也搬出 workflow engine（過度設計）。"
+    ],
+    "cases": [
+      {"name": "Payment System", "ref": "hellointerview-breakdowns/payment-system.md", "note": "持久化狀態機 + unknown 狀態先查詢不盲重試 + outbox + append-only ledger + 對帳；不用 2PC 因為外部網路不支援（Premium，細節為補充）。"},
+      {"name": "Shopify Inventory Reservations", "ref": "hellointerview-learn/in-the-wild/shopify-inventory-reservations.md", "note": "Redis + MySQL 雙寫無法原子提交、2PC Redis 不支援、outbox 只能事後修復 → 乾脆把 reservation 搬進帳本同一個 DB。"},
+      {"name": "Gopuff", "ref": "hellointerview-breakdowns/gopuff.md", "note": "兩個 store + 分散式鎖會在「建了 order、還沒扣庫存」時 crash；共置進同一 Postgres 用單一 transaction。"},
+      {"name": "Robinhood", "ref": "hellointerview-breakdowns/robinhood.md", "note": "先寫 DB（pending）再呼叫交易所，client_order_id 當交易所端冪等鍵，outbox 保證下單意圖不遺失，日終對帳（Premium，細節為補充）。"},
+      {"name": "Job Scheduler", "ref": "hellointerview-breakdowns/job-scheduler.md", "note": "「狀態改 QUEUED + 送 queue」做成 transactional outbox；task at-least-once，需以 jobId+runId 冪等（Premium，細節為補充）。"}
+    ],
+    "sources": [
+      "hellointerview-learn/patterns/multi-step-processes.md",
+      "hellointerview-learn/deep-dives/temporal.md",
+      "hellointerview-learn/deep-dives/change-data-capture.md",
+      "domain-specific-mechanisms.md",
+      "question-map.md",
+      "hellointerview-breakdowns/payment-system.md",
+      "hellointerview-learn/in-the-wild/shopify-inventory-reservations.md",
+      "hellointerview-breakdowns/gopuff.md"
+    ],
+    "byAgents": true
+  },
+  {
+    "id": "idempotency",
+    "title": "冪等與 exactly-once（Idempotency）",
+    "group": "正確性",
+    "oneLiner": "網路只能保證 at-least-once，要決定在哪一層、用什麼 key 去重，才能讓「做兩次」和「做一次」結果一樣。",
+    "question": "扣款 API timeout 了，錢到底扣了沒？可以直接重試嗎？Kafka consumer 重複收到訊息怎麼辦？",
+    "signals": ["任何有 retry 的寫入 API（POST）", "付款、下單、訂位", "message queue consumer（訊息會重送）", "webhook（PSP 會重送、亂序）", "通知不能發兩次（OTP）", "點擊 / 曝光計數不能重複算"],
+    "options": [
+      {
+        "name": "天然冪等的操作設計",
+        "how": "把操作設計成重做結果不變：「把餘額設成 100」而非「加 100」、PUT / DELETE、upsert、follow 用 PUT。",
+        "bestWhen": "操作語意本來就能表達成絕對狀態（follow、設定值、覆寫檔案）。",
+        "cost": "零額外儲存與查詢。",
+        "failure": "工程師假設自己的 API 冪等卻沒檢查；POST 依規範不是冪等，把「timeout 就 retry」直接套上去就踩坑；計數、扣款這類增量操作無法這樣設計。",
+        "scale": "任意規模，能用就先用。"
+      },
+      {
+        "name": "業務唯一鍵 + DB UNIQUE constraint",
+        "how": "用業務上天然唯一的 key 當 PK / UNIQUE（bookingId、client 生成的 activityId + seq、fileId），重複寫入直接被 DB 擋下。",
+        "bestWhen": "重複請求可以用一個業務 ID 辨識，且結果只需「有沒有寫入」（Strava 離線上傳、Ticketmaster webhook 以 bookingId 檢查狀態）。",
+        "cost": "幾乎免費，DB 原生保證並發下 first-writer 勝出。",
+        "failure": "key 選錯語意——Ad Click 用 userId + adId 去重會誤殺 retargeting 的合法重複點擊；重送時拿不到上次的 response。",
+        "scale": "與 DB 同規模；跨 shard 時 key 要能決定 shard。"
+      },
+      {
+        "name": "Idempotency key + 去重表（Stripe 式）",
+        "how": "client 為每個邏輯操作生成 key 放 `Idempotency-Key` header；server 存 (key PK, status, response_body, created_at)：沒看過就執行，done 就回上次 response，in-progress 回 409。",
+        "bestWhen": "所有寫入型金流 / 訂單 API；client 會因 timeout 重試。",
+        "cost": "每次寫入多一次查詢與一張表；key 要保留 24h~7 天覆蓋重試窗口。",
+        "failure": "key 由 server 生成或重試時換新 key → 去重失效；去重紀錄沒和業務操作同交易，「執行成功但未記 key」瞬間 crash 會重做；TTL 太短讓遲來的重試變新請求；同 key 不同內容沒擋（應綁 request hash，回 422）。",
+        "scale": "去重檢查放共享儲存，API 無狀態水平擴展（Payment 10,000+ TPS 情境）。"
+      },
+      {
+        "name": "Consumer 端去重（at-least-once + dedup）",
+        "how": "上游照常重送，下游用 event ID / impression ID 去重：Redis SETNX、去重表原子 claim，或把 key 存在 Flink 本地 state。",
+        "bestWhen": "Kafka / CDC / webhook consumer、通知發送、點擊追蹤。",
+        "cost": "去重 store 的容量與 TTL 清理；Ad Click 估 100M/day × 16 bytes = 1.6GB。",
+        "failure": "外部副作用（寄信、provider）在「送出」與「記錄」之間 crash 仍會重複，只能縮小窗口；先寫 cache 再寫 stream 會掉資料（應先寫持久層，寧可多一筆重複）；跨 window 邊界的重複在 Flink 內抓不到，需在進 stream 前去重。",
+        "scale": "Netflix live 廣告 pipeline 以 Flink 本地 state 做 dedup，免網路 hop，撐每秒數十萬事件。"
+      },
+      {
+        "name": "框架級 exactly-once（Kafka transactions / Flink checkpoint + 2PC sink）",
+        "how": "idempotent producer + transaction + read-committed consumer；Flink 以 checkpoint 快照 state + offset，失敗回滾重放，sink 用 two-phase commit 或 idempotent upsert。",
+        "bestWhen": "streaming 聚合的內部狀態與輸出要「效果只算一次」。",
+        "cost": "設定與維運複雜、延遲上升（要等 checkpoint / transaction commit）。",
+        "failure": "只保證框架內部；一碰外部 side effect（DB、API）仍要冪等；內部仍會重播，以為「訊息只處理一次」是誤解。Netflix 選擇 best-effort + 下游冪等，因為比追 exactly-once 便宜。",
+        "scale": "大規模 streaming 才值得；一般 API 用 idempotency key 即可。"
+      },
+      {
+        "name": "Reconciliation（對帳）兜底",
+        "how": "定期把兩邊（自家帳本 vs PSP / 交易所 settlement file、stream 結果 vs batch 重算）拉出來比對，差異進例外佇列修補。",
+        "bestWhen": "錢與計費：Payment、Robinhood、Ad Click；任何線上防禦有漏網風險的地方。",
+        "cost": "一條 batch pipeline 與例外處理流程；通常 T+1，發現延遲一天。",
+        "failure": "只修得了事後，修不了「當下已重複出貨 / 重複賣」；沒人處理例外佇列就形同虛設。",
+        "scale": "日級週期，與線上流量無關。"
+      }
+    ],
+    "decisionGuide": [
+      {"if": "操作能表達成絕對狀態", "then": "設計成天然冪等（PUT / set / upsert）", "why": "零成本，不必記任何 key。"},
+      {"if": "重複可由業務 ID 辨識、不需回傳上次結果", "then": "UNIQUE constraint", "why": "DB 原生擋並發重複，最便宜。"},
+      {"if": "寫入型金流 / 訂單 API、client 會 timeout 重試", "then": "client 生成 idempotency key + 去重表（同交易寫入）", "why": "重試能拿到同一個 response，且不重做。"},
+      {"if": "message queue / webhook consumer", "then": "at-least-once + event ID 去重", "why": "exactly-once delivery 幾乎不可能，去重是讓處理兩次等於一次的唯一方法。"},
+      {"if": "外部呼叫 timeout、結果未知", "then": "標記 unknown，用 reference id 查詢或等 webhook，不送新請求", "why": "盲目重送是重複扣款的主因。"},
+      {"if": "牽涉金錢或計費", "then": "再加 reconciliation", "why": "線上防禦有極限，離線補一刀。"}
+    ],
+    "defaultAnswer": "client 生成 idempotency key、server 用 PK 唯一的去重表存結果（和業務寫入同交易），所有 consumer 都按 at-least-once 設計並以 event ID 去重，金流再加每日對帳。",
+    "interviewScript": "分散式系統沒有真正的 exactly-once，只有 at-least-once 加去重。所以 POST /payments 我會要求 client 帶 Idempotency-Key，server 用 key 當 PK 存狀態與 response，和扣款記錄放同一個 transaction，重試就回上次結果；key 保留 24 小時以上。下游 consumer 一律假設會重送，用 event ID 去重；外部呼叫 timeout 我標 unknown 去查而不是重送。最後每日和 PSP 對帳，承認線上防不完。",
+    "pitfalls": [
+      "說系統「保證 exactly-once」而不解釋是 at-least-once + dedup。",
+      "idempotency key 由 server 生成，或 client 重試時換新 key。",
+      "去重紀錄與業務操作不在同一交易 / 沒有唯一約束。",
+      "去重 key 語意錯（userId + adId 誤殺合法重複）。",
+      "以為 Temporal / Kafka exactly-once 免除外部副作用的冪等責任。",
+      "金流系統沒有對帳。"
+    ],
+    "cases": [
+      {"name": "Payment System", "ref": "hellointerview-breakdowns/payment-system.md", "note": "Idempotency key 貫穿（綁 request hash，內容不同回 422）、unknown 狀態先查詢、webhook 以 event id 去重、日終對帳（Premium，細節為補充）。"},
+      {"name": "Ad Click Aggregator", "ref": "hellointerview-breakdowns/ad-click-aggregator.md", "note": "上游簽發 impression ID（HMAC 防偽造）當 idempotency key，在進 stream 前去重、先寫 stream 再寫 cache；Spark 批次對帳兜底。"},
+      {"name": "Ticketmaster", "ref": "hellointerview-breakdowns/ticketmaster.md", "note": "Stripe webhook 會重送，handler 以 bookingId 為 key 並先檢查 booking 狀態。"},
+      {"name": "Notification System", "ref": "hellointerview-breakdowns/notification-system.md", "note": "OTP 不能發兩次：去重表原子 claim 後送出，承認 provider 非 transactional，只能縮小重複窗口（Premium，細節為補充）。"},
+      {"name": "Netflix Ads Event Pipeline", "ref": "threads-chunhao2026/tech-blog/netflix-ads-event-pipeline-live.md", "note": "選「夠精準的保證」：串流內以 Flink 本地 state dedup 抓大多數，consumer 端做最後冪等去重，不追 exactly-once。"}
+    ],
+    "sources": [
+      "cross-cutting-patterns.md",
+      "threads-chunhao2026/posts.md",
+      "hellointerview-learn/core-concepts/api-design.md",
+      "hellointerview-breakdowns/ad-click-aggregator.md",
+      "hellointerview-breakdowns/payment-system.md",
+      "hellointerview-learn/deep-dives/kafka.md",
+      "hellointerview-learn/deep-dives/flink.md",
+      "question-map.md"
+    ],
+    "byAgents": false
+  },
+  {
+    "id": "id-generation",
+    "title": "唯一 ID 生成（ID Generation）",
+    "group": "資料與查詢",
+    "oneLiner": "在多台機器上產生全域唯一的 ID 或短碼時，要在唯一性、長度、可排序、可預測性與協調成本之間取捨。",
+    "question": "短網址的 short code 怎麼保證唯一又夠短？多台 server、多個資料中心同時發 ID 怎麼不撞？",
+    "signals": ["URL shortener / 短碼", "分散式主鍵（貼文、訊息、訂單 ID）", "需要按時間排序的 ID（Cassandra clustering key）", "client 離線時先產生 ID", "多 region 寫入", "ID 不能被猜 / 列舉"],
+    "options": [
+      {
+        "name": "DB auto-increment",
+        "how": "由單一 DB 的序列遞增發號。",
+        "bestWhen": "單一 DB、規模小，且 ID 外露被猜無所謂。",
+        "cost": "零額外元件，ID 短且嚴格遞增、B-tree 友善。",
+        "failure": "單點；多 master 時互撞；分片後失去全域唯一；序號可被列舉。InnoDB 用 auto-increment PK + secondary index 查詢時會多鎖一把 index 鎖（Shopify 改成複合 PK）。",
+        "scale": "單一 primary 寫入上限內。"
+      },
+      {
+        "name": "UUID（v4 隨機 / v7 時間序）",
+        "how": "每台機器（甚至 client）本地產生 128-bit ID，不需協調。",
+        "bestWhen": "需要 client 端或離線產生 ID（Strava activityId、Dropbox fileId），或對長度與索引效能不敏感。",
+        "cost": "128 bit 太肥；v4 隨機寫入 B-tree 造成 page split、寫放大。",
+        "failure": "隨機 UUID 當 PK 讓 B-tree 寫入四處分裂；當 sort key 無法按時間排序；放進 URL 太長。v7 改善了排序問題（DynamoDB 筆記建議 v7 優於 v1）。",
+        "scale": "任意規模、零協調；問題在儲存與索引效率而非唯一性。"
+      },
+      {
+        "name": "中央 counter + Base62（含 batching / range 分配）",
+        "how": "Redis `INCR`（單執行緒原子）發號後 base62 編碼；每個 instance 一次領一批（如 1000）本地發；多 region 配不重疊區間（A: 0–1B、B: 1B–2B）。",
+        "bestWhen": "要「保證不撞且最短」的短碼（Bitly 面試建議答案）。",
+        "cost": "多一個中央 counter 與一次網路呼叫（batching 後可忽略）；Redis 需 Sentinel / Cluster 做 HA。",
+        "failure": "序號可預測 → 可被列舉掃描（緩解：base62 前做可逆轉換如 XOR secret）；Redis 複製前掛掉會丟幾個值（只需唯一不需連續，DB UNIQUE 兜底）；batching 讓 ID 不再嚴格依時間排序。",
+        "scale": "單 Redis 100k+ ops/s，遠超 Bitly 寫入 ~1 row/s；1B 筆 = 6 字元，62^6 ≈ 56B 後才需 7 字元。"
+      },
+      {
+        "name": "Hash + Base62 + 碰撞處理",
+        "how": "canonicalize URL 後 SHA-256 → base62 → 取前 N 字元；short code 欄位加 UNIQUE，撞了加隨機 salt 重試（上限 3–5 次）。",
+        "bestWhen": "想要 deterministic（同 URL 同 code、天然 dedup、不用查 DB），或不想維護中央 counter。",
+        "cost": "每次寫入可能要額外查 DB 偵測碰撞；想降碰撞就得加長 code，違背「短」。",
+        "failure": "碰撞機率隨儲存量上升（約 n/|S|）；不加 salt 時 deterministic 讓同 URL 無法有多個 code、也可被 preimage 攻擊（加 secret salt / HMAC）；取 long URL 前綴當 code 是爛解，共用前綴就撞。",
+        "scale": "8 字元 = 62^8 ≈ 218 兆種；量越大碰撞重試越多。"
+      },
+      {
+        "name": "Snowflake（64-bit：41 timestamp + 10 machine + 12 sequence）",
+        "how": "timestamp 放高位、machine id 讓機器間免協調、sequence 讓同機同毫秒不撞。",
+        "bestWhen": "需要全域唯一 + 大致按時間遞增 + 免中心協調的分散式主鍵（貼文、訊息 ID；Cassandra 用它而非 created_at 避免 key 衝突）。",
+        "cost": "machine id 分配需要一次性協調（常用 ZK / etcd）；64 bit 比 counter 碼長，不適合短網址。",
+        "failure": "時鐘回撥（NTP 往回跳）會發出重複 ID，必須偵測並等待或拒發；machine id 重複分配就撞號；ID 可反解出生成時間與機器。",
+        "scale": "最多 1024 台機器、每機每毫秒 4096 個、可用約 69 年。"
+      }
+    ],
+    "decisionGuide": [
+      {"if": "單一 DB、內部用", "then": "auto-increment", "why": "最簡單；需要分散式時再升級。"},
+      {"if": "client / 離線要先產生 ID", "then": "UUID（優先 v7）", "why": "零協調；v7 保留時間序、對索引較友善。"},
+      {"if": "要最短且保證不撞的短碼", "then": "counter + Base62，配 batching 與 region 區間", "why": "無碰撞、不用查 DB；1B 筆只要 6 字元。"},
+      {"if": "要同 URL 同 code、不想維護 counter", "then": "Hash + Base62 + UNIQUE + 有上限的 salt 重試", "why": "deterministic dedup；代價是碰撞處理。"},
+      {"if": "分散式主鍵要按時間排序、B-tree 友善", "then": "Snowflake", "why": "timestamp 在高位 → append 寫入；machine id 免協調。"},
+      {"if": "ID 不能被列舉", "then": "counter 前做可逆轉換或改用 hash / 隨機", "why": "遞增序號會洩漏總量並被掃描。"}
+    ],
+    "defaultAnswer": "短碼答 counter + Base62（Redis INCR + batching），分散式主鍵答 Snowflake；兩者都用 DB UNIQUE constraint 當最後防線。",
+    "interviewScript": "Hash 的問題是碰撞，量越大越常撞，要嘛加長 code、要嘛撞了加 salt 重試；counter 天生唯一，代價是要一個中央發號器。所以我用 Redis INCR 發號再 base62，每台 write server 一次領 1000 個降低呼叫，多 region 分不重疊區間，1B 筆只要 6 個字元。缺點是序號可被列舉，我會在編碼前做可逆的 XOR 轉換；Redis failover 丟幾個值沒關係，因為只需要唯一不需要連續，DB 的 UNIQUE 是最後防線。",
+    "pitfalls": [
+      "用隨機 UUID 當主鍵卻不知道 B-tree page split 的寫入代價。",
+      "Hash 方案不處理碰撞，或重試沒有上限。",
+      "Snowflake 不提時鐘回撥這個坑。",
+      "中央 counter 每次發號都打一次網路，不做 batching。",
+      "沒想到遞增序號可被列舉掃描。",
+      "custom alias 與產生碼共用 namespace 而互撞（加不可用前綴字元或分 namespace）。"
+    ],
+    "cases": [
+      {"name": "Bitly", "ref": "hellointerview-breakdowns/bitly.md", "note": "前綴（爛）→ hash + 碰撞重試（好）→ counter + Base62（好），再用 counter batching、region 區間、Redis HA、DB UNIQUE 兜底擴到 1B URL。"},
+      {"name": "Strava", "ref": "hellointerview-breakdowns/strava.md", "note": "離線優先：client 生成 UUID 當 activityId，上傳以 (activityId, seq) 冪等去重（Premium，細節為補充）。"},
+      {"name": "Google Docs", "ref": "hellointerview-breakdowns/google-docs.md", "note": "docId 用 UUID / snowflake；op 帶 op id 讓重送冪等（Premium，細節為補充）。"},
+      {"name": "Shopify Inventory Reservations", "ref": "hellointerview-learn/in-the-wild/shopify-inventory-reservations.md", "note": "auto-increment PK + secondary index 讓 InnoDB 每單位鎖兩把；改成 (shop_id, inventory_item_id, inventory_group_id, id) 複合 PK，熱路徑鎖流量減半——ID 設計直接影響鎖。"}
+    ],
+    "sources": [
+      "hellointerview-breakdowns/bitly.md",
+      "cross-cutting-patterns.md",
+      "domain-specific-mechanisms.md",
+      "question-map.md",
+      "hellointerview-learn/deep-dives/dynamodb.md",
+      "hellointerview-learn/deep-dives/cassandra.md"
+    ],
+    "byAgents": false
+  },
+  {
+    "id": "auth",
+    "title": "認證與授權（Auth / Token 設計）",
+    "group": "邊界與介面",
+    "oneLiner": "決定「你是誰」與「你能做什麼」用什麼憑證表達、誰來驗證、憑證洩漏時損害被時間與範圍限制到多小。",
+    "question": "微服務拆到十幾個之後，每個服務怎麼知道使用者是誰？使用者登出後 token 還能用嗎？第三方 app 要存取使用者資料怎麼授權？",
+    "signals": ["API 設計要標出哪些 endpoint 需登入", "userId 不能放 body（從 session / JWT 取）", "開放第三方開發者 / server-to-server", "「用 Google 登入」、第三方存取使用者資源", "bot / app 代表某個安裝去呼叫 API", "token 洩漏、撤銷、key rotation"],
+    "options": [
+      {
+        "name": "API key",
+        "how": "長隨機字串，像應用程式的密碼，放 `X-API-Key`；server 查 DB 識別呼叫者與額度。",
+        "bestWhen": "server-to-server、開放給第三方開發者（Rate limiter 以 API key 識別 client 並分片）。",
+        "cost": "實作最簡單；每次請求要查 DB / cache 對應 key。",
+        "failure": "不會過期、沒有 user context，不適合使用者產品；洩漏等於長期失陷，必須支援輪替；Payment 要把 key 分 publishable / secret，secret 絕不進前端。",
+        "scale": "查詢可 cache；限流按 key 做 consistent hashing 分片。"
+      },
+      {
+        "name": "Server-side session（session store + cookie）",
+        "how": "登入後發不透明 session id（httpOnly cookie），每次請求到 DB / Redis 查 session 取得 userId。",
+        "bestWhen": "單體或少數服務的 web 產品，需要能立即登出 / 撤銷。",
+        "cost": "每個請求多一次 session store 查詢，session store 成為共享依賴。",
+        "failure": "session store 掛掉全站無法驗證；微服務多時每個服務都要回頭問 auth service / session store；靠 sticky session 綁 server 會讓負載不均。",
+        "scale": "Redis 承接 session 很常見（key-value + TTL）；服務越多越傾向改 JWT。"
+      },
+      {
+        "name": "JWT（短效 access token + 長效 refresh token）",
+        "how": "把 userId / 權限 / exp 編進 token 並簽章，任何持有驗證金鑰的服務（如 API gateway）都能獨立驗簽，不查中央 store。",
+        "bestWhen": "user-facing web / mobile、微服務、需要 stateless 水平擴展。",
+        "cost": "token 較大、每請求都帶；要管理簽章金鑰與輪替；為了縮小洩漏影響要做 access（例如 15 分鐘）+ refresh（httpOnly cookie）兩層與刷新邏輯。",
+        "failure": "無法在 exp 前撤銷：登出只是前端刪 token，被複製的照樣有效，要 blocklist 或壓 TTL 等於把 state 加回來；payload 只是 base64url 不是加密，塞敏感資料會外洩；refresh token 放 localStorage 被 XSS 偷走。",
+        "scale": "驗證成本與服務數無關；gateway 層可順便讀 claim 做分級限流。"
+      },
+      {
+        "name": "OAuth 2.0 Authorization Code（+ OIDC）",
+        "how": "使用者在授權伺服器同意 scope，app 後端用 code + client secret 換 access token；需要「使用者是誰」時用其上的 OpenID Connect（ID token 是 JWT）。",
+        "bestWhen": "第三方 app 要代表使用者存取資源而不知道密碼，且 app 有 backend server。",
+        "cost": "多一個授權伺服器與 redirect 流程；要保管 client secret 與 refresh token。",
+        "failure": "把 OAuth 當 authentication（它只證明 app 拿到某 scope 的 token）；access token 出現在前端 URL / JS 變數（已不建議的 Implicit flow）；refresh token 存在瀏覽器；scope 要太寬，洩漏後權限過大。",
+        "scale": "授權伺服器是集中依賴，但只在換 token 時被打。"
+      },
+      {
+        "name": "短效 token 鏈（GitHub App JWT → installation token）",
+        "how": "長效私鑰只用來簽 RS256 JWT（exp 最多 10 分鐘、iat 回推 60 秒防 clock drift）證明 app 身分，再換成約 1 小時、限定 installation 範圍的 token 做日常呼叫。",
+        "bestWhen": "多租戶的 bot / 整合 / service account：要把根 secret 的使用次數壓到最低，並隔離每個租戶的權限（同理：AWS STS、OAuth refresh token）。",
+        "cost": "多一次交換與 token 快取 / 刷新邏輯；私鑰儲存與輪替責任在你（KMS / HSM）；RS256 簽章比 HMAC 慢但低頻可忽略。",
+        "failure": "每次 API 呼叫都用私鑰簽長效憑證 → 曝險與呼叫量成正比、洩漏即永久失陷；不處理 clock drift → JWT 被判「尚未生效」；把 installation token 存很久不刷新。",
+        "scale": "私鑰每小時大約只用一次，與 API 呼叫量脫鉤。"
+      }
+    ],
+    "decisionGuide": [
+      {"if": "server-to-server 或對外開發者 API", "then": "API key（可輪替、分 publishable / secret）", "why": "簡單、可按 key 計量與限流；但不要用在使用者產品。"},
+      {"if": "使用者產品、服務很多、要 stateless 擴展", "then": "JWT：短效 access + httpOnly cookie 的 refresh", "why": "任何服務都能本地驗簽，不查中央 store。"},
+      {"if": "必須能立即撤銷（登出、封號）", "then": "server-side session，或 JWT + blocklist / 極短 TTL", "why": "JWT 無法在 exp 前撤銷，撤銷需求本質上就是 state。"},
+      {"if": "第三方 app 代表使用者存取資源", "then": "OAuth 2.0 authorization code；要登入身分再加 OIDC", "why": "app 不碰密碼、權限受 scope 限制，token 不經瀏覽器。"},
+      {"if": "多租戶整合 / bot，根 secret 曝險要最小", "then": "長效私鑰只換短效、限範圍的 token", "why": "縮短壽命 + 縮小範圍 + 降低根憑證使用頻率。"}
+    ],
+    "defaultAnswer": "面試中一句帶過：使用者走 JWT（或 DB session），身分放 Authorization header、userId 不放 body，gateway 驗證；服務間或開發者 API 用 API key。",
+    "interviewScript": "使用者 session 我用 JWT，API gateway 本地驗簽後把 userId 往下傳，所以 body 裡不收 userId，避免冒名。代價是 JWT 撤銷不了，我會把 access token 壓在 15 分鐘左右、refresh token 放 httpOnly cookie，需要立即封號時再加 blocklist。對外開發者 API 用可輪替的 API key；如果是 bot 要代表某個組織操作，我會學 GitHub App：私鑰只簽 10 分鐘的 JWT 去換 1 小時、限定範圍的 installation token。",
+    "pitfalls": [
+      "userId 放在 request body 或 API 參數裡（可被竄改冒名）。",
+      "把 OAuth 2.0 當成 authentication 協議。",
+      "以為 JWT payload 是加密的而塞敏感資料。",
+      "說「登出就刪 token」卻沒處理 JWT 撤銷。",
+      "refresh token 存 localStorage。",
+      "使用者產品用不會過期的 API key；混淆 authentication（你是誰）與 authorization（能不能做）。"
+    ],
+    "cases": [
+      {"name": "GitHub Apps JWT", "ref": "hellointerview-breakdowns/github-apps-jwt.md", "note": "兩層 token：RS256 JWT（≤10 分鐘、iat 回推 60 秒）證明身分 → installation token（約 1 小時、限範圍）做事，私鑰使用次數壓到最低。"},
+      {"name": "OAuth 2.0 / JWT 貼文", "ref": "threads-chunhao2026/posts.md", "note": "OAuth 是 authorization 不是 authentication（要用 OIDC）；token 不經瀏覽器、refresh 存後端；JWT 最大坑是無法在 exp 前 revocation。"},
+      {"name": "Distributed Rate Limiter", "ref": "hellointerview-breakdowns/distributed-rate-limiter.md", "note": "以 JWT 的 userId、IP、API key 識別 client；gateway 層只看得到 header，「付費用戶 10 倍額度」要編進 JWT（Premium，細節為補充）。"},
+      {"name": "Payment System", "ref": "hellointerview-breakdowns/payment-system.md", "note": "API key 分 publishable / secret 可輪替、HMAC request 簽章、webhook 簽章驗證、client-side tokenization 縮小 PCI 範圍（Premium，細節為補充）。"},
+      {"name": "Dropbox", "ref": "hellointerview-breakdowns/dropbox.md", "note": "身分走 header 的 session token / JWT；下載用短時效 signed URL，但它是 bearer token，外流仍可用，高安全需 IP binding 或 cookie。"}
+    ],
+    "sources": [
+      "hellointerview-learn/core-concepts/api-design.md",
+      "hellointerview-breakdowns/github-apps-jwt.md",
+      "threads-chunhao2026/posts.md",
+      "hellointerview-learn/deep-dives/api-gateway.md",
+      "hellointerview-breakdowns/distributed-rate-limiter.md",
+      "hellointerview-learn/in-a-hurry/core-concepts.md"
+    ],
+    "byAgents": false
+  }
+]

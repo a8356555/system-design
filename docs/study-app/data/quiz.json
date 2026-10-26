@@ -1,0 +1,530 @@
+[
+ {
+  "q": "兩人同時搶最後一張票，且訂單庫存在同一個 Postgres。要避免超賣，你選 SELECT FOR UPDATE 還是 Redis 分散式鎖？為什麼？",
+  "a": "優先在資料所在處解決：SELECT ... FOR UPDATE 或 UPDATE ... WHERE version = X。Redis 鎖在 async replication failover 時可能雙發，且 stale holder 過期後仍可能寫入，不是正確性保證；除非加 fencing token。",
+  "topic": "contention",
+  "kind": "情境"
+ },
+ {
+  "q": "Redis 分散式鎖的 SET NX EX 搭配隨機 token，釋放時為什麼不能直接 DEL？",
+  "a": "鎖可能已過期被別人取得，盲刪會刪掉別人的鎖。要用 Lua script 檢查 token 相符才 DEL（整個 script 原子執行）。",
+  "topic": "contention",
+  "kind": "取捨"
+ },
+ {
+  "q": "Ticketmaster 選位：使用者選座後有約 10 分鐘付款時間。你用 DB 悲觀鎖長交易，還是 Redis TTL 鎖保留座位？",
+  "a": "不該用長交易持鎖（阻塞、連線被占用）。常見做法是 Redis lock with TTL（約 10 分鐘 expiry）保留座位，最後付款時再由 DB 做最終檢查；代價是 Redis 鎖偶爾失效，所以 DB 仍是正確性最後防線。",
+  "topic": "contention",
+  "kind": "情境"
+ },
+ {
+  "q": "ZooKeeper / etcd 鎖與 Redis 鎖的判準是什麼？",
+  "a": "絕不能雙持有、需要正確性（共識 + ephemeral + fencing token）選 ZK / etcd；要快且能容忍偶爾雙搶的效率型鎖選 Redis。",
+  "topic": "contention",
+  "kind": "取捨"
+ },
+ {
+  "q": "瀏覽座位圖（不要求精確）與結帳扣座位，一致性要求一樣嗎？各怎麼選存儲？",
+  "a": "不一樣。瀏覽可用 eventual consistency 的 Cassandra / cache（Ticketmaster 顯示 100+ 就夠），真正結帳時再去 consistent DB 檢查。把強一致成本只花在必要的路徑。",
+  "topic": "consistency",
+  "kind": "取捨"
+ },
+ {
+  "q": "使用者剛發文（寫主庫）立刻刷新卻看不到自己的貼文，原因與解法？",
+  "a": "read replica 非同步複製有 replication lag。關鍵的 read-your-writes 路由到 primary、寫入後短時間 sticky 到主庫，或讀取時帶 LSN / 版本等待 replica 追上。",
+  "topic": "consistency",
+  "kind": "情境"
+ },
+ {
+  "q": "DynamoDB 強一致讀要付什麼代價？GSI 呢？",
+  "a": "成本 2 倍（1 RCU / 4KB vs 0.5 RCU）、延遲稍高；只支援 base table 與 LSI，GSI 只有 eventual consistency（非同步更新）。",
+  "topic": "consistency",
+  "kind": "取捨"
+ },
+ {
+  "q": "Zookeeper 的讀為什麼不一定是最新？需要最新怎麼辦？",
+  "a": "寫入 linearizable，但讀可由 follower 服務且可能落後（sequentially consistent）；需要最新值先呼叫 sync() 再讀，代價是額外延遲。",
+  "topic": "consistency",
+  "kind": "取捨"
+ },
+ {
+  "q": "訂單流程：扣款、保留庫存、出貨、等數天送達、寄信。Stripe 扣款成功後 server crash，如何避免重複扣款？",
+  "a": "用 durable execution（Temporal）：每個 Activity 結果記在 Event History，replay 時回傳舊結果不重呼叫；外部成功但未記錄就 crash 仍可能重試，所以 Activity 須帶 idempotency key。",
+  "topic": "multistep",
+  "kind": "情境"
+ },
+ {
+  "q": "什麼時候用 Temporal，什麼時候一個 queue + worker 就夠？",
+  "a": "單一獨立非同步 job，queue（SQS）更簡單。當你開始自己寫 state machine（持久化進度、排程下一步、重試、worker crash 後恢復）、有跨多步驟與長時間等待時才用 Temporal。",
+  "topic": "multistep",
+  "kind": "取捨"
+ },
+ {
+  "q": "CDC 與 transactional outbox 怎麼選？用在寄出貨通知時選哪個？",
+  "a": "下游問「現在資料長怎樣」用 CDC；問「發生了什麼事、為什麼」用 outbox。出貨通知需業務意圖，row status 變化可能來自修資料 / 回填，CDC 會誤發信，所以用 outbox（顯式 domain event，可再用 CDC 讀 outbox 表）。",
+  "topic": "multistep",
+  "kind": "取捨"
+ },
+ {
+  "q": "付款 API 重試怎麼避免重複扣款？idempotency key 怎麼設計？",
+  "a": "寫入帶 idempotency key（唯一識別 request，例如 user ID + 日期表示每天只買一件），server 檢查是否已處理或處理中，只處理一次。友善做法是等待完成並把結果回給所有請求者，另一種是回「request already exists」。",
+  "topic": "idempotency",
+  "kind": "概念"
+ },
+ {
+  "q": "Kafka consumer 處理完但 commit offset 前當機，會發生什麼？怎麼設計？",
+  "a": "預設 at-least-once 會重處理，所以下游要 idempotent。commit 時機是取捨：處理完才 commit（可能重複）而非先 commit（可能丟）；exactly-once 還要 idempotent producer + transactions，外部副作用仍須冪等。",
+  "topic": "idempotency",
+  "kind": "取捨"
+ },
+ {
+  "q": "Flink 作業要寫入外部 DB 並宣稱 exactly-once，實際上要怎麼做？",
+  "a": "exactly-once 是狀態與輸出的效果只算一次：靠 checkpoint 快照 + 可重放 source（Kafka offset）+ sink 用 two-phase commit 或 idempotent upsert。內部仍可能重播。",
+  "topic": "idempotency",
+  "kind": "情境"
+ },
+ {
+  "q": "讀多寫少、可容忍 1 分鐘舊資料，cache 失效策略選什麼？為什麼不選 write-through？",
+  "a": "TTL（約 1 分鐘）加 cache-aside 即可，簡單且寫入路徑不受影響。write-through 每次寫都同寫 cache 與 datastore，寫較慢，只在要求 cache 與 DB 緊密一致時才值得。",
+  "topic": "caching",
+  "kind": "取捨"
+ },
+ {
+  "q": "Write-Through、Write-Around、Write-Back 各自的代價？",
+  "a": "Write-Through：一致但寫較慢；Write-Around：繞過 cache 減少 pollution，但後續讀較慢；Write-Back：寫最快，但 cache 掛掉會丟資料。",
+  "topic": "caching",
+  "kind": "取捨"
+ },
+ {
+  "q": "熱門商品 key 過期瞬間，大量請求同時打穿到 DB（cache stampede），怎麼處理？",
+  "a": "互斥重建（只讓一個請求回源）、邏輯過期（先回舊值背景更新）、隨機 TTL 避免同時到期。",
+  "topic": "caching",
+  "kind": "情境"
+ },
+ {
+  "q": "100 節點 Redis cache 中單一 key 流量暴增，三種對策與各自陷阱？",
+  "a": "client-side cache（staleness 最多一個 TTL）、key copies（product:123:1..10，需維護熱 key 清單且寫入要 fan-out）、read replicas（要設定才讀 replica，對 write-hot key 無效）。",
+  "topic": "caching",
+  "kind": "情境"
+ },
+ {
+  "q": "一個 1TB、5k QPS 的服務，需要 shard 嗎？",
+  "a": "多半不需要。單機現代 DB 可到數 TB、讀 10^4~10^5 QPS，先用 read replica + cache + index；先問 QPS、資料量、可用性是否真的超過單機加 replica。",
+  "topic": "scaling-reads",
+  "kind": "情境"
+ },
+ {
+  "q": "讀量暴增時，加 read replica 與加 cache 怎麼選？",
+  "a": "replica 保留完整查詢能力但有 replication lag 且不減寫入；cache 延遲最低、可撐熱點，但要處理 invalidation 與 stampede。read-your-writes 路徑仍需回主庫。通常先 index / 查詢優化，再 cache，再 replica。",
+  "topic": "scaling-reads",
+  "kind": "取捨"
+ },
+ {
+  "q": "Postgres 用 read replica 擴讀的代價是什麼？",
+  "a": "非同步 replication lag：讀到舊資料，read-your-writes 要路由到 primary 或帶 LSN；同步複製則 RPO≈0 但寫延遲增加。replica 完全不擴寫。",
+  "topic": "scaling-reads",
+  "kind": "取捨"
+ },
+ {
+  "q": "DB CPU 很閒但請求卡住，最可能是什麼？",
+  "a": "connection pool / max_connections 打滿（Postgres 每連線是一個 process）。用 PgBouncer 復用連線，並把連線數控制在數百內。",
+  "topic": "scaling-reads",
+  "kind": "情境"
+ },
+ {
+  "q": "為什麼說 sharding 是最後手段？",
+  "a": "一旦分片就失去跨片 JOIN 與跨片 transaction，複雜度陡增。應先垂直擴展、加 read replica、加 cache、做 partition，才 sharding。",
+  "topic": "sharding",
+  "kind": "取捨"
+ },
+ {
+  "q": "「資料 500GB 所以要 shard」這句話錯在哪？",
+  "a": "過時數字造成 premature sharding。現代單機可到數 TB 到數十 TB；切分動機應是寫入吞吐、資料量超出單機、地理分佈或故障爆炸半徑，而非單純資料量。",
+  "topic": "sharding",
+  "kind": "情境"
+ },
+ {
+  "q": "Discord 訊息存 Cassandra，熱門 channel partition 無限成長，怎麼設計 partition key？",
+  "a": "partition key 加 time bucket：PRIMARY KEY ((channel_id, bucket), message_id)，bucket 為 10 天 window；限制 partition 大小，且最近訊息通常只在同一 bucket。例外是剛換 bucket 或不活躍 channel。",
+  "topic": "sharding",
+  "kind": "情境"
+ },
+ {
+  "q": "看到 10k writes/s 就上 Kafka + 分片，這樣對嗎？",
+  "a": "是 over-engineering。許多單機 DB 可承受（約 10^3~10^4 TPS）；真正要拆的是 > 10^5 writes/s 或需要 buffer / 削峰時。先 batch，再 stream。",
+  "topic": "scaling-writes",
+  "kind": "情境"
+ },
+ {
+  "q": "Postgres 單主寫入瓶頸，優先順序怎麼走？",
+  "a": "批次 insert / COPY、減少不必要 index、table partitioning、queue 緩衝，最後才 application-level sharding；必須主動說明犧牲跨 shard transaction。",
+  "topic": "scaling-writes",
+  "kind": "取捨"
+ },
+ {
+  "q": "Kafka 出現 hot partition（Nike 廣告爆量），四種做法與代價？",
+  "a": "不帶 key（失去順序）、random salting（consumer 端聚合變複雜）、compound key（ad ID + 地區等獨立屬性）、back pressure（放慢 producer）。",
+  "topic": "scaling-writes",
+  "kind": "取捨"
+ },
+ {
+  "q": "每秒 1,000 萬次 view 寫入要存 DynamoDB，可行嗎？",
+  "a": "每 partition 上限 1,000 WCU，約需 10,000 partitions，provisioned 估約 $156,000/天，on-demand 更貴。用於 sanity check：先在記憶體 batch 聚合 / 用串流再寫入，而非逐筆寫。",
+  "topic": "scaling-writes",
+  "kind": "情境"
+ },
+ {
+  "q": "即時推送單向事件、高頻雙向、影音通話，各選哪個協定？",
+  "a": "單向推送用 SSE；高頻雙向用 WebSocket（要先講理由）；影音通話用 WebRTC。預設是 TCP + HTTP/REST，沒有理由不要用 WebSocket / WebRTC。",
+  "topic": "realtime",
+  "kind": "取捨"
+ },
+ {
+  "q": "WebSocket 前面的 LB 用 L4 還是 L7？負載策略？",
+  "a": "持久連線用 L4 搭配 Least Connections，避免單一 server 逐漸累積所有連線；一般 HTTP 用 L7。",
+  "topic": "realtime",
+  "kind": "取捨"
+ },
+ {
+  "q": "WebSocket 聊天服務擴成多台後，Alice 要傳訊給在另一台的 Bob，怎麼找到 Bob？",
+  "a": "需要 user 到 server 的映射：Redis Pub/Sub（channel 即路由）或 ZooKeeper 等強一致服務發現。自己用 key 存 server 地址做 pub/sub 會多一跳、要 heartbeat / TTL 清理，複雜度高，use case 像 Pub/Sub 就用 Pub/Sub。",
+  "topic": "realtime",
+  "kind": "情境"
+ },
+ {
+  "q": "Redis Pub/Sub 與 Kafka 都能做 fan-out，FB Live Comments 為何選 Kafka 當 pub/sub？",
+  "a": "Kafka 讓多個 consumer group 獨立讀同一份資料，且可重播、持久；Redis Pub/Sub 離線就錯過。代價是延遲與運維成本較高。",
+  "topic": "fanout",
+  "kind": "取捨"
+ },
+ {
+  "q": "一則貼文要送給百萬粉絲，且 hot key 造成單節點過載，怎麼緩解？",
+  "a": "對熱 key 做 client-side cache、key copies 分散到不同節點，或 Kafka 用 compound key / salting 打散 partition；分別有 staleness、寫入 fan-out、聚合複雜度的代價。",
+  "topic": "fanout",
+  "kind": "情境"
+ },
+ {
+  "q": "Redis 7 的 sharded Pub/Sub 解決了什麼舊限制？",
+  "a": "舊版 cluster Pub/Sub 把每則訊息廣播到每個節點，加節點不加容量；SPUBLISH / SSUBSCRIBE 把 channel hash 到 slot 擁有者，容量隨 cluster 擴展。",
+  "topic": "fanout",
+  "kind": "取捨"
+ },
+ {
+  "q": "YouTube 上傳後轉碼，Kafka 要放影片本體嗎？",
+  "a": "不放。Kafka 適合小訊息（建議 < 1MB），影片放 S3，Kafka 只送位置指標。標清先可用，高畫質轉碼丟 Kafka 慢慢做。",
+  "topic": "async-jobs",
+  "kind": "情境"
+ },
+ {
+  "q": "Web Crawler 為什麼選 SQS 而不是 Kafka？",
+  "a": "Kafka 不內建 consumer retry / DLQ，要自建 retry topic；SQS 有內建 retry 與 DLQ。代價是沒有 log 重播與多 consumer group。",
+  "topic": "async-jobs",
+  "kind": "取捨"
+ },
+ {
+  "q": "突發 1,000 req、處理能力 200/s，加 queue 是否解決容量不足？",
+  "a": "queue 只削峰，不增加處理能力，會掩蓋容量不足；需要 backpressure 與擴容。同步低延遲流程加 queue 也是陷阱。",
+  "topic": "async-jobs",
+  "kind": "情境"
+ },
+ {
+  "q": "「我真的需要即時嗎？」為什麼是串流處理第一問？",
+  "a": "串流又難又貴，許多看似串流的問題可化為 batch（Spark / Hadoop）。有狀態串流還要處理 state 容錯、擴縮 re-shard、亂序遲到資料。",
+  "topic": "streaming",
+  "kind": "取捨"
+ },
+ {
+  "q": "Flink、Kafka Streams、Spark Structured Streaming 怎麼選？",
+  "a": "Kafka Streams 嵌入式、綁 Kafka、狀態不大；Flink 獨立叢集、跨 source / sink、大狀態、事件時間、毫秒到秒延遲；Spark micro-batch 延遲秒級以上。",
+  "topic": "streaming",
+  "kind": "取捨"
+ },
+ {
+  "q": "使用者要上傳大頭貼或影片，你會讓檔案流經 API server 嗎？",
+  "a": "不會。client 向 server 要 presigned URL（限時、限 key、限動作），直接 PUT 到 S3，server 不碰檔案本體；儲存完成後通知 server 更新狀態。大檔用 multipart 做 chunking、可續傳。",
+  "topic": "blobs",
+  "kind": "情境"
+ },
+ {
+  "q": "為什麼 S3 不該當主資料庫？",
+  "a": "S3 沒有快速 list、沒有原子 rename、不適合低延遲隨機小 I/O；標準做法是核心 DB 存 metadata 與 blob URL，S3 存檔案本體。",
+  "topic": "blobs",
+  "kind": "取捨"
+ },
+ {
+  "q": "全球使用者下載影片很慢，你怎麼設計？",
+  "a": "S3 為 origin，前面放 CDN 在 edge 快取，下載用 presigned URL 經 CDN；代價是需要 TTL / invalidation 設計，以及 cache miss 時回 origin。",
+  "topic": "blobs",
+  "kind": "情境"
+ },
+ {
+  "q": "Spark 寫 S3 為什麼要特殊 committer？",
+  "a": "S3 沒有原子 rename（= copy + delete），預設 committer 靠 rename 提交，在 S3 上又慢又可能出錯；用 S3A committer 或 Delta / Iceberg / Hudi。",
+  "topic": "blobs",
+  "kind": "取捨"
+ },
+ {
+  "q": "資料量 < 100k documents，需要全文搜尋，要上 Elasticsearch 嗎？",
+  "a": "通常不用。直接查主資料庫即可，Postgres full-text（GIN + tsvector）對許多問題已足夠，少一套系統與同步 drift 風險。",
+  "topic": "search",
+  "kind": "取捨"
+ },
+ {
+  "q": "為什麼不把 Elasticsearch 當主資料庫？",
+  "a": "它是 search engine：eventual consistency、非 ACID、歷史上有耐久性問題。應由權威資料庫經 CDC 同步，ES 當可重建索引。",
+  "topic": "search",
+  "kind": "取捨"
+ },
+ {
+  "q": "電商要「相似商品且有庫存且在使用者地區」，向量搜尋放哪？",
+  "a": "資料量不大且已在 Postgres：pgvector，可與關聯資料 join、ACID、少一套營運系統；已有 ES 可用 kNN + filter；超過約 1 億向量再考慮專用 vector DB。",
+  "topic": "search",
+  "kind": "情境"
+ },
+ {
+  "q": "司機位置高頻更新，選 PostGIS 還是 H3 / geohash？",
+  "a": "點為主、寫入密集選 encoded cells（移動 = 更新一個整數，不需 spatial extension）；需要 polygon containment（配送區）才用 PostGIS / R-tree。口訣：spatial tree for shapes, encoded cells for moving points。",
+  "topic": "geo",
+  "kind": "取捨"
+ },
+ {
+  "q": "兩個相距 1 公尺的 rider 與 driver 因 geohash 跨 cell 而查不到，怎麼辦？",
+  "a": "查自己 cell + 8 鄰格（3x3）一起查，再用精確距離 post-filter 掉太遠的；H3 則取 ring。所有 encoded-key 索引都是「查一圈 + post-filter」。",
+  "topic": "geo",
+  "kind": "情境"
+ },
+ {
+  "q": "geohash 與 H3 的查詢方式差異？",
+  "a": "geohash / S2 沿 space-filling curve，numeric range scan 可掃出鄰域；H3 的 ID 相近不保證地圖上相近，要用 grid math 算出周圍 ring 的 cell ID 再 IN 查詢。H3 六邊形鄰居距離一致，適合 dispatch / surge。",
+  "topic": "geo",
+  "kind": "取捨"
+ },
+ {
+  "q": "Geohash 精度：5 字元、6 字元、9 字元各約多大？Redis 存多少 bits？",
+  "a": "5 字元約 5km、6 字元約 1km、9 字元約 5m；每字元 5 bits；Redis geohash 是 52-bit integer（存在 sorted set 當 score）。",
+  "topic": "geo",
+  "kind": "數字"
+ },
+ {
+  "q": "要統計每日獨立訪客（UV），精確 hash set 與 HyperLogLog 怎麼選？",
+  "a": "先算精確解記憶體放不放得下；放得下就用 set。需要大規模近似 UV 用 HLL：Redis 每 key 最多 12KB，標準誤差 0.81%，可 merge；但不能列出是誰、不能用於計費。",
+  "topic": "counting",
+  "kind": "取捨"
+ },
+ {
+  "q": "Top-K 熱門影片，要用 TSDB 嗎？",
+  "a": "通常不要。Top-K 需跨海量 series 排序 / 聚合，不是 TSDB 強項；可用 Count-Min Sketch + min-heap，或 Redis sorted set / Flink 窗口聚合。",
+  "topic": "counting",
+  "kind": "情境"
+ },
+ {
+  "q": "高頻按讚計數，放 Elasticsearch 文件裡更新可以嗎？",
+  "a": "不好。ES 的 immutable segment 讓更新很貴；計數放 Redis / DB counter 欄位非同步更新，ES 只保留需要搜尋的欄位。",
+  "topic": "counting",
+  "kind": "情境"
+ },
+ {
+  "q": "Fixed window 與 sliding window rate limiting 在 Redis 怎麼做？各自的代價？",
+  "a": "Fixed window：INCR 當前 window counter，超過 N 回 429 + Retry-After，簡單但視窗邊界可突刺。Sliding window：每 user 一個 sorted set（score = timestamp），ZREMRANGEBYSCORE 清舊 → ZCARD 計數 → 未超過 ZADD，更精確但記憶體與運算較高；需用 Lua script 原子化。",
+  "topic": "rate-limiting",
+  "kind": "取捨"
+ },
+ {
+  "q": "Fixed window 實作中為什麼只在 INCR 回傳 1 時才設 expiry？",
+  "a": "若每次都 EXPIRE，持續流量會讓 window 永遠不重置。INCR 與 EXPIRE 要用 Lua script 合併，否則兩者之間 crash 會留下永不重置的 counter。",
+  "topic": "rate-limiting",
+  "kind": "情境"
+ },
+ {
+  "q": "rate limit 放 API Gateway 還是各服務？",
+  "a": "gateway 集中處理 auth / rate limiting / IP 黑白名單最常見，省去後端資源；但 gateway 要 stateless 水平擴展，限流狀態放 Redis 等共享儲存。",
+  "topic": "rate-limiting",
+  "kind": "取捨"
+ },
+ {
+  "q": "Redis 限流器本身掛掉或 failover 時會發生什麼？",
+  "a": "async replication 下 failover 會丟最後已 ack 的 counter，造成短暫放寬，通常可接受（效率型工具）；要嚴格正確才需另外機制。要明講 fail-open 或 fail-closed 的選擇。",
+  "topic": "rate-limiting",
+  "kind": "取捨"
+ },
+ {
+  "q": "Kafka 要最大 durability 該怎麼設定？acks=all 就夠嗎？",
+  "a": "replication factor 3 + acks=all + min.insync.replicas>=2 + idempotent producer，consumer 處理完才 commit。只有 acks=all 不夠：ISR 縮到只剩 leader 時會退化成 acks=1。代價是寫延遲與可用性。",
+  "topic": "reliability",
+  "kind": "取捨"
+ },
+ {
+  "q": "Redis 能當 system of record 嗎？",
+  "a": "不能。非同步 replication + 持久化視窗（AOF 預設每秒 fsync，最多丟約 1 秒）會讓已 ack 寫入消失；要磁碟持久性可用 MemoryDB 等，犧牲一些速度。",
+  "topic": "reliability",
+  "kind": "取捨"
+ },
+ {
+  "q": "CDC 線上事故：Postgres 磁碟突然被 WAL 塞滿，最可能原因與預防？",
+  "a": "replication slot 沒被消費，WAL 無限堆積。預防：監控 slot lag、設 max_slot_wal_keep_size（PG13+）、consumer 失效時及時移除 slot。",
+  "topic": "reliability",
+  "kind": "情境"
+ },
+ {
+  "q": "PG 長交易跑了很久，之後表變很大且變慢，原因？",
+  "a": "長交易阻擋 vacuum，造成 table / index bloat，嚴重時 XID wraparound（32-bit，約 20 億交易需 vacuum freeze）。",
+  "topic": "reliability",
+  "kind": "情境"
+ },
+ {
+  "q": "API Gateway 什麼時候不該加？面試要講多久？",
+  "a": "簡單 monolith 或單一 client 類型的 client-server 不需要。面試中一句話帶過：負責 routing 與基本 middleware，講太多風險大於講太少。",
+  "topic": "api-networking",
+  "kind": "取捨"
+ },
+ {
+  "q": "全球使用者延遲高，你怎麼設計？",
+  "a": "可快取資料用 CDN（edge）；不可快取資料用 regional partitioning（如 Uber 依區域分 DB 與服務）；gateway 多區域部署 + GeoDNS。理論下限 NY 到倫敦往返約 56ms，是物理限制。",
+  "topic": "api-networking",
+  "kind": "情境"
+ },
+ {
+  "q": "NY 到倫敦光纖往返理論最小延遲約多少？怎麼算？",
+  "a": "約 56ms：距離約 5,600 km，光纖速度約 200,000 km/s，來回約 11,200 km / 200,000 km/s。",
+  "topic": "api-networking",
+  "kind": "數字"
+ },
+ {
+  "q": "Small Quiz：關於 OAuth 2.0，哪一句錯？A. 是 authorization 框架，第三方不需知道密碼 B. 本身是 authentication 協議，可驗證使用者是誰 C. access token 過期可用 refresh token 換 D. Authorization Code Flow 適合有 backend 的應用",
+  "a": "B 錯。OAuth 2.0 是 authorization，不是 authentication；要驗證身分需 OpenID Connect（ID token、JWT）。OAuth 回答「你可以做什麼」，OIDC 回答「你是誰」。",
+  "topic": "auth",
+  "kind": "概念"
+ },
+ {
+  "q": "微服務架構下 auth 放哪一層？",
+  "a": "放 API Gateway 集中做 authentication（如 JWT 驗證），後端服務信任 gateway 傳來的身分；注意不要信任 client 自己送的 user ID。",
+  "topic": "auth",
+  "kind": "情境"
+ },
+ {
+  "q": "JWT 在 gateway 驗證的好處與風險？",
+  "a": "好處：stateless、不需每次查 DB、可水平擴展。風險（補充）：token 在到期前難以撤銷，需搭配短時效 + refresh token；原文只強調 gateway 做 auth 是 middleware 的重點。",
+  "topic": "auth",
+  "kind": "取捨"
+ },
+ {
+  "q": "product 型 vs infra 型面試，預設資料庫怎麼選？",
+  "a": "product 型預設 PostgreSQL（ACID、join、index）；infra 型預設 DynamoDB（可擴展、全託管、transaction）。避免籠統的 SQL vs NoSQL 比較，要講所選 DB 的具體特性。",
+  "topic": "storage-choice",
+  "kind": "取捨"
+ },
+ {
+  "q": "什麼情況放棄 Postgres 改 Cassandra / DynamoDB？",
+  "a": "極高寫入、水平擴展為核心（> 10^5 writes/s、多區）、access pattern 固定且不需 JOIN / 跨 partition transaction。但別過早：先確認單機 + replica + partition 真的不夠。",
+  "topic": "storage-choice",
+  "kind": "取捨"
+ },
+ {
+  "q": "高吞吐監控 metrics（5 萬 points/s），該用 Postgres 還是 TSDB？",
+  "a": "此規模 Postgres 單機吃力：50,000 writes/s、index 拖慢寫入、每點 50-100 bytes。TSDB 靠 append-only + LSM + delta 壓縮 + 時間分區 + downsampling，目標負載約好 10-100 倍。前提是 tag 低 cardinality。",
+  "topic": "storage-choice",
+  "kind": "情境"
+ },
+ {
+  "q": "TSDB 中把 user_id 當 tag 會怎樣？",
+  "a": "cardinality 爆炸：1,000 hosts x 50 metrics = 50,000 series 可接受，加 10M user_id tag 約 5000 億潛在 series，記憶體 series index OOM、查詢變慢。高 cardinality 值只能當 field，但失去 TSDB 讀取優勢。",
+  "topic": "storage-choice",
+  "kind": "情境"
+ },
+ {
+  "q": "DynamoDB / Cassandra 的 sort key 為什麼不用 timestamp，改用什麼？",
+  "a": "timestamp 可能重複造成 key 衝突；用單調遞增 ID：per-partition auto-increment、UUID v7（優於 v1）、Snowflake ID 或 ULID。",
+  "topic": "id-generation",
+  "kind": "取捨"
+ },
+ {
+  "q": "聊天訊息 ID 要在分散式環境產生且依時間可排序，選什麼？為什麼？",
+  "a": "Snowflake ID（含時間的 64-bit，各節點獨立產生）或 UUID v7 / ULID；可排序又不需中央協調。Discord 即用 Snowflake ID 當 message_id 並作為 bucket 依據。",
+  "topic": "id-generation",
+  "kind": "情境"
+ },
+ {
+  "q": "per-partition auto-increment 與 UUID v7 的取捨？",
+  "a": "auto-increment 簡單、順序精確，但需 partition 內協調且單點產生；UUID v7 無需協調、時間大致可排序，但無嚴格連續性、較長。（補充）",
+  "topic": "id-generation",
+  "kind": "取捨"
+ },
+ {
+  "q": "Kafka 單 broker 大約能處理多少？訊息大小與預設 retention？",
+  "a": "約 1TB 儲存、約 1M msg/s（原文標註很粗略）；訊息建議 < 1MB；預設 retention 7 天；replication factor 常見 3。",
+  "topic": "streaming",
+  "kind": "數字"
+ },
+ {
+  "q": "Bloom filter 1% FP 約需幾 bits / 元素？10 億 URL 約多大？",
+  "a": "約 9.6 bits/元素；10 億 URL @1% FP 約 1.2GB（0.1% FP 約 14.4 bits）。",
+  "topic": "counting",
+  "kind": "數字"
+ },
+ {
+  "q": "同 AZ 與跨 region 延遲大約差多少？",
+  "a": "同 datacenter RTT 約 0.5ms，CA 到 NL 再回約 150ms，差 2-3 個數量級；所以跨區呼叫要避免放在同步熱路徑上。",
+  "topic": "api-networking",
+  "kind": "數字"
+ },
+ {
+  "q": "Uber 逐一向司機 offer 並等 10 秒，若司機未回應再換下一位，用什麼實作？",
+  "a": "Temporal Workflow：durable timer（10 秒）+ Signal（司機回應），不需常駐 worker，服務重啟後可從 history 還原；比自建 state machine 簡單。",
+  "topic": "async-jobs",
+  "kind": "情境"
+ },
+ {
+  "q": "Flash Sale 庫存保留過期要在服務之外 durable 地到期，怎麼做？",
+  "a": "Temporal timer：deadline 持久化，到期寫 TimerFired 並排程；服務故障只延遲不遺失。替代是 DB 掃描 expiry 或 Redis TTL，但可靠性與恢復語意較弱。",
+  "topic": "multistep",
+  "kind": "情境"
+ },
+ {
+  "q": "Kafka consumer 一直追不上（lag 上漲），如何判斷與處理？",
+  "a": "看是單 consumer 太慢（加 partition + consumer 平行）還是毒訊息卡住（加 retry topic 與 DLQ）。lag 是 Kafka 最重要的健康指標。",
+  "topic": "realtime",
+  "kind": "情境"
+ },
+ {
+  "q": "FB Post Search 需要 Postgres 與 Elasticsearch 保持同步，但不想 dual write，怎麼做？",
+  "a": "用 CDC（Debezium 讀 WAL）把變更串到 Kafka 再更新 ES；單一 source of truth、不改 app、同 row 順序一致。需處理 replication slot、schema 變更、drift 與 reindex。",
+  "topic": "search",
+  "kind": "情境"
+ },
+ {
+  "q": "Dispatch 系統用 H3 cell 做附近司機推送，每個 cell 的更新如何 fan-out？",
+  "a": "driver snap 到 H3 cell，rider 取自己 cell + 周圍 ring，用 IN 查詢候選再精確距離 post-filter；寫入便宜（一次整數更新），可擴展到每秒數百萬寫入。",
+  "topic": "fanout",
+  "kind": "情境"
+ },
+ {
+  "q": "Ticketmaster 瀏覽座位用 PRIMARY KEY (event_id, seat_id) 在萬張票活動撞到問題，怎麼改？",
+  "a": "改成 PRIMARY KEY ((event_id, section_id), seat_id)，每個 section 一個 partition，分散到多節點且單 partition 更小；另建 event_sections 表做 denormalize 總覽（數量可不精確，如 100+）。",
+  "topic": "id-generation",
+  "kind": "情境"
+ },
+ {
+  "q": "Small Quiz：關於 HTTP，哪一句是錯的？A. HTTP 無狀態 B. HTTP/2 支援 multiplexing C. PUT 冪等、POST 不是 D. HTTPS 連網域名稱也加密，外部觀察者無法得知你連哪個網站",
+  "a": "D 錯。HTTPS 加密內容，但網域名稱仍可能透過 DNS 查詢與 TLS SNI 被外部觀察到。",
+  "topic": "api-networking",
+  "kind": "概念"
+ },
+ {
+  "q": "Small Quiz：關於 WebSocket，哪一句錯？A. 內建自動重連 B. full-duplex C. 以 HTTP upgrade 握手建立 D. frame overhead 遠小於 HTTP request。若面試要用它，你還要補哪些代價？",
+  "a": "A 錯，WebSocket 不內建自動重連，需自己實作。代價：stateful 連線、需要整條基礎設施支援（L4 LB + Least Connections）、跨 server 路由；沒有理由就不要用。",
+  "topic": "realtime",
+  "kind": "概念"
+ },
+ {
+  "q": "Small Quiz：關於 Docker，哪一句錯？A. image 唯讀，container 疊可寫 layer B. container 與 VM 同等級隔離、各有獨立 kernel C. 同 host container 預設可互通 D. container 啟動比 VM 快",
+  "a": "B 錯。container 共享 host kernel，隔離靠 namespace / cgroups；VM 透過 hypervisor 跑獨立 kernel，邊界更強。",
+  "topic": "api-networking",
+  "kind": "概念"
+ },
+ {
+  "q": "Small Quiz：關於 database index，哪一句錯？A. index 可避免 full table scan B. INSERT/UPDATE/DELETE 要同步更新 index C. composite index (last_name, first_name) 可加速只 filter last_name 的查詢 D. 只要 WHERE 欄位有 index，查詢一定變快。這對「每欄都加 index」有什麼啟示？",
+  "a": "D 錯（planner 不一定採用，選擇性低時 seq scan 可能更快）。每欄都加 index 會拖慢寫入、佔空間、planner 不一定用；C 對，因為符合 leftmost prefix。",
+  "topic": "storage-choice",
+  "kind": "概念"
+ }
+]

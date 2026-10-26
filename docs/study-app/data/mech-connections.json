@@ -1,0 +1,515 @@
+{
+ "mechanisms": [
+  {
+   "id": "http1-keepalive-hol",
+   "domain": "connections",
+   "apps": [
+    "Cloudflare",
+    "Google"
+   ],
+   "title": "HTTP/1.1 keep-alive 與 head-of-line blocking：靠多條 TCP 連線硬撐並行",
+   "naive": "直覺做法：每個 request 開一條新 TCP（加 TLS）連線，用完就關。",
+   "breaks": "每次都付 TCP handshake 成本；改成 keep-alive 後同一條連線上 response 必須依序回，前一個慢就卡住後面全部（HOL blocking）。pipelining 因此實務上幾乎沒人開。",
+   "trick": "HTTP/1.1 預設 persistent connection 重用 warm connection；為了並行，瀏覽器對每個 domain 開多條連線（預設 6 條），舊時代再用 domain sharding 增加條數。",
+   "cost": "多條連線 = 多份 handshake、多份 congestion window、server 端 idle 連線佔資源（也是 DoS 面）。domain sharding 在 HTTP/2 下反而有害。",
+   "alternatives": [
+    {
+     "name": "HTTP/2 multiplexing",
+     "pickIf": "單一連線上要並行大量小 request（API gateway、網頁資源）"
+    },
+    {
+     "name": "每次新連線",
+     "pickIf": "極低頻、一次性呼叫，保持連線的成本大於收益"
+    }
+   ],
+   "numbers": [
+    "瀏覽器預設每 domain 6 條平行連線（MDN）"
+   ],
+   "interviewUse": "被問「為什麼要 HTTP/2」時，一句話：HTTP/1.1 的 HOL 是應用層 response 順序造成的，靠 6 條連線繞過；HTTP/2 把並行搬進單一連線。",
+   "sources": [
+    {
+     "title": "MDN: Connection management in HTTP/1.x",
+     "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Connection_management_in_HTTP_1.x"
+    },
+    {
+     "title": "RFC 9113 HTTP/2 (Introduction)",
+     "url": "https://www.rfc-editor.org/rfc/rfc9113.html"
+    }
+   ],
+   "topics": [
+    "api-networking"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "http2-tcp-hol",
+   "domain": "connections",
+   "apps": [
+    "Cloudflare",
+    "Google"
+   ],
+   "title": "HTTP/2 multiplexing 解掉應用層 HOL，卻仍被 TCP HOL 拖累",
+   "naive": "直覺做法：升級 HTTP/2，所有 request 塞進一條連線，以為並行問題結束。",
+   "breaks": "所有 stream 共用一條 TCP；丟一個封包，TCP 要求按序交付，所有 stream 一起 stall。RFC 9113 自己承認 TCP HOL 沒被解決。高 packet loss 的行動網路上，單連線 HTTP/2 可能比多連線 HTTP/1.1 更差。",
+   "trick": "改在 QUIC 上跑 HTTP/3：stream 層級各自可靠傳輸，一個 stream 掉包通常不影響其他 stream。Cloudflare 把這作為 HTTP/3 的主要動機。",
+   "cost": "QUIC 跑在 UDP 上，要在 user space 實作、被部分網路擋 UDP、CPU 成本較高；需保留 HTTP/2 作 fallback。",
+   "alternatives": [
+    {
+     "name": "HTTP/2 over TCP",
+     "pickIf": "網路品質好（資料中心內部 / 有線），不想承擔 UDP 部署成本"
+    },
+    {
+     "name": "多條 HTTP/2 連線",
+     "pickIf": "無法上 QUIC 又想降低單連線 HOL 影響"
+    }
+   ],
+   "numbers": [],
+   "interviewUse": "回答「HTTP/2 夠了嗎」：不夠，multiplexing 只解應用層 HOL，TCP 層掉包仍會 stall 全部 stream，這是 HTTP/3 的存在理由。",
+   "sources": [
+    {
+     "title": "Cloudflare: The Road to QUIC",
+     "url": "https://blog.cloudflare.com/the-road-to-quic/"
+    },
+    {
+     "title": "RFC 9114 HTTP/3 (Introduction)",
+     "url": "https://www.rfc-editor.org/rfc/rfc9114.html"
+    },
+    {
+     "title": "RFC 9113 HTTP/2",
+     "url": "https://www.rfc-editor.org/rfc/rfc9113.html"
+    }
+   ],
+   "topics": [
+    "api-networking"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "quic-connection-migration",
+   "domain": "connections",
+   "apps": [
+    "Google",
+    "Cloudflare"
+   ],
+   "title": "QUIC Connection ID：手機換網路連線不斷",
+   "naive": "直覺做法：TCP 用 4-tuple（來源 IP / port、目的 IP / port）識別連線。",
+   "breaks": "手機從 WiFi 切到 4G，或 NAT rebinding，4-tuple 變了，TCP 連線直接斷，要重新 handshake（TCP + TLS 多個 RTT）並重送進行中的請求。",
+   "trick": "QUIC 封包帶不依賴 4-tuple 的 Connection ID，endpoint 可遷移到新的 IP / path 繼續同一條連線。Google 的 QUIC 部署於 Chrome 與 YouTube 行動 app。",
+   "cost": "server 端 load balancer 必須能依 Connection ID 路由（而非 5-tuple hashing），否則遷移後封包會打到別台；Connection ID 還需輪換以避免被追蹤。",
+   "alternatives": [
+    {
+     "name": "TCP + 應用層 resume（自己做 session token）",
+     "pickIf": "無法使用 QUIC，需在斷線後快速恢復狀態（如 IM 的 session resume）"
+    }
+   ],
+   "numbers": [
+    "QUIC 約佔 Internet 流量 7%（Google 論文發表時）"
+   ],
+   "interviewUse": "行動端長連線題：提到 QUIC connection migration 解決網路切換，並指出 LB 需 CID-aware routing 是代價。",
+   "sources": [
+    {
+     "title": "Cloudflare: The Road to QUIC",
+     "url": "https://blog.cloudflare.com/the-road-to-quic/"
+    },
+    {
+     "title": "Google: The QUIC Transport Protocol: Design and Internet-Scale Deployment",
+     "url": "https://research.google/pubs/the-quic-transport-protocol-design-and-internet-scale-deployment/"
+    }
+   ],
+   "topics": [
+    "api-networking",
+    "realtime"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "tls-resumption-0rtt",
+   "domain": "connections",
+   "apps": [
+    "Cloudflare",
+    "Google"
+   ],
+   "title": "TLS 1.3 session resumption 與 0-RTT：省 RTT 的代價是 replay",
+   "naive": "直覺做法：每條新連線都跑完整 TLS handshake 後才送資料。",
+   "breaks": "遠距使用者每個 RTT 都是上百 ms；行動網路上頻繁重連時 handshake 成本累積成可感知延遲。",
+   "trick": "TLS 1.3 用 PSK 做 resumption；0-RTT 讓 client 在第一個 flight 就帶 application data。Cloudflare 只對 GET 開 0-RTT，因為 0-RTT 資料無跨連線 non-replay 保證且無 forward secrecy。QUIC 本身 handshake 只需 1 RTT（對比 TCP+TLS 1.3 的 2 RTT）。",
+   "cost": "replay 風險：攻擊者可重送 0-RTT 封包，非 idempotent 請求（轉帳）不能放；server 需限制為安全方法或做 anti-replay。",
+   "alternatives": [
+    {
+     "name": "完整 1-RTT handshake",
+     "pickIf": "寫入 / 金流類請求，不能承受 replay"
+    },
+    {
+     "name": "長連線複用",
+     "pickIf": "同一 client 連續多次請求，直接重用已建立連線，連 resumption 都省"
+    }
+   ],
+   "numbers": [
+    "Cloudflare：0-RTT resumption 為 2 RTT + DNS，無 0-RTT 為 3 RTT + DNS",
+    "遠距使用者約省 250ms（Cloudflare 文中數字）",
+    "QUIC handshake 1 RTT vs TCP+TLS 1.3 的 2 RTT"
+   ],
+   "interviewUse": "談 CDN / edge 延遲時帶出：resumption + 0-RTT 省 RTT，但只開給 idempotent GET，因為有 replay。",
+   "sources": [
+    {
+     "title": "Cloudflare: Introducing Zero Round Trip Time Resumption (0-RTT)",
+     "url": "https://blog.cloudflare.com/introducing-0-rtt/"
+    },
+    {
+     "title": "RFC 8446 TLS 1.3 sec 2.2-2.3",
+     "url": "https://www.rfc-editor.org/rfc/rfc8446.html"
+    },
+    {
+     "title": "Cloudflare: The Road to QUIC",
+     "url": "https://blog.cloudflare.com/the-road-to-quic/"
+    }
+   ],
+   "topics": [
+    "api-networking",
+    "auth"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "pgbouncer-transaction-pooling",
+   "domain": "connections",
+   "apps": [
+    "PgBouncer (PostgreSQL)"
+   ],
+   "title": "DB 連線池：PgBouncer transaction pooling 用「借用」換連線數",
+   "naive": "直覺做法：每個 app instance / request 各自對 Postgres 開連線。",
+   "breaks": "Postgres 每條連線是一個 backend process，成千上萬個 client（serverless、大量 app pod）直接連會耗盡記憶體與 max_connections。",
+   "trick": "PgBouncer 提供三種模式：session（連線整個 session 獨佔）、transaction（只在 transaction 期間指派，結束即還池）、statement（禁多語句 transaction）。transaction mode 讓少量 server 連線服務大量 client。",
+   "cost": "transaction mode 刻意破壞依賴 session 狀態的功能：SET/RESET、LISTEN、PREPARE/DEALLOCATE、session-level advisory lock、WITH HOLD cursor 等。要改用 transaction-scoped 寫法。",
+   "alternatives": [
+    {
+     "name": "session pooling",
+     "pickIf": "必須用 LISTEN、session 級 prepared statement 或 advisory lock"
+    },
+    {
+     "name": "app 端連線池（HikariCP 等）",
+     "pickIf": "app instance 數量少、固定，連線總數可控"
+    }
+   ],
+   "numbers": [
+    "PgBouncer 預設每條連線約 2 kB 記憶體（官方文件）"
+   ],
+   "interviewUse": "被問「幾千個 microservice instance 怎麼連 DB」：在前面放 PgBouncer 的 transaction pooling，並說明會失去 session 狀態功能。",
+   "sources": [
+    {
+     "title": "PgBouncer Features",
+     "url": "https://www.pgbouncer.org/features.html"
+    }
+   ],
+   "topics": [
+    "scaling-reads",
+    "storage-choice"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "whatsapp-erlang-millions-connections",
+   "domain": "connections",
+   "apps": [
+    "WhatsApp"
+   ],
+   "title": "單機撐百萬級 TCP 連線：WhatsApp 的 Erlang + FreeBSD 調校",
+   "naive": "直覺做法：一台機器大約只能撐幾萬條連線，所以靠堆機器水平擴充。",
+   "breaks": "長連線服務（IM）連線數遠大於 QPS，機器數量與成本由連線數決定，而非 CPU；預設 kernel 的 file descriptor / socket 上限很快就撞到。",
+   "trick": "Erlang 輕量 process 一連線一 process；加上調高 kern.ipc.maxsockets、kern.maxfiles、tcbhashsize 等 kernel 參數，單台實測 2,277,845 條 TCP 連線，CPU 仍有 41.9% idle。",
+   "cost": "單機承載越多，單機故障與重啟時的重連衝擊越大（見重連風暴）；需要在記憶體、GC 與 kernel 調校上投入專業；這是 2012 年數字，僅示意量級。",
+   "alternatives": [
+    {
+     "name": "水平擴充較小的 gateway",
+     "pickIf": "團隊沒有 Erlang / kernel 調校能力，願意用機器換簡單"
+    },
+    {
+     "name": "非同步 event loop（epoll / Netty）",
+     "pickIf": "非 BEAM 技術棧，仍可做到高連線密度"
+    }
+   ],
+   "numbers": [
+    "單機 2,277,845 TCP connections",
+    "24 cores、103GB RAM",
+    "kern.ipc.maxsockets=2400000"
+   ],
+   "interviewUse": "估 gateway 數量時：講「連線密度是以百萬為單位，先看 per-connection 記憶體與 fd 上限，不是 QPS」。",
+   "sources": [
+    {
+     "title": "WhatsApp Blog: 1 million is so 2011 (2.28M 連線更新)",
+     "url": "https://blog.whatsapp.com/1-million-is-so-2011"
+    }
+   ],
+   "topics": [
+    "realtime",
+    "scaling-writes"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "discord-gateway-fanout",
+   "domain": "connections",
+   "apps": [
+    "Discord"
+   ],
+   "title": "Discord gateway：session process 加 Manifold 分批 fanout",
+   "naive": "直覺做法：一個 guild process 對所有成員 session 逐一 send 訊息。",
+   "breaks": "Erlang process 實質單執行緒，每次 send 約 30-70μs（含 de-scheduling），大型 guild 的 fanout 尖峰耗時 900ms 到 2.1s，訊息延遲暴增。",
+   "trick": "每個 WebSocket 連線對應一個 session GenServer，與 guild process 互相通訊。Manifold 把目標 PID 按遠端 node 分組，用 :erlang.phash2 做 consistent hashing 分給 per-core worker，由 node 端 relay 到本地 session，降低 CPU 與網路開銷且保持順序。",
+   "cost": "多一層 relay；實作與除錯複雜；需 Semaphore 之類限流避免 cascading failure。",
+   "alternatives": [
+    {
+     "name": "直接逐一 send",
+     "pickIf": "guild 都很小（數百人以下）"
+    },
+    {
+     "name": "pub/sub broker（Redis / Kafka）",
+     "pickIf": "不想自己管 BEAM 叢集；代價是多一跳延遲"
+    }
+   ],
+   "numbers": [
+    "5M 同時在線用戶",
+    "每個 Erlang VM 約 500,000 live sessions",
+    "大型 guild 單次 send 30-70μs，fanout 尖峰 900ms-2.1s",
+    "平均每用戶 5 個 guild"
+   ],
+   "interviewUse": "聊天室廣播題：指出 fanout 的瓶頸在單一 sender，解法是按 node 分組、分片並行送。",
+   "sources": [
+    {
+     "title": "Discord: How Discord Scaled Elixir to 5,000,000 Concurrent Users",
+     "url": "https://discord.com/blog/how-discord-scaled-elixir-to-5-000-000-concurrent-users"
+    }
+   ],
+   "topics": [
+    "fanout",
+    "realtime"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "reconnect-storm-jitter",
+   "domain": "connections",
+   "apps": [
+    "Slack",
+    "Discord",
+    "AWS clients"
+   ],
+   "title": "重連風暴：exponential backoff 要加 jitter，並讓重連變便宜",
+   "naive": "直覺做法：連線斷了 client 立刻重連，或固定間隔重試。",
+   "breaks": "gateway 重啟或辦公室斷網，大量 client 同時重連，等於同步化的 thundering herd；Slack 指出重連時需要的資源幾乎等於首次啟動，造成連線變慢，更多 client 逾時再重試，惡性循環。",
+   "trick": "兩層：(1) client 端 exponential backoff + full jitter（在 0 到上限之間均勻隨機），AWS 模擬顯示 full jitter 總工作量最少；(2) 降低每次重連成本，Slack 的 Flannel 在 edge 回傳精簡的 startup payload，並按需 lazy load。",
+   "cost": "jitter 使整體恢復時間變長、個別使用者等待不可預期；需要 server 端也能 shed load（回 429 / 503 + Retry-After）。",
+   "alternatives": [
+    {
+     "name": "equal jitter / decorrelated jitter",
+     "pickIf": "要保證最小等待時間，但 AWS 模擬中 equal jitter 完成時間最差"
+    },
+    {
+     "name": "server 端分批放行（admission queue）",
+     "pickIf": "已知會重啟大量連線的計畫性維運，可主動分批 drain"
+    }
+   ],
+   "numbers": [
+    "Flannel 啟動 payload：1,500 人團隊縮小 7 倍、32,000 人團隊縮小 44 倍",
+    "Flannel 尖峰 4M 同時連線、600K client queries/sec"
+   ],
+   "interviewUse": "只要題目有長連線，主動講：重連要 backoff + full jitter，且重連路徑要比首次連線輕，否則故障一次就雪崩。",
+   "sources": [
+    {
+     "title": "AWS Architecture Blog: Exponential Backoff And Jitter",
+     "url": "https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/"
+    },
+    {
+     "title": "Slack Engineering: Flannel",
+     "url": "https://slack.engineering/flannel-an-application-level-edge-cache-to-make-slack-scale/"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "realtime"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "slack-edge-consistent-hash-routing",
+   "domain": "connections",
+   "apps": [
+    "Slack"
+   ],
+   "title": "Edge cache 的路由：consistent hashing 讓同 team 落在同一台 Flannel",
+   "naive": "直覺做法：長連線隨機（round-robin）分到任一台 edge 節點。",
+   "breaks": "每台 edge 都要快取所有 team 的使用者 / channel 資料，cache 命中率低、記憶體浪費；重連風暴會打穿到後端。",
+   "trick": "Flannel 以 consistent hashing 決定使用者連到哪台，同一 team 與地區的使用者黏在同一個實例，提高 cache 命中率並緩衝重連風暴對後端的衝擊。",
+   "cost": "熱點：超大 team 集中在少數節點；節點增減時有部分 key 重新映射，需要預熱；比 round-robin 複雜。",
+   "alternatives": [
+    {
+     "name": "random / round-robin 路由",
+     "pickIf": "無狀態 gateway，資料都在後端 store"
+    },
+    {
+     "name": "sticky session（LB cookie / IP hash）",
+     "pickIf": "簡單親和性即可，不需要 team 級的 cache 局部性；節點變動時不如 consistent hashing 平滑"
+    }
+   ],
+   "numbers": [
+    "Flannel 尖峰 4M 同時連線",
+    "600K client queries/sec"
+   ],
+   "interviewUse": "被問 gateway 狀態如何分佈：用 consistent hashing 以 workspace 為 key 路由，換取 cache locality，代價是熱點。",
+   "sources": [
+    {
+     "title": "Slack Engineering: Flannel",
+     "url": "https://slack.engineering/flannel-an-application-level-edge-cache-to-make-slack-scale/"
+    }
+   ],
+   "topics": [
+    "caching",
+    "sharding"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "connection-draining-deploy",
+   "domain": "connections",
+   "apps": [
+    "Envoy"
+   ],
+   "title": "部署長連線服務：connection draining 而非直接砍 process",
+   "naive": "直覺做法：rolling deploy 時直接 kill 舊 instance。",
+   "breaks": "數十萬條 WebSocket 同時被斷，全部同時重連到剩下的節點，等於人造重連風暴，還會打斷進行中的請求。",
+   "trick": "先把節點從 LB 摘除，停止接新連線；HTTP/1 回 Connection: close，HTTP/2 發 GOAWAY 讓既有 stream 完成；設 drain timeout，到期才強制關閉。Envoy 的 gradual drain 讓連線被排空的機率在 drain 時間內線性上升，把關閉打散。WebSocket 則由 server 主動通知 client 在隨機延遲後重連。",
+   "cost": "部署時間變長（要等 drain timeout）；長時間存在的 WebSocket 超過 timeout 仍會被強切；新舊版本需相容。",
+   "alternatives": [
+    {
+     "name": "直接 kill + client 自動重連",
+     "pickIf": "連線數小、重連成本低的內部服務"
+    },
+    {
+     "name": "hot restart / 連線交接",
+     "pickIf": "Envoy 類 proxy 可熱重啟，保持 listener socket"
+    }
+   ],
+   "numbers": [],
+   "interviewUse": "問到「怎麼部署不中斷即時連線」：講 drain 加分散重連，並引用 GOAWAY / Connection: close 的做法。",
+   "sources": [
+    {
+     "title": "Envoy docs: Draining",
+     "url": "https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/operations/draining"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "realtime"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "apns-vs-persistent-connection",
+   "domain": "connections",
+   "apps": [
+    "Apple APNs"
+   ],
+   "title": "行動推播 vs 常駐連線：App 在背景時用 APNs / FCM",
+   "naive": "直覺做法：App 自己維持 WebSocket / TCP 長連線來收訊息。",
+   "breaks": "iOS / Android 會在背景凍結或殺掉 App 連線；每個 App 各自保活會耗電並多開 radio。",
+   "trick": "作業系統維持每台裝置到 APNs 的單一常駐連線，provider server 透過 APNs 推送（best-effort）。前景用 WebSocket 即時收，背景退回推播喚醒，再由 App 拉取完整內容。可用 collapse-id 合併離線期間同類通知，離線時 APNs 做 store-and-forward。",
+   "cost": "推播不保證送達，離線佇列滿了舊訊息會丟棄；payload 有限，內容與順序仍須以自己的伺服器為準；多一個外部依賴與 token 失效處理。",
+   "alternatives": [
+    {
+     "name": "App 自維持長連線",
+     "pickIf": "前景即時互動（聊天視窗、直播留言）"
+    },
+    {
+     "name": "輪詢 / 拉取",
+     "pickIf": "更新頻率低、延遲容忍度高"
+    }
+   ],
+   "numbers": [],
+   "interviewUse": "設計通知 / IM 題：前景 WebSocket、背景 APNs/FCM 當「喚醒訊號」，真實內容走自家 sync API，避免依賴 best-effort。",
+   "sources": [
+    {
+     "title": "Apple: Setting up a remote notification server",
+     "url": "https://developer.apple.com/documentation/usernotifications/setting-up-a-remote-notification-server"
+    }
+   ],
+   "topics": [
+    "realtime",
+    "async-jobs"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "webrtc-nat-traversal",
+   "domain": "connections",
+   "apps": [
+    "WebRTC"
+   ],
+   "title": "WebRTC NAT 穿透：ICE 依序嘗試 host、STUN、TURN",
+   "naive": "直覺做法：兩個 peer 用公網 IP 直連。",
+   "breaks": "大部分使用者在 NAT 後面，沒有可直連的位址；symmetric NAT 對不同目的地會映射不同外部位址，STUN 取得的位址對對方無效。",
+   "trick": "ICE 蒐集多種 candidate 並由 controlling agent 選最佳：host（直連）、srflx（STUN 反射位址）、prflx、relay（TURN 轉送）。直連失敗才退回 TURN relay 轉送媒體。",
+   "cost": "TURN 要轉送全部媒體流量，頻寬成本高且要放在靠近使用者的區域；信令伺服器也要自己提供來交換 candidate。",
+   "alternatives": [
+    {
+     "name": "SFU（Selective Forwarding Unit）",
+     "pickIf": "多人通話，每個人只送一份到伺服器再轉發，而不是 P2P mesh"
+    },
+    {
+     "name": "純 P2P（STUN 即可）",
+     "pickIf": "1 對 1 且多數使用者可直連，想壓低伺服器成本"
+    }
+   ],
+   "numbers": [],
+   "interviewUse": "影音通話題：先講 ICE，STUN 能解大多數，TURN 是兜底但佔流量成本；多人再用 SFU。",
+   "sources": [
+    {
+     "title": "MDN: WebRTC connectivity",
+     "url": "https://developer.mozilla.org/en-US/docs/Web/API/WebRTC_API/Connectivity"
+    }
+   ],
+   "topics": [
+    "realtime",
+    "api-networking"
+   ],
+   "byAgents": true
+  }
+ ],
+ "quiz": [
+  {
+   "q": "HTTP/2 已經有 multiplexing，為什麼高 packet loss 的行動網路上仍會卡？HTTP/3 怎麼改善？",
+   "a": "HTTP/2 的 stream 共用一條 TCP，TCP 要按序交付，丟一個封包所有 stream 一起 stall（RFC 9113 承認 TCP HOL 未解）。HTTP/3 跑在 QUIC 上，per-stream 可靠傳輸，一個 stream 掉包通常不影響其他。",
+   "topic": "connections",
+   "kind": "取捨"
+  },
+  {
+   "q": "你的 WebSocket gateway 要做 rolling deploy，直接 kill 舊 instance 有什麼問題？該怎麼做？",
+   "a": "所有連線同時斷線會同時重連，形成 thundering herd 打爆剩下節點。應先從 LB 摘除，HTTP/1 回 Connection: close、HTTP/2 發 GOAWAY，設 drain timeout 並讓 client 隨機延遲後重連。",
+   "topic": "connections",
+   "kind": "情境"
+  },
+  {
+   "q": "選擇 TLS 0-RTT 要省一個 RTT，為什麼 Cloudflare 只對 GET 開？",
+   "a": "0-RTT 資料沒有跨連線的 non-replay 保證，攻擊者可重送。GET 是 idempotent，被重放影響小；轉帳這類非 idempotent 請求不能放 0-RTT。",
+   "topic": "connections",
+   "kind": "取捨"
+  },
+  {
+   "q": "上千個 app instance 要連同一個 Postgres，用 PgBouncer 該選 session 還是 transaction pooling？各自代價？",
+   "a": "要大幅減少 server 連線數就選 transaction pooling，但會破壞 SET、LISTEN、PREPARE、session 級 advisory lock 等 session 狀態功能。需要這些功能才用 session pooling，連線數壓縮效果有限。",
+   "topic": "connections",
+   "kind": "取捨"
+  },
+  {
+   "q": "100 萬個 client 同時斷線後重連，你在 client 與 server 各做什麼？",
+   "a": "client：exponential backoff + full jitter（AWS 模擬 full jitter 總工作量最少）。server：降低重連成本（如 Slack Flannel 回傳精簡 startup payload）、限流並回 Retry-After，必要時分批放行。",
+   "topic": "connections",
+   "kind": "情境"
+  },
+  {
+   "q": "Slack 的 Flannel 為何用 consistent hashing 路由長連線，而不是 round-robin？代價是什麼？",
+   "a": "讓同 team 使用者落在同一台 edge，提高 cache 命中並緩衝重連對後端的衝擊。代價是超大 team 造成熱點，且節點增減時需要預熱。",
+   "topic": "connections",
+   "kind": "取捨"
+  }
+ ]
+}

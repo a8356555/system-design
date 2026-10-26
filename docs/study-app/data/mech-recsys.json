@@ -1,0 +1,523 @@
+{
+ "mechanisms": [
+  {
+   "id": "multi-stage-funnel",
+   "domain": "recsys",
+   "apps": [
+    "YouTube",
+    "Instagram Explore"
+   ],
+   "title": "多段式漏斗：召回 → 粗排 → 精排 → 重排，每段 latency 預算不同",
+   "naive": "直覺做法：對整個 corpus 的每個 item 跑同一個大模型打分",
+   "breaks": "哪裡會壞：corpus 是百萬到十億級，重模型（吃 user-item 交叉特徵）每個請求算不起；全用輕模型又排不準",
+   "trick": "實際做法：YouTube 用 candidate generation 把數百萬影片壓到數百，再由 ranking 模型精排。Instagram Explore 拆成 retrieval、first-stage ranking（輕量 two-tower）、second-stage ranking（重模型）、final reranking（integrity 過濾與 diversity）四段，越後面候選越少、模型越重",
+   "cost": "代價 / 取捨：每段只能看到上一段留下的候選，召回漏掉的好內容後面救不回來（recall 是天花板）；多段各自訓練也有目標不一致的風險",
+   "alternatives": [
+    {
+     "name": "單段排序",
+     "pickIf": "corpus 很小（千級以下）或只是內部工具，不值得多段複雜度"
+    },
+    {
+     "name": "加粗排蒸餾層",
+     "pickIf": "召回候選仍多到精排模型扛不住時，在中間加一層輕量/蒸餾模型"
+    }
+   ],
+   "numbers": [
+    "YouTube：candidate generation 從數百萬影片選出數百個候選（論文摘要）",
+    "Instagram Explore 部落格：retrieval 選出數百個候選，第一階段排序處理數千個候選"
+   ],
+   "interviewUse": "任何推薦/feed/搜尋排序題的骨架：先畫漏斗，再逐段講模型複雜度、候選量、latency 預算，並指出 recall 是上限",
+   "sources": [
+    {
+     "title": "Deep Neural Networks for YouTube Recommendations",
+     "url": "https://research.google/pubs/deep-neural-networks-for-youtube-recommendations/"
+    },
+    {
+     "title": "Scaling the Instagram Explore recommendations system",
+     "url": "https://engineering.fb.com/2023/08/09/ml-applications/scaling-instagram-explore-recommendations-system/"
+    }
+   ],
+   "topics": [
+    "scaling-reads",
+    "search"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "two-tower-ann",
+   "domain": "recsys",
+   "apps": [
+    "YouTube",
+    "Instagram Explore"
+   ],
+   "title": "Two-tower 召回 + ANN：user/item 各算 embedding，內積檢索",
+   "naive": "直覺做法：召回用規則或 co-occurrence 表，或對每個 (user,item) 跑 cross-feature 模型",
+   "breaks": "哪裡會壞：cross-feature 模型無法預先算 item 側，無法做近鄰檢索；in-batch negatives 訓練時熱門 item 被過度當負樣本，長尾被壓低（sampling bias）",
+   "trick": "實際做法：user tower 與 item tower 獨立輸出 embedding，item embedding 離線算好建 ANN 索引，線上只算 user embedding 再查近鄰。Instagram 說明兩塔的 embedding 可快取，推論極有效率，並同時用於 retrieval 與 first-stage ranking。Google 針對 in-batch negatives 偏差提出用串流方式估計 item 出現頻率來修正 softmax，部署於 YouTube 的 Neural Deep Retrieval",
+   "cost": "代價 / 取捨：user 與 item 只在最後內積才互動，表達力低於 cross-feature 精排模型；embedding 更新有延遲，新 item 需先進索引才能被召回",
+   "alternatives": [
+    {
+     "name": "多路召回（CF、規則、社交圖）",
+     "pickIf": "需要涵蓋不同意圖/冷啟動，通常與 two-tower 並存而非取代"
+    },
+    {
+     "name": "cross-feature 精排模型",
+     "pickIf": "候選已縮到數百以內時才用"
+    }
+   ],
+   "numbers": [
+    "YouTube NDR 語料為數千萬影片（論文摘要）"
+   ],
+   "interviewUse": "講召回時說「two-tower + ANN，item 側離線預算、user 側線上算」，再補一句 in-batch negative 的 sampling bias 怎麼修",
+   "sources": [
+    {
+     "title": "Sampling-Bias-Corrected Neural Modeling for Large Corpus Item Recommendations",
+     "url": "https://research.google/pubs/sampling-bias-corrected-neural-modeling-for-large-corpus-item-recommendations/"
+    },
+    {
+     "title": "Scaling the Instagram Explore recommendations system",
+     "url": "https://engineering.fb.com/2023/08/09/ml-applications/scaling-instagram-explore-recommendations-system/"
+    }
+   ],
+   "topics": [
+    "search",
+    "caching"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "multi-objective-value-model",
+   "domain": "recsys",
+   "apps": [
+    "Instagram Explore",
+    "YouTube"
+   ],
+   "title": "多目標排序：預測多個行為機率，再用可調權重合成 value",
+   "naive": "直覺做法：只優化 CTR，或只優化 watch time",
+   "breaks": "哪裡會壞：只看點擊會推標題黨；只看觀看時長偏好長影片；engagement 與長期滿意度會互相衝突",
+   "trick": "實際做法：Instagram second-stage 用 MTML 同時預測 click、like、see-less 等機率，最後用 Expected Value = W_click*P(click)+W_like*P(like)-W_see_less*P(see less)+... 合成分數，權重可調。YouTube 排序模型用 MMoE 同時優化 engagement 與 satisfaction 兩類目標，早期 DNN 排序則用 watch-time-weighted logistic regression",
+   "cost": "代價 / 取捨：權重本質是產品決策，需用線上 Bayesian optimization（慢但完整）或離線調參（快，但要求離線線上指標相關）；目標越多越難歸因",
+   "alternatives": [
+    {
+     "name": "單一目標 CTR",
+     "pickIf": "MVP 階段或內容同質、點擊即價值（如廣告早期）"
+    },
+    {
+     "name": "單模型多頭 + 手調權重",
+     "pickIf": "目標數少、團隊要快速迭代權重"
+    }
+   ],
+   "numbers": [
+    "Instagram 說明有線上 Bayesian optimization 與離線調參兩種權重調法，無具體數字"
+   ],
+   "interviewUse": "被問「排序目標是什麼」時，主動講多目標 + value model 公式，並提權重怎麼調與長期指標怎麼納入",
+   "sources": [
+    {
+     "title": "Scaling the Instagram Explore recommendations system",
+     "url": "https://engineering.fb.com/2023/08/09/ml-applications/scaling-instagram-explore-recommendations-system/"
+    },
+    {
+     "title": "Recommending What Video to Watch Next: A Multitask Ranking System",
+     "url": "https://research.google/pubs/recommending-what-video-to-watch-next-a-multitask-ranking-system/"
+    },
+    {
+     "title": "Deep Neural Networks for YouTube Recommendations",
+     "url": "https://research.google/pubs/deep-neural-networks-for-youtube-recommendations/"
+    }
+   ],
+   "topics": [
+    "async-jobs"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "position-bias-shallow-tower",
+   "domain": "recsys",
+   "apps": [
+    "YouTube"
+   ],
+   "title": "Position bias：用 shallow tower 把位置效應從偏好中分離",
+   "naive": "直覺做法：把點擊當作 label 直接訓練",
+   "breaks": "哪裡會壞：排在前面的 item 被點得多只因位置好，模型學到「舊排序」的自我強化，形成 feedback loop",
+   "trick": "實際做法：YouTube 排序模型在 Wide & Deep 框架中加一個 shallow tower，吃位置等 selection-bias 特徵，輸出的 bias 項加進主模型 logit；訓練時學習，serving 時拿掉或置為固定位置值，使主塔只代表真實偏好",
+   "cost": "代價 / 取捨：需要位置特徵在訓練資料中有足夠變化；做不乾淨時 bias 會洩漏進主塔。更嚴謹的做法是引入隨機化流量（IPS），成本是犧牲部分線上體驗",
+   "alternatives": [
+    {
+     "name": "隨機化 / exploration 流量 + IPS",
+     "pickIf": "需要無偏估計且願意付出一點體驗代價"
+    },
+    {
+     "name": "忽略 position bias",
+     "pickIf": "排序結果位置差異小（如單列輪播）"
+    }
+   ],
+   "numbers": [],
+   "interviewUse": "講訓練資料來自曝光 log 時，補一句 position bias 與 feedback loop，說明 shallow tower 或隨機化流量的處理",
+   "sources": [
+    {
+     "title": "Recommending What Video to Watch Next: A Multitask Ranking System",
+     "url": "https://research.google/pubs/recommending-what-video-to-watch-next-a-multitask-ranking-system/"
+    }
+   ],
+   "topics": [],
+   "byAgents": true
+  },
+  {
+   "id": "rerank-diversity",
+   "domain": "recsys",
+   "apps": [
+    "Instagram Explore",
+    "Pinterest"
+   ],
+   "title": "重排：多樣性與商業規則放在最後一段",
+   "naive": "直覺做法：精排分數由高到低直接上架",
+   "breaks": "哪裡會壞：前幾名常是同一創作者或同一主題，使用者疲勞；integrity/安全規則若混進模型分數會難以保證",
+   "trick": "實際做法：Instagram final reranking 套 integrity 過濾與 diversity 規則（例如避免同一創作者連續出現）。Pinterest 在 ranking 階段用 determinantal point process（DPP）與多目標優化平衡 utility 與 diversity，並在 retrieval 用 bucketized retrieval 讓多樣內容能流進來；論文結果為 diversity 指標顯著提升，utility 持平或略升",
+   "cost": "代價 / 取捨：硬規則簡單可審計但粗糙；DPP 類方法需要 item 相似度與額外運算，延遲增加；重排只能在候選內調整，上游沒召回多樣內容就無從重排",
+   "alternatives": [
+    {
+     "name": "貪婪 MMR 式重排",
+     "pickIf": "延遲預算很緊、規則簡單"
+    },
+    {
+     "name": "硬規則（同創作者間隔、類型配額）",
+     "pickIf": "合規/商業必須保證的限制"
+    }
+   ],
+   "numbers": [
+    "Pinterest 論文：未給具體百分比，僅稱 diversity 顯著提升、utility 中性到正向"
+   ],
+   "interviewUse": "講 feed 時最後一步要提「重排 = 多樣性 + 安全 + 商業規則」，並說明為何放在模型之後",
+   "sources": [
+    {
+     "title": "Scaling the Instagram Explore recommendations system",
+     "url": "https://engineering.fb.com/2023/08/09/ml-applications/scaling-instagram-explore-recommendations-system/"
+    },
+    {
+     "title": "Representation Online Matters: Practical End-to-End Diversification in Search and Recommender Systems",
+     "url": "https://arxiv.org/abs/2305.15534"
+    }
+   ],
+   "topics": [
+    "fanout"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "feature-store-skew",
+   "domain": "recsys",
+   "apps": [
+    "Uber Michelangelo"
+   ],
+   "title": "Feature store 與 training-serving skew：同一份特徵定義用在訓練與線上",
+   "naive": "直覺做法：訓練用 Spark/SQL 算特徵，線上服務另外用程式重寫一次",
+   "breaks": "哪裡會壞：兩套實作邏輯細微不同（時間窗、缺值處理），線上模型吃到與訓練不同分布的特徵，指標悄悄變差，且難以除錯",
+   "trick": "實際做法：Michelangelo 提供集中式 Feature Store，讓團隊重用 canonical 特徵；離線與線上共用同一份資料與批次 pipeline，近即時特徵走 Kafka/Samza 並提供 backfill 工具避免冷啟動；特徵轉換用 DSL，表達式屬於模型設定，訓練與預測使用同一份，以保證產出相同特徵",
+   "cost": "代價 / 取捨：平台化成本高，DSL 限制了可表達的特徵；線上查 Cassandra 增加延遲與依賴",
+   "alternatives": [
+    {
+     "name": "各模型自己管特徵",
+     "pickIf": "團隊少、模型少，平台化投資不划算"
+    },
+    {
+     "name": "線上記錄特徵（log-and-train）",
+     "pickIf": "特徵昂貴或難以重算，直接把線上取得的值寫進訓練資料"
+    }
+   ],
+   "numbers": [
+    "Feature Store 約 10,000 個特徵",
+    "P95 延遲：無 Cassandra 查詢 <5ms，有 feature store 查詢 <10ms",
+    "每秒超過 250,000 次預測"
+   ],
+   "interviewUse": "被問 ML serving 時提 training-serving skew，說明用「同一份特徵定義 + 線上/離線共用 pipeline」解",
+   "sources": [
+    {
+     "title": "Meet Michelangelo: Uber's Machine Learning Platform",
+     "url": "https://www.uber.com/blog/michelangelo-machine-learning-platform/"
+    }
+   ],
+   "topics": [
+    "consistency",
+    "async-jobs"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "monolith-online-training",
+   "domain": "recsys",
+   "apps": [
+    "TikTok",
+    "BytePlus"
+   ],
+   "title": "Monolith：collisionless embedding table + 即時線上訓練",
+   "naive": "直覺做法：每天批次重訓，用 hashing 把稀疏 ID 壓進固定大小 embedding table",
+   "breaks": "哪裡會壞：使用者興趣變很快，日更模型落後；hash 衝突讓不同 ID 共用向量，傷害品質；TensorFlow/PyTorch 的靜態參數與稠密運算不適合動態稀疏特徵",
+   "trick": "實際做法：ByteDance 的 Monolith 用 collisionless embedding table，搭配 expirable embeddings 與 frequency filtering 降低記憶體；系統讓模型即時吃使用者回饋做線上訓練，並刻意用部分可靠性換取即時學習",
+   "cost": "代價 / 取捨：參數同步與容錯複雜，線上訓練若吃到髒資料或 bug 會快速污染模型；需要額外的記憶體管理機制",
+   "alternatives": [
+    {
+     "name": "每日批次重訓",
+     "pickIf": "內容與興趣變化慢，或資料量小"
+    },
+    {
+     "name": "小時級增量更新",
+     "pickIf": "折衷：Instagram 做法為每小時重訓"
+    }
+   ],
+   "numbers": [
+    "論文摘要未給具體延遲數字；Instagram 部落格稱模型每小時重訓"
+   ],
+   "interviewUse": "講短影音/新聞這類興趣變化快的 feed 時，提線上訓練與稀疏 embedding 管理，並說明可靠性換即時性的取捨",
+   "sources": [
+    {
+     "title": "Monolith: Real Time Recommendation System With Collisionless Embedding Table",
+     "url": "https://arxiv.org/abs/2209.07663"
+    },
+    {
+     "title": "Scaling the Instagram Explore recommendations system",
+     "url": "https://engineering.fb.com/2023/08/09/ml-applications/scaling-instagram-explore-recommendations-system/"
+    }
+   ],
+   "topics": [
+    "streaming"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "pinsage-graph-embedding",
+   "domain": "recsys",
+   "apps": [
+    "Pinterest"
+   ],
+   "title": "PinSage：用 random walk 選鄰居的 graph convolution 產生 item embedding",
+   "naive": "直覺做法：只用 item 自己的內容特徵，或用完整鄰居做 GCN",
+   "breaks": "哪裡會壞：純內容特徵忽略 pin-board 圖結構；完整鄰居 GCN 在數十億節點、熱門節點度數極高的圖上跑不動",
+   "trick": "實際做法：PinSage 用高效 random walks 來決定每個節點的 convolution 鄰居，結合結構與特徵；訓練採 progressively harder examples 提升穩健度與收斂；推論用 MapReduce 批次產生全部 embedding",
+   "cost": "代價 / 取捨：離線批次產 embedding 有新鮮度延遲，新 pin 要等下一輪；訓練與圖維護成本高",
+   "alternatives": [
+    {
+     "name": "純內容 embedding（CLIP 類）",
+     "pickIf": "新 item 多、互動稀疏，需要冷啟動即用"
+    },
+    {
+     "name": "matrix factorization / two-tower",
+     "pickIf": "圖結構訊號不強或規模較小"
+    }
+   ],
+   "numbers": [
+    "3 billion nodes（pins 與 boards）",
+    "18 billion edges",
+    "7.5 billion 訓練樣本"
+   ],
+   "interviewUse": "講 related pins / item-item 召回時，提圖 embedding 如何在 web-scale 圖上做到可擴展（抽樣鄰居、批次推論）",
+   "sources": [
+    {
+     "title": "Graph Convolutional Neural Networks for Web-Scale Recommender Systems (PinSage)",
+     "url": "https://arxiv.org/abs/1806.01973"
+    }
+   ],
+   "topics": [
+    "scaling-reads"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "cold-start-content-embedding",
+   "domain": "recsys",
+   "apps": [
+    "Netflix",
+    "Instagram"
+   ],
+   "title": "冷啟動：用內容 embedding 取代 opaque ID",
+   "naive": "直覺做法：每個 asset/item 只有 learned ID embedding，新 item 沒互動就退回熱門榜",
+   "breaks": "哪裡會壞：新 item 沒有 ID 向量可學；退回 popularity heuristic 忽略個人口味，且需拉高 exploration；每種版面各訓一個模型，資料少的版面最慘",
+   "trick": "實際做法：Netflix MAPS 把預訓練 CLIP 圖像 embedding（768 維）與 learned ID embedding concat 後過 MLP，新 asset 一建立就有表示，也能跨 title 轉移偏好；並把五個 canvas 的獨立模型合併成一個，再以 long-term reward 對正樣本加權。Instagram 對新使用者則用 one-hop/two-hop 社交圖找 seed，極新使用者先給熱門內容再依回饋調整",
+   "cost": "代價 / 取捨：Netflix 結果顯示單獨加 embedding 或單獨合併模型線上 A/B 都不顯著，合在一起才顯著，意味著效果有交互作用、測試成本高；需要維護 embedding store",
+   "alternatives": [
+    {
+     "name": "popularity fallback",
+     "pickIf": "極早期或 embedding 尚未就緒"
+    },
+    {
+     "name": "加大 exploration",
+     "pickIf": "可承受短期體驗損失且流量足夠"
+    }
+   ],
+   "numbers": [
+    "CLIP embedding 768 維",
+    "MediaFM 在 8000 萬個 shot 上訓練",
+    "線上 A/B 至少 4 週，僅合併版本 V3 顯著"
+   ],
+   "interviewUse": "講冷啟動時：先說 content embedding 讓新 item 立即可排，再補 exploration 與 fallback，並提 A/B 需驗證交互效果",
+   "sources": [
+    {
+     "title": "MAPS: Netflix's Multimodal Asset Personalization at Scale（經 repo 筆記，原頁 403 未直接開啟）",
+     "url": "https://netflixtechblog.com/maps-netflixs-multimodal-asset-personalization-at-scale-32f96320785e"
+    },
+    {
+     "title": "Designing a Constrained Exploration System (Instagram)",
+     "url": "https://about.instagram.com/blog/engineering/designing-a-constrained-exploration-system"
+    }
+   ],
+   "topics": [],
+   "byAgents": true
+  },
+  {
+   "id": "bandit-exploration",
+   "domain": "recsys",
+   "apps": [
+    "Netflix",
+    "Yahoo News"
+   ],
+   "title": "探索與利用：contextual bandit 取代純 A/B 選素材",
+   "naive": "直覺做法：靠 A/B 測出單一最佳版本，全體使用者統一套用",
+   "breaks": "哪裡會壞：A/B 要等批次資料才有結論，且個人化選項（如每人不同 artwork）組合爆炸；純 exploit 會讓新 item 永遠沒機會",
+   "trick": "實際做法：Li 等人在 Yahoo 新聞把推薦視為 contextual bandit（LinUCB），相對 context-free bandit 點擊率提升 12.5%，並能處理內容池動態變化。Netflix artwork 個人化同樣以 contextual bandit 在探索成本與個人化收益間取捨；MAPS 另留一塊隨機 policy 的 exploration 流量，記錄 propensity 供 IPS 做離線無偏評估",
+   "cost": "代價 / 取捨：探索必然犧牲一部分當下指標；需記錄 propensity 才能離線評估；探索流量比例是產品決策",
+   "alternatives": [
+    {
+     "name": "epsilon-greedy",
+     "pickIf": "先求簡單，探索比例固定即可"
+    },
+    {
+     "name": "Thompson sampling / UCB",
+     "pickIf": "需要隨不確定性自動調整探索量"
+    }
+   ],
+   "numbers": [
+    "Yahoo 資料集超過 3,300 萬事件，相對 context-free bandit 點擊率提升 12.5%",
+    "Netflix 專用 exploration 流量 slice 供 IPS 使用"
+   ],
+   "interviewUse": "講新內容曝光與素材個人化時，提 bandit 的探索成本，並說明 logging propensity 才能做無偏離線評估",
+   "sources": [
+    {
+     "title": "A Contextual-Bandit Approach to Personalized News Article Recommendation",
+     "url": "https://arxiv.org/abs/1003.0146"
+    },
+    {
+     "title": "MAPS（經 repo 筆記）",
+     "url": "https://netflixtechblog.com/maps-netflixs-multimodal-asset-personalization-at-scale-32f96320785e"
+    }
+   ],
+   "topics": [],
+   "byAgents": true
+  },
+  {
+   "id": "interleaving-vs-ab",
+   "domain": "recsys",
+   "apps": [
+    "Netflix",
+    "Spotify"
+   ],
+   "title": "Interleaving：用更少流量比較排序演算法，再用 A/B 看商業指標",
+   "naive": "直覺做法：所有排序改動都開完整 A/B，等數週看留存/時長",
+   "breaks": "哪裡會壞：排序改動眾多，A/B 流量與時間不夠；離線指標（如 MRR、NDCG）不一定預測線上結果",
+   "trick": "實際做法：Interleaving 把兩個演算法的結果在同一使用者的同一份清單中交錯（常見 team-draft：兩邊輪流挑選，擲硬幣決定先後），看哪邊的點擊較多；使用者間差異互相抵消。常搭配離線 IPS / 指標先篩，再 interleaving，最後少數候選才跑完整 A/B。Netflix 採用這個流程（Spotify glossary 提到 Netflix 為採用者）；Netflix GenRec 的驗證為離線 MRR 加約 10% 流量、約 4 週 A/B",
+   "cost": "代價 / 取捨：只衡量演算法偏好，不反映 session 長度、留存等下游結果；對非列表型介面或有互相影響的版面較難套用",
+   "alternatives": [
+    {
+     "name": "完整 A/B",
+     "pickIf": "要看商業/長期指標，或改動不只是排序"
+    },
+    {
+     "name": "離線 replay / IPS",
+     "pickIf": "還沒有上線流量，只做初篩"
+    }
+   ],
+   "numbers": [
+    "Interleaving 比 A/B 少 10 到 100 倍使用者即可偵測相同效應（Spotify 引述已發表研究）",
+    "GenRec：約 10% 流量、約 4 週 A/B（repo 筆記）"
+   ],
+   "interviewUse": "被問「怎麼驗證新排序模型」時，講三層：離線指標 → interleaving → A/B，並說明各層擋掉什麼",
+   "sources": [
+    {
+     "title": "Interleaving（Spotify Confidence glossary）",
+     "url": "https://confidence.spotify.com/glossary/interleaving"
+    },
+    {
+     "title": "Scaling the Instagram Explore recommendations system（offline/online 調參相關性）",
+     "url": "https://engineering.fb.com/2023/08/09/ml-applications/scaling-instagram-explore-recommendations-system/"
+    }
+   ],
+   "topics": [],
+   "byAgents": true
+  },
+  {
+   "id": "llm-native-ranker",
+   "domain": "recsys",
+   "apps": [
+    "Netflix GenRec"
+   ],
+   "title": "LLM 原生排序：verbalize 歷史成 prompt，prefill-only 一次對候選集打分",
+   "naive": "直覺做法：數千個手工特徵 + 客製神經網路，每加一種內容或 surface 都要重做特徵與架構",
+   "breaks": "哪裡會壞：onboarding 新內容/版面成本高；現成 LLM 會過度推薦熱門、幻覺出 catalog 外項目，且 autoregressive decoding 太貴",
+   "trick": "實際做法：Netflix GenRec 兩階段訓練：先用專有語料 adapt 開源 LLM，再針對排序 post-train（catalog-aware cross-entropy + language modeling + reward-weighted loss）。以 catalog-aware scoring head 只對 catalog 內項目打分，serving 時 prefill-only，prompt 只消化一次，一次 forward 對整個候選集打分，跑在 vLLM infra；context 壓縮到約 1/3 且離線指標幾乎無損",
+   "cost": "代價 / 取捨：實驗只證明 batch-compute surfaces 可行，即時 surface 的延遲成本未知；Phase 1 前期投資大；context engineering 有持續調校成本",
+   "alternatives": [
+    {
+     "name": "傳統特徵 + 客製網路",
+     "pickIf": "需要低延遲即時排序，或團隊沒有 GPU/LLM infra"
+    },
+    {
+     "name": "蒸餾後較小模型",
+     "pickIf": "serving 成本是主要限制"
+    }
+   ],
+   "numbers": [
+    "用少 10-40 倍 Phase-2 標註資料，MRR 約 +1.6%",
+    "context token 降到約 1/3，serving 成本約同比下降",
+    "約 1B 與 10B backbone 皆隨資料成長",
+    "線上 A/B 約 10% 流量、約 4 週"
+   ],
+   "interviewUse": "提「LLM 當 ranker」時一定帶上 prefill-only 與 token budget 這兩個成本旋鈕，並聲明只在 batch surface 被驗證",
+   "sources": [
+    {
+     "title": "GenRec: Towards LLM-Native Recommendation at Netflix（經 repo 筆記，原頁 403 未直接開啟）",
+     "url": "https://netflixtechblog.com/genrec-towards-llm-native-recommendation-at-netflix-f20be6f643e3"
+    }
+   ],
+   "topics": [
+    "scaling-reads"
+   ],
+   "byAgents": true
+  }
+ ],
+ "quiz": [
+  {
+   "q": "召回用 two-tower 而排序用 cross-feature 重模型，為什麼不全部用同一種？",
+   "a": "Two-tower 的 item embedding 可離線預算並建 ANN，適合在百萬到十億候選中快速檢索，但 user/item 只在內積互動、表達力有限。重模型可吃交叉特徵但每個候選都要線上算，只能用在縮小後的候選。代價是召回漏掉的內容後面救不回來。",
+   "topic": "recsys",
+   "kind": "取捨"
+  },
+  {
+   "q": "你的 feed 模型只優化 CTR，上線後標題黨變多。怎麼改？為什麼不只加 watch time？",
+   "a": "改成多目標：預測 click、like、see-less 等機率，用可調權重合成 value（Instagram 的 Expected Value 公式；YouTube 用 MMoE 兼顧 engagement 與 satisfaction）。只加 watch time 會偏好長內容，仍無法反映負向回饋。權重用線上 Bayesian optimization 或離線調參，但後者需離線線上指標相關。",
+   "topic": "recsys",
+   "kind": "情境"
+  },
+  {
+   "q": "訓練資料來自曝光 log，為什麼排第一的 item 點擊率高不代表它好？怎麼處理？",
+   "a": "位置本身提高點擊，直接訓練會自我強化（feedback loop）。可像 YouTube 加 shallow tower 吸收位置等 selection bias，serving 時移除；或用隨機化流量搭配 IPS，代價是犧牲部分體驗。",
+   "topic": "recsys",
+   "kind": "取捨"
+  },
+  {
+   "q": "線上準確率比離線低很多，懷疑 training-serving skew。Michelangelo 怎麼從設計上避免？",
+   "a": "特徵轉換用 DSL，表達式屬於模型設定，訓練與預測用同一份；離線線上共用資料與批次 pipeline，近即時特徵走 Kafka/Samza 並提供 backfill。代價是平台化成本與 DSL 表達力限制。",
+   "topic": "recsys",
+   "kind": "情境"
+  },
+  {
+   "q": "要比較兩個排序模型，流量有限。為何先 interleaving 再 A/B？interleaving 看不到什麼？",
+   "a": "Interleaving 在同一使用者清單中交錯兩邊結果，使用者間差異互相抵消，所需使用者比 A/B 少 10 到 100 倍。但它只衡量演算法偏好，看不到 session 長度、留存等下游結果，所以最終候選仍要跑 A/B。",
+   "topic": "recsys",
+   "kind": "取捨"
+  },
+  {
+   "q": "Netflix GenRec 為何強調 prefill-only？它證明了什麼、沒證明什麼？",
+   "a": "Prompt 只消化一次，一次 forward 對整個候選集打分，不做 autoregressive decoding，才能壓低 serving 成本；再搭配 context 壓縮到約 1/3。證明了 batch-compute surface 上可行（約 10% 流量、約 4 週 A/B），未證明即時低延遲 surface。",
+   "topic": "recsys",
+   "kind": "概念"
+  }
+ ]
+}
