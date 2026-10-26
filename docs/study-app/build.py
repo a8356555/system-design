@@ -1,5 +1,6 @@
 """Merge data/*.json into template.html -> system-design-tradeoffs.html, with sanity checks."""
 import collections
+import glob
 import json
 import os
 import re
@@ -19,6 +20,71 @@ DOMAINS = ("video maps connections recsys moderation data-pipeline deploy-migrat
 def load(name):
     with open(os.path.join(HERE, "data", name)) as f:
         return json.load(f)
+
+
+PROBLEM_NAMES = {
+    "tail-latency": "尾延遲 / P99", "cascading-failure": "級聯故障與重試風暴", "overload": "過載保護",
+    "cache-hotspot": "快取故障與熱點", "db-scaling-migration": "資料庫擴展與遷移",
+    "change-induced": "部署與設定變更事故", "multi-region-dr": "多區域與災難復原", "capacity-peaks": "容量與流量尖峰",
+    "data-integrity": "資料正確性與資料遺失", "resource-exhaustion": "資源耗盡與隱性上限",
+    "third-party-dependency": "外部依賴故障", "time-clock": "時間與時鐘", "security-availability": "攻擊造成的可用性事件",
+    "llm-serving": "LLM / AI 服務",
+}
+
+
+def load_incidents(data, problems):
+    """Load data/inc-*.json in PROBLEM_NAMES order, then any extra types (named via inc file's 'problemName')."""
+    paths = sorted(glob.glob(os.path.join(HERE, "data", "inc-*.json")))
+    by_type = {}
+    for path in paths:
+        part = load(os.path.basename(path))
+        by_type[part["problem"]] = part
+    order = [p for p in PROBLEM_NAMES if p in by_type] + [p for p in by_type if p not in PROBLEM_NAMES]
+    incidents, names = [], []
+    for pid in order:
+        part = by_type[pid]
+        names.append([pid, PROBLEM_NAMES.get(pid) or part.get("problemName", pid)])
+        for x in part["incidents"]:
+            x["problem"] = pid
+            x["topics"] = [t for t in x.get("topics", []) if t in TOPIC_IDS]
+            flagged = [n for n in x.get("numbers", []) if SECOND_HAND.search(n)]
+            if flagged:
+                problems.append(f"incident {x['id']}: dropped second-hand numbers {flagged}")
+                x["numbers"] = [n for n in x["numbers"] if n not in flagged]
+            if not x.get("sources"):
+                problems.append(f"incident {x['id']}: no sources")
+        incidents += part["incidents"]
+        data["quiz"] += [dict(q, topic=pid) for q in part.get("quiz", [])]
+    dup = [k for k, v in collections.Counter(x["id"] for x in incidents).items() if v > 1]
+    problems += [f"duplicate incident id {k}" for k in dup]
+    return incidents, names
+
+
+def apply_number_checks(items, problems):
+    """Use verify_numbers.py output (+ manual review) to drop unsupported figures and flag unreadable ones."""
+    check_path = os.path.join(HERE, "data", "number-check.json")
+    if not os.path.exists(check_path):
+        return
+    review_path = os.path.join(HERE, "data", "number-review.json")
+    review = {(r["id"], r["figure"]): r for r in json.load(open(review_path))} if os.path.exists(review_path) else {}
+    status = {}
+    for r in json.load(open(check_path)):
+        status[(r["id"], r["figure"])] = r["status"]
+    by_id = {x["id"]: x for x in items}
+    for (iid, fig), st in status.items():
+        x = by_id.get(iid)
+        if not x or fig not in x.get("numbers", []):
+            continue
+        if st == "unreadable":
+            x["numbersUnverified"] = True
+        elif st == "not_found":
+            r = review.get((iid, fig))
+            verdict = r["verdict"] if r else "unsupported"
+            if verdict == "wrong" and r.get("fix"):
+                x["numbers"] = [r["fix"] if n == fig else n for n in x["numbers"]]
+            elif verdict not in ("supported", "derived"):
+                x["numbers"] = [n for n in x["numbers"] if n != fig]
+                problems.append(f"{iid}: removed unsupported figure {fig[:50]}")
 
 
 def main():
@@ -45,9 +111,13 @@ def main():
                 problems.append(f"mechanism {m['id']}: no sources")
         mechanisms += part["mechanisms"]
         data["quiz"] += [dict(q, topic=domain) for q in part.get("quiz", [])]
+    incidents, problem_types = load_incidents(data, problems)
+    data["incidents"] = incidents
+    data["problems"] = problem_types
     dup = [k for k, v in collections.Counter(m["id"] for m in mechanisms).items() if v > 1]
     problems += [f"duplicate mechanism id {k}" for k in dup]
     data["mechanisms"] = mechanisms
+    apply_number_checks(mechanisms + incidents, problems)
     got = {t["id"] for t in topics}
     problems += [f"missing topic {t}" for t in TOPIC_IDS if t not in got]
     problems += [f"unknown topic id {t}" for t in got - set(TOPIC_IDS)]

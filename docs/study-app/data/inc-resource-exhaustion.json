@@ -1,0 +1,337 @@
+{
+ "problem": "resource-exhaustion",
+ "problemName": "資源耗盡與隱性上限",
+ "incidents": [
+  {
+   "id": "sentry-2015-07-xid-wraparound",
+   "problem": "resource-exhaustion",
+   "company": "Sentry",
+   "title": "Postgres XID 即將回捲：資料庫強制唯讀、truncate 大表才恢復",
+   "date": "2015-07",
+   "kind": "postmortem",
+   "symptom": "Postgres 停止接受寫入、整個系統變成 read-only，事件佇列（Redis buffer）持續堆積，中斷持續了美國工作日的大部分時間。",
+   "rootCause": "Postgres 的 transaction ID（XID）計數器逼近上限；剩餘不到一百萬個 XID 時資料庫會自我保護、拒絕指令。Sentry 是高寫入負載、有非常大的關聯表，aggressive 的 autovacuum 設定反而出現非預期後果，freeze 沒能及時完成。",
+   "whyHard": "autovacuum 看似在跑，但其中一張大表一直沒完成，所以 XID 年齡降不下來；網路上常見的建議（關掉 autovacuum、尖峰外手動跑）反而是錯的。維護參數也有隱藏上限（maintenance_work_mem 配了 10GB，內部實際上限 1GB），調參效果不如預期。",
+   "fix": "止血：把 primary failover 到規格更高的新機器、讓 autovacuum 跑完、清空事件佇列 backlog，最後決定 truncate 一張 event-to-rollup mapping 表，寫入約 5 分鐘內恢復。長期：調整 autovacuum_freeze_max_age、autovacuum_max_workers、autovacuum_naptime、vacuum_freeze_min_age 等參數，並規劃脫離純 SQL 架構。",
+   "tradeoff": "truncate 表等於丟棄該表資料，只在資料可重建 / 可捨棄時可行；更激進的 autovacuum 要多花 I/O 與記憶體，且 vacuum 本身可能被超大表拖住，調參不是保證。",
+   "lessons": [
+    "32-bit XID 是隱性硬上限：要對 XID age（距離上限）設監控與告警，而不是只看 autovacuum 是否開著。",
+    "不要關掉 autovacuum 或只在離峰手動跑；高寫入系統需要持續、足夠積極的 freeze。",
+    "事前就要想好 sacrificial 資料（可 truncate / 可重建的表）與 failover 備援硬體。"
+   ],
+   "detection": "事故中透過查詢 Postgres 內部統計，發現除了一張關聯表外，其他表的 autovacuum 都已完成；從開始到決定 truncate 約 2–3 小時，truncate 後約 5 分鐘恢復寫入。事故本身是資料庫停寫後才被發現（來源未提及事前告警）。",
+   "numbers": [
+    "XID 上限約 2 billion（原文：something around 2 billion）",
+    "剩餘少於 1 million 個 XID 時 Postgres 停止接受指令",
+    "事後硬體：256GB memory（由 128GB 升級）、24 cores",
+    "autovacuum_freeze_max_age = 500000000、autovacuum_max_workers = 6、autovacuum_naptime = 15s",
+    "maintenance_work_mem 設 10GB，但有 1GB 內部硬上限"
+   ],
+   "interviewUse": "支撐「任何 32-bit 計數器都是定時炸彈，要監控它距離上限多遠，並預先設計可回收機制」。",
+   "sources": [
+    {
+     "title": "Transaction ID Wraparound in Postgres (Sentry)",
+     "url": "https://blog.sentry.io/transaction-id-wraparound-in-postgres/"
+    }
+   ],
+   "topics": [
+    "storage-choice",
+    "reliability"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "mailchimp-2019-02-mandrill-xid-wraparound",
+   "problem": "resource-exhaustion",
+   "company": "Mailchimp (Mandrill)",
+   "title": "Mandrill 41 小時中斷：shard 寫入不均衡導致 XID wraparound",
+   "date": "2019-02",
+   "kind": "postmortem",
+   "symptom": "Mandrill 寄信服務中斷，期間僅有約 80% 的排隊郵件被送出。",
+   "rootCause": "5 個 Postgres 實體 instance 中的 shard4 因 hashing 不均衡承受更高寫入量，autovacuum 跟不上，無法清掉舊 transaction ID；XID 觸頂後資料庫進入 safety shutdown。",
+   "whyHard": "2018 年 11 月工程師就發現尖峰時 XID 已用到約一半上限，但判斷不是立即威脅，只開了「加強監控」的 backlog ticket。第一個例外在週日深夜就被記錄，但被集中式日誌裡其他不相關的錯誤淹沒；日誌系統又依賴可寫磁碟，資料庫停寫後可觀測性也受損；且很難分辨 API 錯誤與應用錯誤。",
+   "fix": "啟動 vacuum 後仍太慢，最後 truncate 兩張 TB 級的 Search 與 Url 表釋放 XID，vacuum 約一小時完成；再從 backlog 開始寄送。事後補上 XID wraparound 告警。",
+   "tradeoff": "truncate 犧牲該表資料換取復原時間；若這些表是真實來源資料就不可行。vacuum 時間隨表大小增長，等到 XID 快滿才處理會極慢。",
+   "lessons": [
+    "已辨識出的隱性上限，如果只放進 backlog 而沒有告警，就等於沒處理。",
+    "寫入分佈不均（hot shard）會讓單一 shard 先撞到全域計數器上限。",
+    "日誌 / 告警管道要能在主資料庫停寫時存活，且重要訊號不能被雜訊淹沒。"
+   ],
+   "detection": "第一個例外在週日夜間被記錄但被雜訊淹沒；事故 05:35 UTC 開始，11:58 UTC 才開調查，12:56 UTC 才確認是 wraparound，約 7 小時後才定位；全程約 41 小時。",
+   "numbers": [
+    "事故 2/4 05:35 UTC 開始，2/5 22:09 UTC 結束，約 41 小時",
+    "僅約 80% 排隊郵件被送出",
+    "2/4 14:16 UTC 開始 vacuum，2/5 19:12 UTC truncate 兩張 TB 級表，vacuum 約一小時完成",
+    "2018 年 11 月已知尖峰 XID 約達上限一半"
+   ],
+   "interviewUse": "說明「已知風險要有告警與 owner，不能只放 backlog」，以及 hot shard 如何讓全域上限提早被撞到。",
+   "sources": [
+    {
+     "title": "What we learned from the recent Mandrill outage (Mailchimp)",
+     "url": "https://mailchimp.com/what-we-learned-from-the-recent-mandrill-outage/"
+    }
+   ],
+   "topics": [
+    "sharding",
+    "reliability"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "cloudflare-bind-before-connect-ephemeral-ports",
+   "problem": "resource-exhaustion",
+   "company": "Cloudflare",
+   "title": "bind-before-connect 讓 ephemeral port 變成約 28K 的連線硬頂",
+   "date": "n/a（原文未取得日期）",
+   "kind": "design-writeup",
+   "symptom": "長連線服務的伺服器出現 `ssh: connect to host 127.0.0.1 port 22: Cannot assign requested address` 與 `dig: isc_socket_bind: address in use`，即使還有 ssh session 在運作，整機卻無法再建立新的對外連線。",
+   "rootCause": "先 bind 指定來源 IP 再 connect 的寫法，讓 kernel 為每條連線保留唯一的來源 port，無法在不同目的地之間重用；預設 ephemeral 範圍 32768–60999 約 28,232 個 port，等於每個來源 IP 的並發連線上限，與目的地數量無關。",
+   "whyHard": "CPU、記憶體都正常，只有失敗訊息奇怪；需要理解 kernel 對 port 保留的語意才能看出是 5-tuple 唯一性被錯誤放大成 port 唯一性。",
+   "fix": "TCP：在 bind 前設 IP_BIND_ADDRESS_NO_PORT（Linux 4.2+），延遲到 connect() 才選 port，使 port 可跨目的地重用。UDP 較複雜：用 SO_REUSEADDR 當作協作式鎖並以 netlink SOCK_DIAG 在 userspace 偵測衝突。",
+   "tradeoff": "TCP 修法成本低但需要 kernel 4.2+；UDP 方案依賴所有租戶合作、使用未明文規範的 kernel 語意，且仍有 race condition 視窗。",
+   "lessons": [
+    "連線數的真實上限常是 OS 層的 tuple 空間（來源 IP × port），不是 CPU 或 FD。",
+    "需要來源 IP 隔離的多租戶設計，要預先算好每個來源 IP 的 port 預算。",
+    "長連線（WebSocket、QUIC）會長期佔用 port，使上限更容易被觸及。"
+   ],
+   "detection": "來源描述的是兩個實際失敗現象（ssh 與 dig 錯誤）被注意到後才分析出根因；未提及偵測方式或耗時。",
+   "numbers": [
+    "預設 ephemeral port 範圍 32768–60999，共 28,232 個",
+    "每個協定約 28,000 並發連線上限",
+    "IP_BIND_ADDRESS_NO_PORT 需 kernel 4.2+"
+   ],
+   "interviewUse": "支撐「連線池 / 長連線設計要估算 ephemeral port 預算，單一 client IP 對外連線有 ~28K 的隱性上限」。",
+   "sources": [
+    {
+     "title": "How to stop running out of ephemeral ports and start to love long-lived connections (Cloudflare)",
+     "url": "https://blog.cloudflare.com/how-to-stop-running-out-of-ephemeral-ports-and-start-to-love-long-lived-connections/"
+    }
+   ],
+   "topics": [
+    "api-networking",
+    "reliability"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "github-2021-05-int32-overflow-scoped-tokens",
+   "problem": "resource-exhaustion",
+   "company": "GitHub",
+   "title": "scoped tokens 的 foreign key 超過 INT32 上限",
+   "date": "2021-05",
+   "kind": "postmortem",
+   "symptom": "GitHub Actions 與 GitHub Pages 失敗率升高，使用 scoped token 的 GitHub API 與 git push / pull 等低階操作也被阻擋。",
+   "rootCause": "scoped tokens 相關表的 foreign key 欄位超過 INT32 最大值而溢位，導致相關操作失敗。",
+   "whyHard": "欄位型別在建表時就決定，要在線上大表上改型別需要長時間 schema migration；同時 cache 層已存了無效 token 紀錄，需要慢慢清除，且過程中有短暫的授權範圍錯誤風險（單一 repo 的單一 Action 短暫取得非預期權限，後來撤銷，未確認有未授權存取）。",
+   "fix": "以長時間執行的 schema migration 將 foreign key 改為 INT64，再慢慢清掉 cache 中無效的 token 紀錄。後續加入防止整數溢位的告警與 linting，並人工稽核所有 INT32 欄位。",
+   "tradeoff": "改成 INT64 會增加儲存與索引大小，且大表線上 migration 風險高、耗時長；預防性稽核與 lint 有維護成本，但遠低於事後在事故中遷移。",
+   "lessons": [
+    "auto-increment / foreign key 欄位型別是隱性容量上限，要有「距離上限多遠」的告警。",
+    "新表一開始就用 64-bit ID；已有的 INT32 欄位要盤點。",
+    "溢位修復會牽動 cache 與授權，要評估失效資料的安全影響。"
+   ],
+   "detection": "來源未說明如何發現，只描述溢位使多個服務出現可觀察的失敗；事故從 5/16 07:17 UTC 起歷時 9 小時 48 分。",
+   "numbers": [
+    "5/16 07:17 UTC 開始，持續 9 小時 48 分",
+    "foreign key 超過 max INT32"
+   ],
+   "interviewUse": "支撐「ID 型別一開始就選 64-bit / 或用 snowflake，並對現有序列 id 做上限告警」。",
+   "sources": [
+    {
+     "title": "GitHub Availability Report: May 2021",
+     "url": "https://github.blog/2021-06-02-github-availability-report-may-2021/"
+    }
+   ],
+   "topics": [
+    "id-generation",
+    "storage-choice"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "bluesky-2026-04-unbounded-rpc-port-exhaustion",
+   "problem": "resource-exhaustion",
+   "company": "Bluesky",
+   "title": "無並發上限的 RPC 引發 ephemeral port 耗盡與 OOM death spiral",
+   "date": "2026-04",
+   "kind": "postmortem",
+   "symptom": "約 50% 使用者間歇性無法使用，週一持續約 8 小時；服務正常約 30 分鐘後又掛，反覆循環；錯誤日誌出現 failed to set post cache item 與 port 耗盡訊息，GC 暫停飆升、反覆 OOM。",
+   "rootCause": "前一週上線的內部服務會對 GetPostRecord RPC 送出 15–20 thousand URIs 的批次；該 endpoint 缺少 bounded concurrency（errgroup 的 SetLimit），產生大量 goroutine，耗盡 memcached 連線並堆積 TIME_WAIT socket 佔滿 port。",
+   "whyHard": "大量 memcache 錯誤觸發大量 blocking syscall 的日誌輸出，使 Go runtime 多開 10 倍 OS thread（150 到 1500），加重 GC stop-the-world 暫停，請求卡住又觸發 OOM，形成 death spiral；觀測性不足，過了很久才認出關鍵錯誤日誌。",
+   "fix": "暫時：自訂 dialer，使用隨機化的 loopback IP 擴大 client 的 ip+port 空間，打破 death spiral。長期：為該 endpoint 加上 bounded concurrency。",
+   "tradeoff": "擴大 ip+port 空間只是 workaround，不處理需求過量；限制並發意味著超量請求要排隊或被拒絕，需要搭配呼叫端的 backpressure。",
+   "lessons": [
+    "所有 RPC endpoint 都要有並發上限，漏一個就是系統的最弱環節。",
+    "高容量日誌本身會成為資源消耗源；偏好 Prometheus metrics 或 tracing。",
+    "要有 per-client metrics 才能快速指出哪個呼叫端造成壓力。"
+   ],
+   "detection": "因觀測性不足，工程師花了很久才找到特定錯誤日誌模式；從週六首次告警到週三部署根因修正，約 4 天。",
+   "numbers": [
+    "約 50% 使用者受影響，約 8 小時",
+    "單次請求 15–20 thousand URIs",
+    "OS thread 由 150 增至 1500（10x）",
+    "典型請求查 1–50 個 post"
+   ],
+   "interviewUse": "支撐「每個入口都要 bounded concurrency，並說明 port / thread / memory 如何串成資源耗盡的連鎖」。",
+   "sources": [
+    {
+     "title": "April 2026 Outage Post-Mortem (Jim Calabro, Bluesky)",
+     "url": "https://pckt.blog/b/jcalabro/april-2026-outage-post-mortem-219ebg2"
+    }
+   ],
+   "topics": [
+    "api-networking",
+    "rate-limiting",
+    "reliability"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "pagerduty-2025-08-kafka-producer-per-request",
+   "problem": "resource-exhaustion",
+   "company": "PagerDuty",
+   "title": "每個 API 請求建一個 Kafka producer，耗盡 broker JVM heap",
+   "date": "2025-08",
+   "kind": "postmortem",
+   "symptom": "8/28 03:53 UTC 起 API 回 502、webhook 延遲或遺失、整合與通知降級；16:38 UTC 同樣問題再度發生，尖峰約 95% 事件被拒絕。",
+   "rootCause": "新的 API 使用量追蹤功能有邏輯錯誤，每個 API 請求都建立新的 Kafka producer 而非共用單一 producer；broker 需追蹤數百萬個額外 producer，耗盡 JVM heap 記憶體。",
+   "whyHard": "初期告警看起來像單一 broker 硬體故障，直到更多 broker 出現 OOM 才看出是系統性問題；第二次事故才讓團隊把現象與新功能上線關聯起來。",
+   "fix": "將 JVM heap 加倍並做 rolling restart；透過 PR 關閉該功能的 Kafka 訊息發送（rollback）。",
+   "tradeoff": "加大 heap 只是拖延；治本是 client 端共用 producer。關閉功能代表該使用量追蹤暫時失效。",
+   "lessons": [
+    "broker 端的 per-producer / per-connection 狀態是隱性記憶體成本，client 的 anti-pattern 會放大成 broker OOM。",
+    "新功能上線要有 broker 層 producer 數量等 cardinality 指標與告警。",
+    "故障像單點硬體問題時，要早點檢查是否多個節點同步惡化。"
+   ],
+   "detection": "初始告警誤判為單一 broker 硬體問題；多個 broker OOM 才察覺系統性，第二次事故後才關聯到功能 rollout。第一次事故歷時約 6 小時 17 分，第二次約 3 小時 46 分。",
+   "numbers": [
+    "尖峰每小時約 4.2 million 個額外 producer，為正常新 producer 數的 84 倍",
+    "18.87% create event 請求回 5xx",
+    "約 95% 事件被拒絕（尖峰）",
+    "第一次 03:53–10:10 UTC，第二次 16:38–20:24 UTC"
+   ],
+   "interviewUse": "支撐「使用 Kafka 時 producer 要長壽共用；broker 的 cardinality 狀態（producers / connections / partitions）是容量規劃項目」。",
+   "sources": [
+    {
+     "title": "August 28 Kafka Outages: What Happened and How We're Improving (PagerDuty)",
+     "url": "https://www.pagerduty.com/eng/august-28-kafka-outages-what-happened-and-how-were-improving/"
+    }
+   ],
+   "topics": [
+    "streaming",
+    "reliability"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "gitlab-2025-09-runner-file-descriptors",
+   "problem": "resource-exhaustion",
+   "company": "GitLab",
+   "title": "錯誤範圍的 rate limit 讓 CI runner 累積 file descriptor 耗盡",
+   "date": "2025-09",
+   "kind": "postmortem",
+   "symptom": "CI job 大規模處理失敗，影響 29.3K 使用者。",
+   "rootCause": "部署後，PATCH /jobs/:id/trace endpoint 套用了範圍不正確的 rate limit，runner 送最終 job log 失敗並重試，造成 file descriptor 累積、資源用量上升、job 卡住，最後導致 Docker Machine 操作失敗與 autoscaling 失效。",
+   "whyHard": "rate limit 本身是防護機制，卻讓 client 重試而把 FD 耗盡，轉為 runner 端的資源耗盡與自動擴縮失效，屬於防護措施誤傷。",
+   "fix": "先 rollback 相關 API 變更，再部署 revert MR 永久處理。",
+   "tradeoff": "rate limit 能保護後端，但限制範圍錯誤時代價轉嫁給 client；client 重試需有 backoff 並釋放資源。",
+   "lessons": [
+    "client 端重試若不釋放 FD / 連線，限流會變成 client 的資源洩漏。",
+    "FD 使用率值得獨立告警，是這次最快的訊號。",
+    "防護性變更也要有 canary 與回滾。"
+   ],
+   "detection": "Prometheus Alertmanager 對 runner 上 open file descriptor 使用率升高發出告警，影響開始後約 1 分鐘（00:58 UTC 開始、00:59 UTC 告警）；嚴重度逐步升到 Severity 1，約 02:45 UTC 出現早期恢復跡象，隔日 07:11 UTC 結案。",
+   "numbers": [
+    "29.3K 使用者、4,534 個 top-level namespaces 受影響",
+    "16M 請求、217K CI jobs",
+    "影響 00:58–02:45 UTC，約 1 小時 47 分",
+    "Sev3 01:04 → Sev2 01:20 → Sev1 02:06 UTC"
+   ],
+   "interviewUse": "支撐「限流 + 客戶端重試要一起設計，並對 FD / 連線數這類 saturation 指標做告警」。",
+   "sources": [
+    {
+     "title": "Incident review: runner file descriptor exhaustion (GitLab production issue 20601)",
+     "url": "https://gitlab.com/gitlab-com/gl-infra/production/-/issues/20601"
+    }
+   ],
+   "topics": [
+    "rate-limiting",
+    "reliability"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "ravendb-2023-12-process-per-write-time-wait",
+   "problem": "resource-exhaustion",
+   "company": "RavenDB (Hibernating Rhinos)",
+   "title": "每次寫入開一個新 process：TIME_WAIT 吃光 ephemeral port",
+   "date": "2023-12（文章發表日）",
+   "kind": "postmortem",
+   "symptom": "客戶的 RavenDB cluster 變得極不穩定，節點間間歇性斷線；CPU、記憶體等標準指標看起來正常，但伺服器會一陣子無法存取、可存取、又不可存取。",
+   "rootCause": "客戶有個 script 對每次資料庫寫入都 spawn 新 process，大量 TCP 連線進入 TIME_WAIT，用盡 Linux 的 ephemeral port 範圍，連線數衝到 32K，自己造成類似 DoS 的網路壅塞。",
+   "whyHard": "標準資源指標都正常，症狀是網路層間歇性不可達；讓人誤以為是外部攻擊或叢集本身的問題。",
+   "fix": "避免每次互動使用獨立 process，改用連線池或持久連線。",
+   "tradeoff": "持久連線減少 TIME_WAIT，但需要管理連線生命週期；必要時也可調整 port 範圍，但治標。",
+   "lessons": [
+    "short-lived connection 的 TIME_WAIT 會吃光 ephemeral port，應重用連線。",
+    "看 TCP 連線狀態分佈（TIME_WAIT 數量）的 metrics，比 CPU / memory 更能找出此類問題。",
+    "客戶端行為也能把自己的伺服器打成「自我 DoS」。"
+   ],
+   "detection": "工程師透過分析 TCP 連線指標，發現連線數衝到 32K（與 Linux ephemeral port 上限吻合）；原文未說明診斷花多久或停機多久。",
+   "numbers": [
+    "高峰 32,768 條 TCP 連線，對應 Linux ephemeral port 範圍",
+    "連線多數處於 TIME_WAIT 狀態"
+   ],
+   "interviewUse": "支撐「連線池 / keep-alive 的必要性，以及 TIME_WAIT 與 ephemeral port 作為隱性上限」。",
+   "sources": [
+    {
+     "title": "Production Postmortem: The Spawn of Denial of Service (RavenDB)",
+     "url": "https://ravendb.net/blog/production-postmortem-the-spawn-of-denial-of-service"
+    }
+   ],
+   "topics": [
+    "api-networking",
+    "reliability"
+   ],
+   "byAgents": true
+  }
+ ],
+ "quiz": [
+  {
+   "q": "Postgres 在高寫入系統上，為什麼不能靠「關掉 autovacuum、離峰再手動 vacuum」來避免 XID wraparound？",
+   "a": "XID 是 32-bit 計數器，高寫入下 XID age 持續成長，需要持續 freeze 才能回收；關掉或只離峰跑會讓 age 逼近上限，Postgres 在剩不到 1 million XID 時會拒絕寫入。Sentry 事後的結論是調高 autovacuum 的積極度與 worker 數，並監控 XID age。",
+   "topic": "resource-exhaustion",
+   "kind": "取捨"
+  },
+  {
+   "q": "Mandrill 在 2018 年 11 月已發現 XID 尖峰用到約一半上限，卻只開了 backlog ticket，數個月後事故。這個流程缺了什麼？",
+   "a": "缺少對隱性上限的告警與 owner。已辨識的風險應直接建立 XID age 告警（事故後才補上），並讓告警不被雜訊淹沒；單靠 backlog 無法在寫入不均衡（shard4 hot）讓風險提前爆發時及時反應。",
+   "topic": "resource-exhaustion",
+   "kind": "情境"
+  },
+  {
+   "q": "服務 CPU、記憶體都正常，但對外連線偶發失敗且 netstat 顯示大量 TIME_WAIT、約 32K 連線。你的診斷與修法？",
+   "a": "Linux 預設 ephemeral port 範圍約 28K–32K，短連線大量 TIME_WAIT 吃光 port（RavenDB 的案例）。修法是連線池 / keep-alive 重用連線，而非調大 port 範圍；若是 bind-before-connect，Cloudflare 的做法是 IP_BIND_ADDRESS_NO_PORT。",
+   "topic": "resource-exhaustion",
+   "kind": "情境"
+  },
+  {
+   "q": "某表使用 INT32 auto-increment id，怎麼用「取捨」角度說服團隊現在就改成 64-bit，而不是等快滿再說？",
+   "a": "GitHub 2021 年 scoped token foreign key 溢位事故歷時 9 小時 48 分，且需長時間 online migration。事前改 64-bit 只多花儲存與索引空間；事後在事故中改要承擔大表 migration 風險與 cache 失效資料問題。至少應對序列 id 設剩餘空間告警並稽核 INT32 欄位。",
+   "topic": "resource-exhaustion",
+   "kind": "取捨"
+  },
+  {
+   "q": "Bluesky 與 PagerDuty 兩個事故的共同模式是什麼？各自撞到的隱性上限是什麼？",
+   "a": "共同點是 client 行為放大成伺服端資源耗盡：Bluesky 一個沒有並發上限的 RPC 觸發大量 goroutine、耗盡 ephemeral port 與記憶體；PagerDuty 每請求建一個 Kafka producer，讓 broker 追蹤數百萬 producer 而耗盡 JVM heap。對策是入口 bounded concurrency 與重用長壽 client，並監控 cardinality。",
+   "topic": "resource-exhaustion",
+   "kind": "取捨"
+  },
+  {
+   "q": "限流（rate limit）能完全避免資源耗盡嗎？用 GitLab 2025-09 的案例說明風險。",
+   "a": "不能。範圍錯誤的 rate limit 讓 runner 送 log 失敗並重試，反而累積 file descriptor 造成 runner 耗盡與 autoscaling 失效。限流要搭配 client 端 backoff、釋放資源，並對 FD 使用率做告警（這次也是靠該告警在約 1 分鐘內發現）。",
+   "topic": "resource-exhaustion",
+   "kind": "概念"
+  }
+ ]
+}

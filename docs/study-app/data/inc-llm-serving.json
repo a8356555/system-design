@@ -1,0 +1,332 @@
+{
+ "problem": "llm-serving",
+ "problemName": "LLM / AI 服務",
+ "incidents": [
+  {
+   "id": "anthropic-2025-08-three-bugs",
+   "company": "Anthropic",
+   "title": "三個基礎設施 bug 讓 Claude 回應品質間歇下降：context window 路由、TPU 輸出損毀、XLA top-k 誤編譯",
+   "date": "2025-08",
+   "kind": "postmortem",
+   "symptom": "服務沒有掛、API 也回 200，但使用者回報回應品質不穩：英文提問卻夾雜泰文 / 中文字元、程式碼出現語法錯誤，同一個 prompt 這次成功下次失敗。",
+   "rootCause": "三個獨立 bug 疊加：(1) 本該走標準 routing 的 Sonnet 4 請求被誤送到為即將上線的 1M token context window 設定的伺服器，且 routing 是 sticky；(2) Claude API 的 TPU 伺服器設定錯誤，runtime 效能優化偶爾讓不該出現的 token 得到高機率；(3) 為改善 token 選取而部署的變更，暴露了 XLA:TPU 編譯器的潛伏 bug（approximate top-k 在 bf16 / fp32 混合精度下，只在特定 batch size 與模型設定回傳完全錯誤的結果），而 2024-12 的一個 workaround 先前遮住了它。",
+   "whyHard": "三個 bug 在不同平台以不同速率產生不同症狀；內部 eval 抓不到，因為 Claude 常能從單一錯誤中自行恢復；隱私與安全控管限制工程師存取使用者互動，無法直接檢視問題對話來重現；bug 與 debug 工具是否開啟、batch size 等無關因素相關，重現困難。8/29 的一次 load balancing 變更讓受影響流量增加、回報暴增，但當時沒有立刻把兩者連起來。",
+   "fix": "回滾 TPU 設定錯誤（9/2）、修正 routing 邏輯（9/4）、回滾 approximate top-k 並改用較高精度的 exact top-k（Haiku 9/4、Opus 3 9/12），並與 XLA:TPU 團隊處理編譯器根因；新增針對非預期字元輸出的偵測測試。長期：更敏感的 eval、在更多環節對 production 做持續品質評估、更快的除錯工具（兼顧隱私）。",
+   "tradeoff": "exact top-k 比 approximate 慢，是用延遲換正確性；更廣的 production 品質監控要和使用者隱私控管取捨；依賴使用者回報（/bug、thumbs down）作為補強訊號，延遲較長且雜訊大。",
+   "lessons": [
+    "LLM 服務的 200 OK 不等於品質正常：需要把 eval 放進 production 持續跑，而不只在上線前跑一次。",
+    "sticky routing 會把一次誤路由放大成對同一批使用者的持續降級；路由設定（如 context window 版本）要有一致性檢查。",
+    "編譯器 / kernel 層的 workaround 會遮住更深的 bug，移除 workaround 時要把它當成高風險變更重驗。"
+   ],
+   "numbers": [
+    "Sonnet 4 請求受影響比例：初期 0.8%，8/31 高峰 16%",
+    "約 30% 的 Claude Code 使用者至少有一則訊息被誤路由",
+    "Bedrock 高峰 0.18%；Vertex AI 8/27–9/16 低於 0.0004%",
+    "Opus 4.1 / Opus 4 輸出損毀 8/25–8/28；Sonnet 4 8/25–9/2"
+   ],
+   "detection": "主要靠使用者回報與 eval 之外的訊號：routing bug 8/5 引入，8/29 load balancing 變更使回報暴增後才被認真追查，9/4 修復（約一個月）；輸出損毀 8/25 到 9/2 回滾約 8 天；top-k 於 Haiku 9/4、Opus 3 9/12 回滾。文章自述過度依賴有雜訊的 eval。",
+   "interviewUse": "設計 LLM gateway / serving 時，用它支撐「上線閘門要有 eval、production 要有持續品質監控、routing 要可驗證」。",
+   "sources": [
+    {
+     "title": "A postmortem of three recent issues",
+     "url": "https://www.anthropic.com/engineering/a-postmortem-of-three-recent-issues"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "caching"
+   ],
+   "problem": "llm-serving",
+   "byAgents": true
+  },
+  {
+   "id": "anthropic-2026-03-claude-code-quality",
+   "company": "Anthropic",
+   "title": "Claude Code 品質下降：預設 reasoning effort 降級、thinking 清除 bug、verbosity system prompt",
+   "date": "2026-03",
+   "kind": "postmortem",
+   "symptom": "使用者覺得 Claude Code 變笨、健忘、重複、選工具怪異，coding 品質下降；API 本身不受影響。",
+   "rootCause": "三個獨立變更：(1) 3/4 為解 UI 在 high effort 下的延遲，把預設 reasoning effort 從 high 改 medium；(2) 3/26 為閒置超過一小時的 session 清除舊 thinking 內容的 cache 優化有 bug，變成之後每一輪都清除而不是只清一次；(3) 4/16 加入的 system prompt 限制工具呼叫之間文字 ≤25 words、最終回應 ≤100 words。",
+   "whyHard": "內部 eval 顯示 medium effort 只是「稍低智力、延遲大幅降低」所以看似可接受；清除 bug 只發生在閒置過的 session，又被另一個 server 端實驗與 thinking 顯示變更遮蔽，code review、unit / e2e 測試與 dogfooding 都沒抓到，花了一週以上才確認根因；verbosity prompt 通過了廣泛 eval，要靠 ablation 才看出效果。",
+   "fix": "effort 預設恢復為 high（Sonnet 4.6、Opus 4.6）與 xhigh（Opus 4.7）（4/7）；thinking 清除 bug 於 4/10 在 v2.1.101 修復；verbosity prompt 4/20 回滾；全部於 v2.1.116 解決。長期：擴大員工使用公開版而非內部版、強化 Code Review 工具、對 prompt 變更跑更廣的 per-model eval 並以 ablation 為標準做法、對影響智力的變更設 soak period 與漸進放量。",
+   "tradeoff": "預設用較低 reasoning effort 換延遲與成本，會以使用者感知的品質為代價；soak period 與漸進發布會拖慢迭代速度；ablation 分析要額外成本，變更小時可能不划算。",
+   "lessons": [
+    "system prompt、預設參數、cache 策略都是「模型行為的一部分」，變更要像模型更新一樣過 eval 與漸進發布。",
+    "提升效率的 cache / context 優化要測試長時間閒置、跨 session 狀態這類邊角路徑。",
+    "aggregate eval 沒有回歸不代表沒有回歸，ablation 才能隔離單一變更的影響。"
+   ],
+   "numbers": [
+    "ablation 顯示 verbosity prompt 造成 3% 效能下降",
+    "reasoning effort 變更 3/4 至 4/7 回滾，約 34 天",
+    "thinking 清除 bug 3/26 至 4/10 修復，約 15 天",
+    "verbosity prompt 4/16 至 4/20 回滾，4 天"
+   ],
+   "detection": "三者都先由使用者回報察覺；thinking 清除 bug 難以重現，花了一週以上確認根因；verbosity prompt 靠 ablation 分析才量化出 3% 下降。",
+   "interviewUse": "說明為何「改 default config / prompt」也要走 release 流程，以及為何要 canary + eval + ablation。",
+   "sources": [
+    {
+     "title": "An update on recent Claude Code quality reports (April 23 postmortem)",
+     "url": "https://anthropic.com/engineering/april-23-postmortem"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "caching"
+   ],
+   "problem": "llm-serving",
+   "byAgents": true
+  },
+  {
+   "id": "openai-2024-02-chatgpt-gibberish",
+   "company": "OpenAI",
+   "title": "ChatGPT 回應變成亂碼：推論 kernel 在特定 GPU 設定下算出錯誤結果",
+   "date": "2024-02",
+   "kind": "postmortem",
+   "symptom": "ChatGPT 產生非預期回應與毫無意義的字詞序列。",
+   "rootCause": "一項「改善使用者體驗」的最佳化引入 bug；推論 kernel 在某些 GPU 設定下產生錯誤結果，使模型在生成時選到錯誤的數值 token。",
+   "whyHard": "服務持續回應、沒有錯誤碼，失敗表現為輸出內容錯誤而非請求失敗，傳統可用性指標看不到；且只在特定 GPU 設定下才發生。",
+   "fix": "發出針對受影響 GPU 設定的 inference kernel 修補。",
+   "tradeoff": "kernel 層最佳化換延遲 / 成本，但必須在每一種 GPU 設定上驗證數值正確性，代價是更長的上線驗證矩陣。",
+   "lessons": [
+    "推論層的數值錯誤是靜默失敗，需要輸出品質或 token 分佈層面的監控，而不只是 error rate。",
+    "kernel / 硬體組合是變因：最佳化要逐 GPU 設定驗證。"
+   ],
+   "numbers": [
+    "事故視窗約 25.5 小時（2/20–2/22）",
+    "5 個受影響元件（Conversations、Login、Search、File uploads、Voice mode）",
+    "2/21 07:47 UTC 確認問題"
+   ],
+   "detection": "狀態頁記載 2024-02-21 07:40 UTC 開始調查、07:47 確認問題，隔日 2/22 09:02 確認恢復；文章把 07:47 記為發現時間，約為症狀出現後 7 小時以上（依狀態頁）。",
+   "interviewUse": "支持「LLM 服務需要語意層 health check（輸出品質 canary），不能只看 HTTP 200 與延遲」。",
+   "sources": [
+    {
+     "title": "OpenAI status: ChatGPT unexpected responses RCA",
+     "url": "https://status.openai.com/incidents/ssg8fh7sfyz3"
+    }
+   ],
+   "topics": [
+    "reliability"
+   ],
+   "problem": "llm-serving",
+   "byAgents": true
+  },
+  {
+   "id": "openai-2024-12-11-k8s-telemetry",
+   "company": "OpenAI",
+   "title": "新 telemetry 服務壓垮 Kubernetes control plane，ChatGPT / API / Sora 停擺 4 小時 22 分",
+   "date": "2024-12",
+   "kind": "postmortem",
+   "symptom": "ChatGPT、API（9 個元件）與 Sora 共 14 個元件受影響，大型 cluster 的 DNS 服務發現失效。",
+   "rootCause": "新部署的 telemetry 服務讓每個 node 都對 Kubernetes API 執行成本隨 cluster 規模增長的昂貴操作，壓垮大型 cluster 的 control plane 並使 DNS-based service discovery 失效。",
+   "whyHard": "修復需要 control plane 存取，但 API server 已被壓垮，無法用來回滾。團隊必須先降低 API 負載才拿回操作能力。",
+   "fix": "三路並行：縮減 cluster 以降低總 API 負載、阻擋對管理 API 的昂貴請求、擴大 Kubernetes API server 資源；並把流量從受影響 cluster 遷出。",
+   "tradeoff": "把 service discovery 與 control plane 耦合，換取動態排程的彈性，代價是 control plane 成為所有資料面的隱藏依賴；縮 cluster 與遷流量會犧牲容量。",
+   "lessons": [
+    "可觀測性元件本身也是會造成事故的變更，要在大規模 cluster 上以漸進方式驗證，staging 規模太小抓不到。",
+    "資料面不應在關鍵路徑依賴 control plane 的可用性（本事件主要屬 change-induced / cascading-failure，僅作 AI 服務基礎設施的案例）。"
+   ],
+   "numbers": [
+    "持續 4 小時 22 分（15:16–19:38 PST）",
+    "14 個受影響元件",
+    "15:13 警報觸發，16:36 第一個 cluster 恢復，19:38 全面恢復"
+   ],
+   "detection": "15:13 警報觸發，15:16 客戶開始受影響並找到根因，數分鐘內發現；但因 control plane 被鎖住，修復反而花了數小時。",
+   "interviewUse": "討論 AI 平台的 blast radius 時，說明 control plane 過載如何把資料面一起帶垮、為何要有 break-glass 路徑。",
+   "sources": [
+    {
+     "title": "OpenAI status: 2024-12-11 incident RCA",
+     "url": "https://status.openai.com/incidents/ctrsv3lwd797"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "scaling-reads"
+   ],
+   "problem": "llm-serving",
+   "byAgents": true
+  },
+  {
+   "id": "characterai-2024-inference-cost",
+   "company": "Character.AI",
+   "title": "以 KV cache 與 inter-turn caching 把對話式 LLM 服務成本降 33 倍",
+   "date": "（原文未標示）",
+   "kind": "design-writeup",
+   "symptom": "對話式 AI 流量極大，若直接用商用 API 或未優化推論，每小時對話成本讓消費級 B2C 商業模型無法獲利。",
+   "rootCause": "LLM 生成時需儲存與讀取的 attention KV cache 是主要瓶頸；多輪對話若每輪重算前文，會重複付出相同的 prefill 成本。",
+   "whyHard": "成本與延遲被 KV cache 大小、記憶體頻寬與 GPU 記憶體容量共同限制；單純加 GPU 無法改變單位成本結構。",
+   "fix": "圍繞減少 attention KV cache 的資料量做 transformer 架構與推論系統優化，並改進 inter-turn caching（跨輪次快取對話狀態以避免重算）。文章本身只做概述，細節在另一篇技術文。",
+   "tradeoff": "跨輪次 cache 需要把同一對話導向持有 cache 的機器，並管理 cache 記憶體；自研架構與推論堆疊的工程成本只在流量夠大時划算。（此段為本文判斷，原文未詳述。）",
+   "lessons": [
+    "對話型工作負載的主要成本槓桿是不重算與縮小 KV cache。",
+    "把成本當成 first-class 指標（每小時對話成本）才能指導架構決策。"
+   ],
+   "numbers": [
+    "約 20,000 queries per second（約 Google Search 流量的 20%）",
+    "每小時對話成本低於一美分",
+    "自 2022 年上線以來成本降低 33 倍",
+    "比使用主流商用 API 的競爭者便宜 13.5 倍"
+   ],
+   "detection": null,
+   "interviewUse": "被問「design ChatGPT 類服務如何控成本」時，帶出 KV cache 與跨輪次快取、sticky routing。",
+   "sources": [
+    {
+     "title": "Optimizing AI Inference at Character.AI",
+     "url": "https://blog.character.ai/optimizing-ai-inference-at-character-ai/"
+    }
+   ],
+   "topics": [
+    "caching",
+    "scaling-reads"
+   ],
+   "problem": "llm-serving",
+   "byAgents": true
+  },
+  {
+   "id": "vllm-2023-pagedattention",
+   "company": "vLLM",
+   "title": "PagedAttention：把 KV cache 做成分頁，記憶體浪費從 60–80% 降到 4% 以下",
+   "date": "2023-06",
+   "kind": "design-writeup",
+   "symptom": "GPU 記憶體被 KV cache 吃光，batch 開不大、吞吐上不去。",
+   "rootCause": "序列長度不可預測，既有系統為每個請求預留連續記憶體，造成碎片與過度保留，浪費 60%–80% 的記憶體。",
+   "whyHard": "不知道回應會多長，只能按最大長度預留；LLaMA-13B 單一序列的 KV cache 就可達 1.7GB，直接限制並發。",
+   "fix": "PagedAttention：把 KV cache 切成固定大小 block，用 block table 映射，不需連續；平行 sampling / beam search 以 copy-on-write 共享 block。",
+   "tradeoff": "需要自訂 attention kernel 與 block 管理，增加實作複雜度；浪費只剩每個序列最後一個 block。",
+   "lessons": [
+    "把 OS 的虛擬記憶體概念套用在 KV cache，可同時解決碎片與共享。",
+    "LLM serving 的吞吐常被記憶體容量而非算力限制。"
+   ],
+   "numbers": [
+    "既有系統浪費 60%–80% 記憶體",
+    "vLLM 浪費低於 4%",
+    "吞吐最高為 HuggingFace Transformers 的 24 倍、TGI 的 3.5 倍",
+    "LMSYS 部署：最高 30 倍吞吐並減少 50% GPU",
+    "共享 block 可減少最高 55% 記憶體"
+   ],
+   "detection": null,
+   "interviewUse": "回答「為什麼 LLM serving 的 batch size 受限、怎麼提高 GPU 利用率」。",
+   "sources": [
+    {
+     "title": "vLLM: Easy, Fast, and Cheap LLM Serving with PagedAttention",
+     "url": "https://vllm.ai/blog/2023-06-20-vllm"
+    }
+   ],
+   "topics": [
+    "caching",
+    "scaling-reads"
+   ],
+   "problem": "llm-serving",
+   "byAgents": true
+  },
+  {
+   "id": "anyscale-2023-continuous-batching",
+   "company": "Anyscale",
+   "title": "Continuous batching：用迭代層級排程把吞吐提高 23 倍並降低延遲",
+   "date": "2023-06",
+   "kind": "design-writeup",
+   "symptom": "靜態 batching 下，GPU 在等整批最慢的序列結束時閒置，吞吐低、延遲高。",
+   "rootCause": "同一批請求的輸出長度不同，已完成的序列佔著位置直到整批結束；加上 13B 模型每個 token 約需近 1MB 狀態，限制 batch 大小。",
+   "whyHard": "輸出長度事先未知，且輸出長度變異越大靜態 batching 浪費越多；記憶體限制又讓單純加大 batch 不可行。",
+   "fix": "序列一完成就在該位置插入新序列（continuous / iteration-level batching），搭配 vLLM 的 PagedAttention 動態分配 KV cache。",
+   "tradeoff": "系統接近飽和時，延遲優勢會縮小；排程與記憶體管理複雜度更高。",
+   "lessons": [
+    "LLM 排程粒度是 iteration 而不是 request。",
+    "吞吐與延遲不必然是取捨：消除閒置可同時改善兩者。"
+   ],
+   "numbers": [
+    "vLLM 相對 naive static batching 提升 23 倍",
+    "TGI / Ray Serve 提升 8 倍；NVIDIA FasterTransformer 靜態最佳化提升 4 倍",
+    "基準：OPT-13B 於 A100 40GB",
+    "13B 模型每 token 近 1MB 狀態"
+   ],
+   "detection": null,
+   "interviewUse": "說明 LLM 排程為何不同於一般 request/response，以及 batching 對成本的影響。",
+   "sources": [
+    {
+     "title": "How continuous batching enables 23x throughput in LLM inference while reducing p50 latency",
+     "url": "https://www.anyscale.com/blog/continuous-batching-llm-inference"
+    }
+   ],
+   "topics": [
+    "async-jobs",
+    "scaling-reads"
+   ],
+   "problem": "llm-serving",
+   "byAgents": true
+  },
+  {
+   "id": "databricks-2023-llm-inference-perf",
+   "company": "Databricks",
+   "title": "LLM 推論效能工程：TTFT / TPOT、memory-bound decode 與 batch 取捨",
+   "date": "（原文未標示）",
+   "kind": "design-writeup",
+   "symptom": "需要在延遲、吞吐與成本之間為 LLM 服務做容量與硬體選擇，但直覺（多加 GPU）常常無效。",
+   "rootCause": "第一個 token（prefill）偏 compute-bound，之後的 decode 在小 batch 時受記憶體頻寬限制，GPU 花更多時間載入參數而非計算。",
+   "whyHard": "Model Bandwidth Utilization 會隨 batch 變大與跨 GPU 切分而下降，多 GPU 的 tensor parallelism 報酬遞減。",
+   "fix": "先決定優化目標（延遲、吞吐或成本），優先用 continuous batching 提升 GPU 利用率，必要時 INT8 量化降低 KV cache，並以端到端實測驗證而不是只看理論。",
+   "tradeoff": "batch 越大吞吐越高但單請求延遲上升；量化省記憶體但可能影響品質；tensor parallelism 加卡不等比降延遲。",
+   "lessons": [
+    "用 MBU 這類指標判斷是否還有優化空間。",
+    "容量規劃要把 KV cache 記憶體算進去，不只是模型權重。"
+   ],
+   "numbers": [
+    "continuous batching 比 dynamic batching 高 10x–20x 吞吐",
+    "A100 上 batch 1 到 64：吞吐提升 14 倍、延遲增加 4 倍",
+    "Llama2-70B 由 4 張改 8 張 A100，延遲只降到 0.7 倍",
+    "Llama2-70B 在 1024 tokens、batch 64 的 KV cache：FP16 20GB，INT8 10GB"
+   ],
+   "detection": null,
+   "interviewUse": "做 GPU 容量估算與解釋延遲 / 吞吐取捨時引用。",
+   "sources": [
+    {
+     "title": "LLM Inference Performance Engineering: Best Practices",
+     "url": "https://www.databricks.com/blog/llm-inference-performance-engineering-best-practices"
+    }
+   ],
+   "topics": [
+    "scaling-reads",
+    "caching"
+   ],
+   "problem": "llm-serving",
+   "byAgents": true
+  }
+ ],
+ "quiz": [
+  {
+   "q": "LLM 服務 API 回 200、延遲正常，但使用者說品質變差。為什麼傳統 SLO 抓不到，你會加什麼監控？",
+   "a": "SLO 只量可用性與延遲，不量輸出正確性。Anthropic 2025 事故中 eval 因模型能自我修正而漏掉。應加 production 持續 eval / 輸出 canary、異常字元或 token 分佈偵測，並收集使用者回饋訊號。",
+   "topic": "llm-serving",
+   "kind": "情境"
+  },
+  {
+   "q": "想把 Claude Code 預設 reasoning effort 從 high 降到 medium 來降延遲，上線流程該怎麼做？為什麼不能只靠內部 eval？",
+   "a": "Anthropic 2026 事故中內部 eval 顯示只稍低智力，但使用者感受明顯變差，34 天後才回滾。應 canary / 漸進放量、soak period、ablation 隔離單一變更，並把使用者回報當成訊號；代價是迭代變慢。",
+   "topic": "llm-serving",
+   "kind": "取捨"
+  },
+  {
+   "q": "靜態 batching 與 continuous batching 在 LLM serving 怎麼選？",
+   "a": "輸出長度不一的線上服務選 continuous batching：序列完成就補入新序列，Anyscale 測得 vLLM 比 naive static 高 23 倍吞吐。代價是排程與 KV cache 管理較複雜，且系統飽和時延遲優勢縮小。離線、長度一致的批次工作靜態 batching 可接受。",
+   "topic": "llm-serving",
+   "kind": "取捨"
+  },
+  {
+   "q": "vLLM 的 PagedAttention 解決什麼問題？代價是什麼？",
+   "a": "既有系統為不可預測的輸出長度預留連續 KV cache，浪費 60–80% 記憶體；PagedAttention 用固定大小 block 加 block table，浪費降到 4% 以下並可 copy-on-write 共享。代價是需要自訂 attention kernel 與 block 管理的複雜度。",
+   "topic": "llm-serving",
+   "kind": "概念"
+  },
+  {
+   "q": "多輪對話產品要壓低單位成本，你會先動哪個槓桿？為什麼？",
+   "a": "縮小並重用 KV cache：跨輪次 cache 避免重算前文，需要 sticky routing 讓同一對話回到持有 cache 的節點。Character.AI 自 2022 起成本降 33 倍。代價是 cache 記憶體管理與路由一致性，且 sticky 也會放大誤路由（Anthropic 2025 sticky routing）。",
+   "topic": "llm-serving",
+   "kind": "取捨"
+  },
+  {
+   "q": "新增的 telemetry 服務壓垮 Kubernetes control plane，你要回滾卻發現無法操作。怎麼辦、事前該如何避免？",
+   "a": "OpenAI 2024-12 以縮小 cluster 降 API 負載、封鎖昂貴管理 API 請求、擴大 API server 三路並行拿回控制權。事前：大型 cluster 漸進發布、資料面不依賴 control plane 做 service discovery、保留 break-glass 路徑。",
+   "topic": "llm-serving",
+   "kind": "情境"
+  }
+ ]
+}

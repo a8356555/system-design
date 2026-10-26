@@ -1,0 +1,333 @@
+{
+ "problem": "cascading-failure",
+ "incidents": [
+  {
+   "id": "roblox-2021-consul-outage",
+   "problem": "cascading-failure",
+   "company": "Roblox",
+   "title": "73 小時停機：Consul streaming 與 BoltDB freelist 效能退化",
+   "date": "2021-10",
+   "kind": "postmortem",
+   "symptom": "全站服務不可用，線上玩家一度掉到正常的 50%，從 10/28 到 10/31 共 73 小時才完全恢復。",
+   "rootCause": "一天前才對流量路由後端服務啟用的 Consul streaming，在高讀＋高寫負載下對單一 Go channel 產生嚴重 contention；同時 Consul 底層 BoltDB 的 freelist 出現病態效能，每次 Raft log append 都要寫出 7.8MB 的 freelist。",
+   "whyHard": "兩個互不相關的問題疊在一起，且監控系統本身依賴 Consul（循環依賴）而失去可視性；團隊連續四次誤判（換壞硬體、加到 128 核、降低 Consul 使用量、退回 64 核），直覺的加資源與減載都無效。恢復後 cache 系統還要從零 bootstrap，部署工具不是為此設計。",
+   "fix": "止血：關閉 streaming（10/30 15:51）後逐步恢復 Consul 與 cache。長期：移除監控對 Consul 的循環依賴、把關鍵服務拆到獨立 Consul cluster、清掉過時 KV 資料、改用 bbolt、改善大規模冷啟動、建立地理上獨立的 data center。",
+   "tradeoff": "拆 cluster 與多 data center 增加營運與成本；streaming 是效率優化，重新啟用前必須在真實規模與負載下驗證。",
+   "lessons": [
+    "共享的服務發現／設定中心是全站單點，要有爆炸半徑隔離",
+    "監控不能依賴被監控的系統",
+    "新優化（efficiency feature）上線要在真實規模下壓測，且要有快速 rollback"
+   ],
+   "numbers": [
+    "總共 73 小時（10/28 到 10/31 16:45）",
+    "18,000 台伺服器、170,000 個 container、5,000 萬日活玩家",
+    "Consul 5 個 voter + 5 個 non-voter",
+    "KV 寫入 P50 延遲從 300ms 以下升到 2 秒",
+    "4.2GB log store 只有 489MB 真實資料，freelist 7.8MB，每次 append 的資料 16kB 以下"
+   ],
+   "interviewUse": "支撐「共享控制平面（service discovery）要隔離、且可觀測性不能與其共用命運」。",
+   "sources": [
+    {
+     "title": "Roblox Return to Service 10/28-10/31 2021",
+     "url": "https://about.roblox.com/newsroom/2022/01/roblox-return-to-service-10-28-10-31-2021"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "scaling-reads"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "google-sre-addressing-cascading-failures",
+   "problem": "cascading-failure",
+   "company": "Google",
+   "title": "SRE book：Addressing Cascading Failures",
+   "date": "2016",
+   "kind": "design-writeup",
+   "symptom": "一個 cluster 失效後流量轉到另一個 cluster，後者超載、跟著失效，形成連鎖。",
+   "rootCause": "Server overload 導致 CPU、記憶體（GC death spiral）、thread、file descriptor 等資源耗盡，健康檢查失敗又把 task 踢掉，剩餘 task 負載更高；重試與冷 cache 進一步放大負載。",
+   "whyHard": "正反饋迴圈：負載越高、失敗越多、重試越多。冷 cache 重啟時 100% 請求都昂貴，剛重啟的 task 立刻再被打垮；單純加機器常常追不上。",
+   "fix": "預防：load shedding 與 graceful degradation、隨機化指數退避、每請求重試上限加 server 級 retry budget、deadline propagation、佇列長度控制在 thread pool 的 50% 以下、N+2 容量規劃。恢復：加資源、暫停健康檢查、重啟、必要時把流量降到約 1% 再逐步放回、停掉批次負載。",
+   "tradeoff": "load shedding／降級會讓部分使用者看到錯誤或低品質結果；N+2 容量是持續的成本。",
+   "lessons": [
+    "先保護自己（拒絕超額請求）比盡量接單更能維持整體可用",
+    "重試要有預算，且不要在多層同時重試",
+    "恢復時流量要能被『分段放回』"
+   ],
+   "numbers": [
+    "範例 cluster 原本 1,000 QPS，對方失效後升到 1,200 QPS 即無法承受",
+    "重試把後端負載推到 10,200 QPS",
+    "server 級 retry budget 範例：每分鐘 60 次重試",
+    "佇列長度建議不超過 thread pool 的 50%",
+    "大錘：先降到約 1% 流量"
+   ],
+   "interviewUse": "面試被問『怎麼避免雪崩』時，直接列 load shedding、retry budget、deadline propagation、N+2 與降級。",
+   "sources": [
+    {
+     "title": "Addressing Cascading Failures (Google SRE Book)",
+     "url": "https://sre.google/sre-book/addressing-cascading-failures/"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "rate-limiting"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "aws-builders-retry-backoff-jitter",
+   "problem": "cascading-failure",
+   "company": "AWS",
+   "title": "Builders' Library：Timeouts, retries and backoff with jitter",
+   "date": "2019",
+   "kind": "design-writeup",
+   "symptom": "下游短暫變慢時，各層重試疊加，使下游負載暴增而無法恢復。",
+   "rootCause": "多層架構每層都重試，重試次數相乘：五層、每層重試三次，資料庫負載放大到 243 倍；同步的重試還會讓流量在同一時刻擠在一起。",
+   "whyHard": "重試本身看起來是『保守的容錯』，卻在下游最脆弱時把它推到更深的過載；而且放大發生在各層、單看任一層的設定都合理。",
+   "fix": "指數退避加 jitter 打散重試；限制重試次數；AWS SDK 用 token bucket 限制重試速率，而不是 circuit breaker（個人補充：避免多層同時重試）。",
+   "tradeoff": "token bucket 在 token 耗盡後仍以固定速率放行，避免了 circuit breaker 的模態切換與恢復延遲，但也代表持續有一定流量打向不健康的下游。",
+   "lessons": [
+    "重試是放大器，數量要在整個呼叫鏈上算",
+    "退避一定要加 jitter",
+    "用 retry budget 取代無限制重試"
+   ],
+   "numbers": [
+    "五層、每層重試 3 次，資料庫負載放大 243 倍",
+    "某系統 timeout 約設在 20 毫秒的例子"
+   ],
+   "interviewUse": "解釋為什麼『每層都 retry 3 次』是危險的，並說出 jitter 與 token bucket。",
+   "sources": [
+    {
+     "title": "Timeouts, retries and backoff with jitter (AWS Builders' Library)",
+     "url": "https://builder.aws.com/content/3EumjoZascWd1oZiEgL8ORlv3qE/timeouts-retries-and-backoff-with-jitter"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "api-networking"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "aws-builders-load-shedding",
+   "problem": "cascading-failure",
+   "company": "AWS",
+   "title": "Builders' Library：Using load shedding to avoid overload",
+   "date": "2020",
+   "kind": "design-writeup",
+   "symptom": "超載時 server 變慢，client 超時重試，goodput 反而下降。",
+   "rootCause": "過載下 server 花更多時間 context switching，吞吐下降；請求逾時後 server 已做的工作全部浪費，client 又重試，使 offered load 倍增。",
+   "whyHard": "系統接收越多工作越慢，沒有自然的止損點；若不主動拒絕，恢復要等重試風暴自己退去。",
+   "fix": "在接近過載時主動拒絕多餘請求，只服務接受的請求並維持低延遲。",
+   "tradeoff": "被拒絕的使用者得到錯誤；需要決定拒絕哪些流量（優先級），並避免 client 把拒絕當成要重試的訊號。",
+   "lessons": [
+    "寧可快速失敗一部分，也不要讓全部請求變慢到逾時",
+    "逾時後的工作是純浪費，要能及早取消"
+   ],
+   "numbers": [],
+   "interviewUse": "支撐『為什麼要在服務端做 load shedding 而不是只靠 autoscaling』。",
+   "sources": [
+    {
+     "title": "Using load shedding to avoid overload (AWS Builders' Library)",
+     "url": "https://builder.aws.com/content/3Eun1EEyX6p2e3VYNyRLSJzLuMV/using-load-shedding-to-avoid-overload"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "rate-limiting"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "slack-2021-01-04-tgw-outage",
+   "problem": "cascading-failure",
+   "company": "Slack",
+   "title": "2021-01-04 停機：Transit Gateway 過載與 autoscaling 誤判",
+   "date": "2021-01",
+   "kind": "postmortem",
+   "symptom": "假期後第一個週一早上，Slack 大量封包遺失與延遲，使用者無法使用，且內部儀表板也失效。",
+   "rootCause": "假期後 client cache 全冷，單一 AWS Transit Gateway 因流量尖峰來不及擴容而過載；web tier 因網路延遲使 Apache thread 等待、CPU 降低，autoscaling 反而縮容，之後又飽和。",
+   "whyHard": "儀表板與告警服務跑在不同 VPC、依賴 TGW，導致失去可視性；損壞的 instance 累積並撞到 autoscaling group 上限；provision service 在擴 web tier 時又撞上 Linux open files 限制與 AWS quota。",
+   "fix": "把儀表板移到與資料庫同 VPC、定期對 provision service 壓測、重新檢視 health check 與 autoscaling 設定、事前請求 TGW 預先擴容。",
+   "tradeoff": "預先擴容有成本；autoscaling 指標（CPU）在網路退化時會誤導。",
+   "lessons": [
+    "autoscaling 指標要能反映真實壓力，CPU 低不代表健康",
+    "擴容工具本身要壓測，否則恢復時它是瓶頸",
+    "可觀測性不要與被觀測系統共用依賴",
+    "託管服務的自動擴容也有速度上限，年度級尖峰要事先向供應商預約容量。",
+    "擴容管線（provisioning）本身是需要 load test 的系統，其瓶頸會讓 autoscaling 失效。",
+    "autoscaling 的訊號在故障時會誤導（CPU 下降 → 縮容），要設計防誤縮的機制。"
+   ],
+   "numbers": [
+    "7:01 到 7:15 之間嘗試增加 1,200 台 web tier 伺服器",
+    "provision service 兩個瓶頸：open files 限制與 AWS quota"
+   ],
+   "interviewUse": "支撐『autoscaling 不是保險、需要預先擴容與對擴容流程做壓測』。",
+   "sources": [
+    {
+     "title": "Slack's Outage on January 4th 2021",
+     "url": "https://slack.engineering/slacks-outage-on-january-4th-2021/"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "scaling-reads"
+   ],
+   "byAgents": true,
+   "alsoIn": [
+    "capacity-peaks"
+   ]
+  },
+  {
+   "id": "aws-2021-12-us-east-1-network-congestion",
+   "problem": "cascading-failure",
+   "company": "AWS",
+   "title": "2021-12 us-east-1：內部網路連線風暴與重試",
+   "date": "2021-12",
+   "kind": "postmortem",
+   "symptom": "us-east-1 多個服務延遲與錯誤，連監控與控制台也受影響，約持續到下午 2:22 PST 才完全恢復。",
+   "rootCause": "一個自動化擴容活動讓內部網路中的 client 產生異常行為，造成大量連線，壓垮內部網路與主網路之間的網路裝置；延遲與錯誤導致更多連線嘗試與重試。",
+   "whyHard": "壅塞立刻癱瘓即時監控，工程師只能靠 log；內部部署系統也受損，且為避免干擾仍在運作的工作負載而放慢動作。",
+   "fix": "關閉自動擴容活動、修正潛在的 client 退避程式（兩週內部署）、為網路加上保護設定、重新設計 Service Health Dashboard。",
+   "tradeoff": "關閉自動擴容會降低彈性；修補退避碼意味著原本的 client 退避是缺陷。",
+   "lessons": [
+    "內部 client 也需要正確的 backoff",
+    "管理與監控流量應與業務流量隔離",
+    "重大事件時要避免在不可見的情況下大幅變更",
+    "內部管理網路（control plane 流量）與客戶資料流量要隔離，retry storm 會把 control plane 先壓垮。",
+    "Status page、support、console 這類 meta 系統要跨 region，否則事故時使用者看不到狀態也求助無門。",
+    "client 的 back-off / jitter 是 region 級容量保護的一部分，不是細節。"
+   ],
+   "numbers": [
+    "7:30 AM PST 觸發",
+    "9:28 AM PST DNS 流量改道，部分恢復",
+    "1:34 PM 壅塞顯著改善",
+    "2:22 PM 網路裝置完全恢復"
+   ],
+   "interviewUse": "支撐『retry 風暴＋共享網路路徑＋監控共命運』是最難恢復的組合。",
+   "sources": [
+    {
+     "title": "Summary of the AWS Service Event in the N. Virginia (US-EAST-1) Region",
+     "url": "https://aws.amazon.com/message/12721/"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "api-networking"
+   ],
+   "byAgents": true,
+   "alsoIn": [
+    "multi-region-dr"
+   ]
+  },
+  {
+   "id": "netflix-adaptive-concurrency-limits",
+   "problem": "cascading-failure",
+   "company": "Netflix",
+   "title": "Performance Under Load：自適應並發限制",
+   "date": "2018-03",
+   "kind": "design-writeup",
+   "symptom": "服務超載時佇列無限增長，延遲上升直到全部請求逾時甚至 OOM，並拖垮呼叫者。",
+   "rootCause": "靜態並發上限靠效能測試人工設定，會因拓撲變化、部分故障、autoscaling、程式碼變更而過期。",
+   "whyHard": "限制太低浪費容量、太高又無法保護；分散式系統的真實容量一直在變，人工調參追不上。",
+   "fix": "借用 TCP congestion control：以最小延遲與取樣延遲的比值（gradient）推估佇列是否形成，newLimit = currentLimit × gradient + queueSize，預設 queueSize 為目前 limit 的平方根；限制在 server 端強制，超額直接拒絕。",
+   "tradeoff": "演算法依賴延遲訊號，雜訊大或延遲本來就高變異的服務可能誤判；每台 server 獨立判斷，不協調。",
+   "lessons": [
+    "以 Little's law 理解並發＝速率×服務時間",
+    "用延遲作為過載訊號，自動找容量",
+    "在 server 端拒絕，讓 autoscaling 有時間生效"
+   ],
+   "numbers": [
+    "limit 公式 newLimit = currentLimit × gradient + queueSize",
+    "queueSize 預設為 limit 的平方根"
+   ],
+   "interviewUse": "支撐『用自適應並發限制取代手調 rate limit』。",
+   "sources": [
+    {
+     "title": "Performance Under Load (Netflix Tech Blog)",
+     "url": "https://netflixtechblog.medium.com/performance-under-load-3e6fa9a60581"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "rate-limiting"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "bronson-2021-metastable-failures",
+   "problem": "cascading-failure",
+   "company": "Rockset / Penn State / UNH（Bronson et al.）",
+   "title": "Metastable Failures in Distributed Systems（HotOS 2021）",
+   "date": "2021-05",
+   "kind": "design-writeup",
+   "symptom": "觸發原因（短暫網路中斷、cache 遺失）移除後，系統仍卡在低 goodput 的壞狀態。",
+   "rootCause": "持續效應（sustaining effect）：重試或 look-aside cache 等本為提升效率／可靠性的機制，在壞狀態下形成正反饋迴圈。例：重試使負載翻倍，使 DB 延遲一直過高，所有查詢逾時；cache 空了而 cache 填充依賴成功查詢，永遠填不回來。",
+   "whyHard": "觸發 ≠ 根因，移除觸發沒用；系統有『advertised capacity』與低得多的『hidden capacity』，平時看不出。",
+   "fix": "降低負載到 hidden capacity 以下或限制重試；設計上用 circuit breaker／bulkhead、退避加 jitter、低優先序處理重試、監控 characteristic metrics。",
+   "tradeoff": "保留 hidden capacity 的餘裕意味著平時資源利用率偏低；autoscaling 也不能免疫。",
+   "lessons": [
+    "要量測並監控 hidden capacity，而非只看 advertised capacity",
+    "效率優化（cache、retry）是亞穩態的常見來源",
+    "恢復需要主動減載，而不是等觸發消失"
+   ],
+   "numbers": [
+    "範例：DB 300 QPS 以下 100ms 內回應；280 QPS 遇 10 秒中斷後因重試變 560 QPS 而卡住",
+    "穩定上限約 150 QPS 之下；需降到 150 QPS 以下或限制重試才能恢復",
+    "look-aside cache：advertised 3,000 QPS，hidden 300 QPS",
+    "90% 命中率的 cache 遺失造成 10 倍查詢放大"
+   ],
+   "interviewUse": "面試中用『hidden capacity vs advertised capacity』說明為何雪崩後單純等待不會恢復。",
+   "sources": [
+    {
+     "title": "Metastable Failures in Distributed Systems (HotOS '21)",
+     "url": "https://sigops.org/s/conferences/hotos/2021/papers/hotos21-s11-bronson.pdf"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "caching"
+   ],
+   "byAgents": true
+  }
+ ],
+ "quiz": [
+  {
+   "q": "服務的呼叫鏈有五層，每層對下游最多重試 3 次。下游短暫變慢時最糟會發生什麼？你會怎麼改？",
+   "a": "重試相乘，最底層資料庫負載可放大到 243 倍（AWS Builders' Library 的例子），讓它無法恢復。改成只在最靠近下游的一層重試、加指數退避與 jitter，並用 token bucket／retry budget 限制總重試速率。",
+   "topic": "cascading-failure",
+   "kind": "情境"
+  },
+  {
+   "q": "為什麼 DB 故障的觸發原因（例如短暫網路中斷）排除後，系統仍可能長時間無法恢復？該怎麼處理？",
+   "a": "亞穩態故障：重試或 cache 空白等機制形成正反饋，使實際負載高於 hidden capacity（論文例：advertised 3,000 QPS，hidden 300 QPS）。必須主動減載或限制重試，單靠等待觸發消失不會恢復。",
+   "topic": "cascading-failure",
+   "kind": "取捨"
+  },
+  {
+   "q": "服務超載時，你選擇 autoscaling 還是 server 端 load shedding 當第一道防線？為什麼不只用 autoscaling？",
+   "a": "先用 load shedding（或自適應並發限制），因為擴容需要時間，期間逾時的請求工作全部浪費且被重試放大。autoscaling 再配合使用。Slack 2021-01 事件也顯示 autoscaling 的 CPU 指標在網路退化時會誤判而縮容。",
+   "topic": "cascading-failure",
+   "kind": "取捨"
+  },
+  {
+   "q": "Netflix 為什麼用自適應並發限制而不是人工設定的靜態上限？它的代價是什麼？",
+   "a": "靜態上限靠壓測，會隨拓撲、部分故障、autoscaling、程式變更而過期。自適應法借用 TCP congestion control，用最小延遲／取樣延遲的 gradient 調整 limit。代價是依賴延遲訊號，高變異服務可能誤判，且每台獨立判斷不協調。",
+   "topic": "cascading-failure",
+   "kind": "概念"
+  },
+  {
+   "q": "Roblox 2021 停機長達 73 小時，監控與診斷為何特別困難？可遷移的設計教訓是什麼？",
+   "a": "監控系統依賴被監控的 Consul（循環依賴），且有兩個互不相關的根因，團隊連續四次誤判。教訓：可觀測性不能與被觀測系統共命運，共享的服務發現／設定中心要拆 cluster 隔離爆炸半徑。",
+   "topic": "cascading-failure",
+   "kind": "情境"
+  },
+  {
+   "q": "Google Cloud 2025-06 事件中，為什麼修好根因後 us-central1 仍多花約 2 小時 40 分才恢復？",
+   "a": "大量 Service Control task 同時重啟形成 herd effect，打爆相依的 Spanner，因為沒有隨機化指數退避，只能節流 task 建立。教訓：重啟與重試都要有退避和 jitter，並準備 kill switch。",
+   "topic": "cascading-failure",
+   "kind": "概念"
+  }
+ ]
+}

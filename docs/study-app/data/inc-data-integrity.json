@@ -1,0 +1,383 @@
+{
+ "problem": "data-integrity",
+ "problemName": "資料正確性與資料遺失",
+ "incidents": [
+  {
+   "id": "meta-2021-silent-data-corruption",
+   "problem": "data-integrity",
+   "company": "Meta (Facebook)",
+   "title": "CPU 靜默算錯：解壓縮跳過檔案，資料庫缺 row",
+   "date": "2021-02",
+   "kind": "design-writeup",
+   "symptom": "資料庫出現 missing rows；解壓縮流程把檔案跳過，沒有任何 crash 或 error。",
+   "rootCause": "某顆 CPU 的 Core 59 計算錯誤（文中例：Int(1.153)=0），檔案大小被算成 0，因此被判定不需要解壓縮。",
+   "whyHard": "硬體是 fail-silent 而非 fail-stop，應用層沒有錯誤訊號；只在特定 core、特定輸入才錯，重現困難。",
+   "detection": "工程師把多機查詢基礎設施層級的 reproducer 縮減成單機 workload，再用 single-threading 定位到特定 core。文章未寫花了多久。",
+   "fix": "導入多層軟體 / 硬體的 resilience 機制，並把 reproducer 納入偵測系統去標記其他有缺陷的機器。",
+   "tradeoff": "偵測靠額外測試與隔離機器，要付 CPU 時間與機器下線成本；測試涵蓋不到的 zero-day 缺陷仍會漏。",
+   "lessons": [
+    "計算結果也要有 end-to-end 驗證，不能只信 storage 層的 checksum。",
+    "要有流程能把「某台機器老是出錯」關聯到單一 core 並隔離。"
+   ],
+   "numbers": [
+    "hundreds of thousands of machines performing a few million computations every second"
+   ],
+   "interviewUse": "支撐「為什麼資料正確性不能只靠 replication / checksum：計算本身也可能靜默出錯」。",
+   "sources": [
+    {
+     "title": "Silent data corruption: Mitigating effects at scale",
+     "url": "https://engineering.fb.com/2021/02/23/data-infrastructure/silent-data-corruption/"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "storage-choice"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "meta-2022-sdc-fleet-detection",
+   "problem": "data-integrity",
+   "company": "Meta (Facebook)",
+   "title": "用 Fleetscanner 與 Ripple 在機群層級偵測靜默資料損毀",
+   "date": "2022-03",
+   "kind": "design-writeup",
+   "symptom": "機群中有零星機器對外產生錯誤計算結果，應用層看不出來。",
+   "rootCause": "SDC 來自硬體缺陷，無法靠一般監控發現；需要主動用 test pattern 去逼出錯誤。",
+   "whyHard": "單靠停機維護時的測試太慢；單靠線上測試又抓不到只有深度測試才現形的缺陷。",
+   "detection": "文中量測：Ripple 在 production 並行跑測試，約 15 天抓到 70% 的機群損毀；opportunistic（Fleetscanner）約需 6 個月才達同等 70%。",
+   "fix": "兩套並用：opportunistic testing 在重開機、韌體升級等維護窗口跑較深入的測試；Ripple 與 workload 並行、每次約數百毫秒。",
+   "tradeoff": "Ripple 搶佔 production 資源、覆蓋率低（7% vs 23% unique SDC 覆蓋）；opportunistic 覆蓋高但頻率低。文章結論兩者同樣重要。",
+   "lessons": [
+    "偵測要同時有「快但淺」和「慢但深」兩條路。",
+    "把檢測成本量化成 coverage 與 time-to-detect 來取捨。"
+   ],
+   "numbers": [
+    "Ripple: 70% of fleet corruptions within 15 days",
+    "Opportunistic: about 6 months to reach 70%",
+    "Ripple: about 2.5 billion unique tests/test seeds per month",
+    "unique SDC coverage: opportunistic 23%, Ripple 7%"
+   ],
+   "interviewUse": "回答「怎麼偵測靜默損毀」時，可說出快慢兩層偵測的取捨與 time-to-detect。",
+   "sources": [
+    {
+     "title": "Detecting silent data corruption (Meta engineering, 2022)",
+     "url": "https://engineering.fb.com/2022/03/17/production-engineering/silent-errors/"
+    }
+   ],
+   "topics": [
+    "reliability"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "google-2021-mercurial-cores",
+   "problem": "data-integrity",
+   "company": "Google",
+   "title": "Cores that don't count：mercurial cores 造成的靜默運算錯誤",
+   "date": "2021-06",
+   "kind": "design-writeup",
+   "symptom": "資料分析 pipeline 開始給錯答案；一個無害的底層函式庫改動後，只有一小部分機器反覆出錯。",
+   "rootCause": "部分 CPU core 在特定指令上有製造缺陷（作者稱 mercurial cores），只有檢查運算結果才看得出來；文中例子包含 lock 語意被破壞、AES 錯誤算法、GC 損毀導致 live data 遺失。",
+   "whyHard": "錯誤非決定性且隨年齡惡化；錯誤結果會經由正確運算傳播放大，例如壞 metadata 可毀掉整個 file system、壞 encryption key 讓大量資料永久無法存取。",
+   "detection": "調查從 pipeline 錯誤結果追到「只有少數機器」，再用測試語料比對結果找出問題 core；文章沒有給具體耗時。",
+   "fix": "以軟體偵測並隔離問題 core，並探討容錯方式（如重複計算、檢查）。",
+   "tradeoff": "偵測 CEE 在直覺上需 2x 工作量，自動修正可能需 3x（如 triple modular redundancy）；storage 與 network 因為「正確答案是 identity function」可用 checksum 低成本防護，運算沒有這種便宜解。",
+   "lessons": [
+    "靜默錯誤的 blast radius 取決於傳播路徑，要在邊界做驗證。",
+    "儲存可用 end-to-end checksum；運算要用冗餘或自檢才能偵測。"
+   ],
+   "numbers": [
+    "a few mercurial cores per several thousand machines",
+    "many engineer-decades applied to the problem"
+   ],
+   "interviewUse": "講 data integrity 時說明「checksum 只保護資料搬運與靜置，不保護運算」。",
+   "sources": [
+    {
+     "title": "Cores that don't count (HotOS '21)",
+     "url": "https://sigops.org/s/conferences/hotos/2021/papers/hotos21-s01-hochschild.pdf"
+    }
+   ],
+   "topics": [
+    "reliability"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "google-2011-gmail-data-loss-gtape",
+   "problem": "data-integrity",
+   "company": "Google",
+   "title": "Gmail 2011：內部多重 replication 擋不住的資料遺失，靠 GTape 還原",
+   "date": "2011-02",
+   "kind": "postmortem",
+   "symptom": "2011-02-27 部分 Gmail 使用者資料遺失，即使內部已有多重 redundancy 仍無法自行修復。",
+   "rootCause": "SRE book 未交代技術根因；指出該失效類型是 Gmail 內部 replication 無法處理的，需靠獨立的全域備份。",
+   "whyHard": "replication 會把壞資料或錯誤刪除同步到所有副本，因此不是 recoverability；需要與主儲存獨立的備份層。",
+   "detection": "同一晚備份系統即觸發告警（detection：當天晚上）。",
+   "fix": "用 GTape（Gmail 的全域備份系統）首次大規模還原線上客戶資料，並給出復原時間預估；實際在預估時間前還原了 99%+ 資料。",
+   "tradeoff": "備份有成本且還原需演練；成功歸功於事前多次模擬相同情境。",
+   "lessons": [
+    "replication and redundancy are not recoverability。",
+    "備份要定期演練還原，否則還原計畫不可信。"
+   ],
+   "numbers": [
+    "recovered 99%+ of the data before the estimated completion time"
+   ],
+   "interviewUse": "支撐「RPO / RTO 要靠演練驗證，replication 不能取代備份」。",
+   "sources": [
+    {
+     "title": "SRE Book: Data Integrity: What You Read Is What You Wrote",
+     "url": "https://sre.google/sre-book/data-integrity/"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "storage-choice"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "google-2012-music-deletion-pipeline",
+   "problem": "data-integrity",
+   "company": "Google",
+   "title": "Google Music 2012：重構後的刪除 pipeline 誤刪音檔",
+   "date": "2012-03",
+   "kind": "postmortem",
+   "symptom": "使用者回報音軌無法播放；後續發現約 600,000 個 audio reference 被誤刪，影響 21,000 位使用者。",
+   "rootCause": "重構過的資料刪除 pipeline 各階段之間產生 race condition；服務成長讓上游階段變慢，增加了誤刪機率。",
+   "whyHard": "誤刪在 2012-02-06 開始，到 03-06 使用者回報才有人注意到，晚了約一個月；部分資料在被刪時尚未進備份。",
+   "detection": "2012-03-06 使用者回報音軌無法播放，03-07 工程師發現 metadata reference 缺失，03-08 找出有問題的刪除 pipeline 並停用（從發生到發現約一個月）。",
+   "fix": "停用 pipeline、用 MapReduce 診斷、從磁帶召回超過 5,000 卷，共 5,475 個 restore jobs；恢復 436,223 個音軌，約 7 天完成，其餘未備份的 161,000 檔要求使用者重新上傳。",
+   "tradeoff": "磁帶還原慢且受 17 卷壞帶等因素拖延；晚發現的 bug 超出備份涵蓋範圍就只能靠使用者重傳。",
+   "lessons": [
+    "刪除管線要有 soft delete 與延遲真刪，並加 out-of-band 驗證。",
+    "用實際事故證明備份保留期與偵測速度要配對。"
+   ],
+   "numbers": [
+    "約 600,000 audio references deleted, 21,000 users affected",
+    "436,223 tracks recovered from tape (1.5 PB)",
+    "5,475 restore jobs, over 5,000 tapes recalled",
+    "161,000 files unrecoverable from tape"
+   ],
+   "interviewUse": "談「誤刪怎麼防」時引用：soft delete + 備份保留期 + 驗證 job 三層。",
+   "sources": [
+    {
+     "title": "SRE Book: Data Integrity: What You Read Is What You Wrote",
+     "url": "https://sre.google/sre-book/data-integrity/"
+    }
+   ],
+   "topics": [
+    "async-jobs",
+    "reliability"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "google-2011-blogger-missing-replicas",
+   "problem": "data-integrity",
+   "company": "Google (Blogger)",
+   "title": "Blogger 2011：維護時新增的 replica 缺資料",
+   "date": "2011-05",
+   "kind": "postmortem",
+   "symptom": "部落格無法存取、顯示異常或無法進 dashboard；服務之後唯讀超過 10 小時。",
+   "rootCause": "2011-05-11 維護期間為了增加冗餘與容量新增 replicas，但新 replicas 缺資料；服務以這些 replica 運行導致部分使用者資料無法存取。",
+   "whyHard": "維護動作本來是為提高可靠性，反而把不完整的 replica 放進服務路徑。",
+   "detection": "服務重啟後（約 10:30pm PDT）注意到錯誤率比平常高，隨即判斷新 replicas 缺資料。",
+   "fix": "回滾升級、移除壞 replicas、從備份系統還原 Blogger，再逐步修復備份後新增的貼文、頁面與留言；服務唯讀「just over 10 hours」。",
+   "tradeoff": "還原期間只能唯讀；備份之後的資料要手動、逐筆修復。",
+   "lessons": [
+    "新增 replica 前要驗證資料完整性再讓它接流量。",
+    "維護變更要有快速回滾與備份可用性。"
+   ],
+   "numbers": [
+    "read-only for just over 10 hours"
+   ],
+   "interviewUse": "回答「新增 replica / 搬遷時怎麼避免讀到不完整資料」。",
+   "sources": [
+    {
+     "title": "Blogger Incident Report",
+     "url": "https://blogger-status.googleblog.com/2011/05/blogger-incident-report-by-eddie.html"
+    }
+   ],
+   "topics": [
+    "consistency",
+    "reliability"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "google-cloud-2024-unisuper-gcve",
+   "problem": "data-integrity",
+   "company": "Google Cloud",
+   "title": "UniSuper：GCVE Private Cloud 因空白參數被自動刪除",
+   "date": "2024-05",
+   "kind": "postmortem",
+   "symptom": "客戶 UniSuper 的 GCVE Private Cloud（含跨兩個 zone）在部署約一年後被刪除。",
+   "rootCause": "2023 年初部署時，Google 操作員用內部容量管理工具，其中一個輸入參數留空，系統預設填入固定 1 年期限，到期後即自動刪除。",
+   "whyHard": "刪除是系統依預設值自動發生，客戶無從預警；跨 zone 副本因為共用同一個管理平面的設定而一起被刪。",
+   "detection": "文章未寫偵測方式，只說明在 1 年期到期自動刪除時發生。復原：Google 與客戶團隊 24x7 數天。",
+   "fix": "靠同 region 的 GCS 備份與客戶的第三方備份軟體還原；Google 停用該內部工具、審查全部 GCVE Private Cloud、修正系統不再在此流程設定刪除。",
+   "tradeoff": "多地副本若共享同一控制平面就不是獨立保護；獨立備份（不同供應商 / 不同系統）才救了客戶。",
+   "lessons": [
+    "預設值與空白參數是資料遺失的風險來源；破壞性動作要顯式確認。",
+    "備份要跟主資料不共享同一失效域。"
+   ],
+   "numbers": [
+    "management 約 1 年期限後自動刪除",
+    "Google 與客戶 24x7 數天復原"
+   ],
+   "interviewUse": "談 blast radius 與備份獨立性時引用：副本跨 zone 仍可能被同一個控制面一起刪除。",
+   "sources": [
+    {
+     "title": "Details of Google Cloud GCVE incident",
+     "url": "https://cloud.google.com/blog/products/infrastructure/details-of-google-cloud-gcve-incident/"
+    }
+   ],
+   "topics": [
+    "reliability"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "cloudflare-2017-cloudbleed",
+   "problem": "data-integrity",
+   "company": "Cloudflare",
+   "title": "Cloudbleed：HTML parser 越界讀取洩漏他人記憶體",
+   "date": "2017-02",
+   "kind": "postmortem",
+   "symptom": "部分回應夾帶其他客戶的 HTTP cookies、auth tokens、POST body 與 API keys；有些資料被搜尋引擎快取。",
+   "rootCause": "Ragel 產生的 parser 以 `==` 而非 `>=` 檢查 buffer 結尾，遇到畸形 script tag 時指標會越過 buffer；bug 潛伏多年，新 cf-html parser 改變 buffer 行為後才顯現。",
+   "whyHard": "洩漏的是別的使用者資料，客戶端無感；且被搜尋引擎快取後無法由單方清除。",
+   "detection": "2017-02-18 00:32 UTC Google Project Zero 的 Tavis Ormandy 通報；Cloudflare 47 分鐘內先做初步緩解，7 小時內全球止血。",
+   "fix": "先停用 Email Obfuscation、Server-side Excludes、Automatic HTTPS Rewrites 三個功能，再啟用全域 kill switch，後續加上明確的指標邊界檢查；並清除 770 個含洩漏記憶體的搜尋快取 URI。",
+   "tradeoff": "以停用功能換取止血速度；根因程式是自動產生的，難以靠 code review 發現。",
+   "lessons": [
+    "外部通報之外還需要內部異常偵測。",
+    "要有 kill switch 能不改程式就停用功能。"
+   ],
+   "numbers": [
+    "約 1 in 3,300,000 requests 可能洩漏記憶體",
+    "影響最大期間 Feb 13-18",
+    "770 unique URIs across 161 domains in search caches",
+    "47 分鐘初步緩解、7 小時內完成全球止血"
+   ],
+   "interviewUse": "跨用戶資料外洩的典型案例：多租戶共享記憶體時，單一越界讀就會洩漏他人資料。",
+   "sources": [
+    {
+     "title": "Incident report on memory leak caused by Cloudflare parser bug",
+     "url": "https://blog.cloudflare.com/incident-report-on-memory-leak-caused-by-cloudflare-parser-bug/"
+    }
+   ],
+   "topics": [
+    "auth",
+    "reliability"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "stripe-idempotency-keys",
+   "problem": "data-integrity",
+   "company": "Stripe",
+   "title": "用 Idempotency-Key 避免重複扣款",
+   "date": "2017",
+   "kind": "design-writeup",
+   "symptom": "網路或伺服器故障時，客戶端重送「扣款」請求會導致客戶被重複扣款。",
+   "rootCause": "請求在失敗時客戶端無法得知伺服器是否已執行；若 endpoint 非 idempotent，重試會重複產生 side effect。",
+   "whyHard": "重試是客戶端唯一能讓狀態收斂的手段，但必須讓伺服器辨識同一個 operation；失敗點可能在請求前、處理中、回應後三處。",
+   "detection": "（design-writeup，無事故偵測）設計上由客戶端產生唯一 ID，伺服器依此判斷是首次、中途失敗還是回應遺失。",
+   "fix": "客戶端把 ID 放在 Idempotency-Key header；若前次已被 ACID database 回滾則整個重做，若已成功就回傳快取結果；Ruby library 用 exponential backoff 加 jitter 重試。",
+   "tradeoff": "伺服器要儲存 key 與結果並處理並發相同 key；增加實作複雜度與儲存。",
+   "lessons": [
+    "任何有金流 side effect 的 API 都要設計成可安全重試。",
+    "重試要搭配 backoff 與 jitter。"
+   ],
+   "numbers": [],
+   "interviewUse": "回答 exactly-once / 重複扣款題時，直接帶出 idempotency key 與三種失敗點。",
+   "sources": [
+    {
+     "title": "Designing robust and predictable APIs with idempotency",
+     "url": "https://stripe.com/blog/idempotency"
+    }
+   ],
+   "topics": [
+    "idempotency"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "dropbox-magic-pocket-pocket-watch",
+   "problem": "data-integrity",
+   "company": "Dropbox",
+   "title": "Pocket Watch：Magic Pocket 的多層驗證系統",
+   "date": "2020",
+   "kind": "design-writeup",
+   "symptom": "設計目標：在 exabyte 規模儲存上，主動找出靜默損毀、錯誤刪除與跨 zone 副本不一致。",
+   "rootCause": "理論上有 27 nines durability，但真實風險來自 natural disasters、software bugs、operator error 與 configuration mistakes，以及模組邊界的邏輯錯誤。",
+   "whyHard": "replication 擋不住邏輯錯誤；單元測試也測不到模組交界的問題。",
+   "detection": "文章未描述具體事故；以六個 verifier 持續掃描：Disk Scrubber 每 1–2 週完整掃一輪，Metadata Scanner 每週一輪。",
+   "fix": "六個 verifier：Disk Scrubber、Trash Inspector、Extent Referee、Metadata Scanner、Storage Watcher（抽樣 1% 寫入的 block，於 1 分鐘、1 小時、1 天、1 週、1 個月後驗證）、Cross-zone Verifier；staging 故意翻 bit、截斷 extent，驗證系統能偵測。",
+   "tradeoff": "驗證流量超過 50% 的 disk 與 database workload，是持續性的成本；文中也承認 effort vs correctness 要取捨。",
+   "lessons": [
+    "驗證要是獨立的 black-box，用端對端抽樣確認真的讀得回來。",
+    "先在 staging 注入損毀來驗證驗證器本身。"
+   ],
+   "numbers": [
+    "27 nines of durability",
+    "over 50% of disk and database workload is verification traffic",
+    "Metadata Scanner about one million blocks per second",
+    "Storage Watcher samples 1% of written blocks",
+    "10+ petabyte staging cluster"
+   ],
+   "interviewUse": "談備份 / 儲存正確性時，用「驗證本身佔 50% 負載」說明成本與取捨。",
+   "sources": [
+    {
+     "title": "Pocket Watch: Verifying Exabytes of Data",
+     "url": "https://dropbox.tech/infrastructure/pocket-watch"
+    }
+   ],
+   "topics": [
+    "blobs",
+    "storage-choice"
+   ],
+   "byAgents": true
+  }
+ ],
+ "quiz": [
+  {
+   "q": "Cloud 供應商的 multi-zone replication 已經有，為什麼 UniSuper 事件仍需要獨立備份？",
+   "a": "副本共享同一控制平面，一個空白參數造成自動刪除就會連同兩個 zone 一起刪；同 region 的 GCS 備份與第三方備份軟體不共享失效域，才能還原。",
+   "topic": "data-integrity",
+   "kind": "情境"
+  },
+  {
+   "q": "為什麼 SRE book 說 replication and redundancy are not recoverability？",
+   "a": "自動同步的副本會把壞資料或誤刪一起複製到所有 copy；需要獨立的 point-in-time 備份與還原演練。",
+   "topic": "data-integrity",
+   "kind": "概念"
+  },
+  {
+   "q": "Stripe 的扣款 API 重送請求時，伺服器怎麼避免重複扣款？代價是什麼？",
+   "a": "客戶端送 Idempotency-Key，伺服器依 key 判斷首次處理、中途失敗可安全重做、已成功則回快取結果；代價是要儲存 key 與結果並處理並發相同 key。",
+   "topic": "data-integrity",
+   "kind": "取捨"
+  },
+  {
+   "q": "Meta 偵測 SDC 用 Ripple（線上並行）與 opportunistic（維護窗口）兩套，各自取捨？",
+   "a": "Ripple 快（約 15 天抓到 70%）但覆蓋低且占用 production；opportunistic 覆蓋高但慢（約 6 個月達 70%），因此兩者並用。",
+   "topic": "data-integrity",
+   "kind": "取捨"
+  },
+  {
+   "q": "Google Music 2012 誤刪過了約一個月才發現，面試中如何用它說明 soft delete 與驗證 job 的價值？",
+   "a": "延遲真刪能讓偵測前的誤刪仍可復原；out-of-band 驗證能縮短發現時間，備份保留期需大於偵測時間，否則像 161,000 個檔案一樣無法復原。",
+   "topic": "data-integrity",
+   "kind": "情境"
+  },
+  {
+   "q": "Cloudbleed 為什麼屬於資料正確性而非可用性問題，緩解時為何先停功能再改程式？",
+   "a": "服務仍在線，但回應夾帶他人資料；停用三個功能與啟用 kill switch 能在 7 小時內止血，bounds check 修正則較慢。",
+   "topic": "data-integrity",
+   "kind": "情境"
+  }
+ ]
+}

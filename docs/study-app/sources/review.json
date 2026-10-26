@@ -1,0 +1,86 @@
+{
+  "addTypes": [
+    {
+      "id": "data-integrity",
+      "name": "資料正確性與資料遺失（靜默損毀、誤刪、跨用戶資料外洩）",
+      "why": "既有 8 類都以「可用性 / 延遲」為主軸，沒有一類處理「服務活著但資料錯了或沒了」。面試常考 idempotency、exactly-once、備份可還原性、RPO、checksum/端對端驗證、軟刪除與 blast radius，這些在過載或級聯故障框架下講不出來。db-scaling-migration 談的是擴展與搬遷，不涵蓋「備份從沒驗證過」「硬體靜默算錯」「批次刪除刪錯對象」。",
+      "examples": [
+        {"company": "GitLab", "title": "Postmortem of database outage of January 31", "url": "https://about.gitlab.com/blog/2017/02/10/postmortem-of-database-outage-of-january-31/", "verified": "curl HTTP 200, <title> 相符；經典：誤刪 primary 資料、5 種備份機制皆失效、遺失約 6 小時資料"},
+        {"company": "Meta", "title": "Silent data corruption: Mitigating effects at scale", "url": "https://engineering.fb.com/2021/02/23/data-infrastructure/silent-data-corruption/", "verified": "curl HTTP 200, <title> 相符；CPU 靜默算錯導致資料損毀的大規模偵測與緩解"},
+        {"company": "Atlassian", "title": "Post-Incident Review on the Atlassian April 2022 outage", "url": "https://www.atlassian.com/engineering/post-incident-review-april-2022-outage", "verified": "curl HTTP 200, <title> 相符；刪除腳本用錯 ID 刪掉 775 個客戶站點，還原耗時最長 14 天（多租戶還原粒度問題）"},
+        {"company": "OpenAI", "title": "March 20 ChatGPT outage: Here's what happened", "url": "https://web.archive.org/web/2023/https://openai.com/blog/march-20-chatgpt-outage", "verified": "原站 403，Wayback 快照 HTTP 200 且 <title> 相符；redis-py 連線取消 bug 讓部分用戶看到他人對話標題與付款資訊"}
+      ],
+      "priority": "high"
+    },
+    {
+      "id": "resource-exhaustion",
+      "name": "資源耗盡與隱性上限（ID 回捲、磁碟 / FD / 記憶體、內部資料結構病態）",
+      "why": "不是流量變大（capacity-peaks）也不是請求太多（overload），而是系統內部某個計數器、空間或資料結構慢慢逼近硬上限後突然崩潰。面試價值在於「找出隱性上限、提前監控、設計可回收機制」（vacuum、compaction、freelist、上限告警）。這類事故通常沒有觸發變更，與 change-induced 不同。",
+      "examples": [
+        {"company": "Sentry", "title": "Transaction ID Wraparound in Postgres", "url": "https://blog.sentry.io/transaction-id-wraparound-in-postgres/", "verified": "curl HTTP 200, <title> 與內文 'wraparound' 相符；Postgres XID 即將回捲迫使資料庫停寫"},
+        {"company": "Roblox", "title": "Roblox Return to Service 10/28-10/31 2021", "url": "https://about.roblox.com/newsroom/2022/01/roblox-return-to-service-10-28-10-31-2021", "verified": "curl HTTP 200；內文提及 Consul 底層 BoltDB freelist 在高負載下病態增長，73 小時停機"}
+      ],
+      "priority": "high"
+    },
+    {
+      "id": "third-party-dependency",
+      "name": "外部依賴 / 供應商故障（雲端、CDN、DNS、資料中心、安全代理）",
+      "why": "問題根源在你控制不到的元件，解法空間完全不同：依賴盤點、fail-open vs fail-closed、多供應商、降級模式、vendor 變更的 blast radius。multi-region-dr 偏向「自己的區域掛掉怎麼切換」，change-induced 偏向「自己部署的東西壞了」，都沒覆蓋「隱性依賴第三方」這個面試高頻追問（\"如果你的 payment gateway / CDN 掛了？\"）。",
+      "examples": [
+        {"company": "Cloudflare", "title": "Cloudflare service outage June 12, 2025", "url": "https://blog.cloudflare.com/cloudflare-service-outage-june-12-2025/", "verified": "curl HTTP 200；內文 'backed by a third-party cloud provider, which experienced an outage'（Workers KV 依賴 GCP 儲存）"},
+        {"company": "Slack", "title": "Slack's Outage on January 4th 2021", "url": "https://slack.engineering/slacks-outage-on-january-4th-2021/", "verified": "curl HTTP 200；內文 'one of our Transit Gateways became overloaded. The TGWs are managed by AWS'"},
+        {"company": "CrowdStrike", "title": "Technical Details: Falcon Update for Windows Hosts", "url": "https://www.crowdstrike.com/en-us/blog/falcon-update-for-windows-hosts-technical-details/", "verified": "curl HTTP 200, <title> 相符；對全球客戶而言是第三方安全代理更新造成的大規模 Windows 宕機"}
+      ],
+      "priority": "high"
+    },
+    {
+      "id": "time-clock",
+      "name": "時間與時鐘問題（閏秒、閏日、時鐘偏移）",
+      "why": "時間 bug 不需要任何部署就會在特定日期全球同時引爆，且常繞過所有分散式防護（每台機器同時犯同一個錯）。面試可延伸到 monotonic vs wall clock、分散式系統的時間假設（lease、TTL、憑證有效期、Spanner TrueTime）。與既有 8 類幾乎無重疊。",
+      "examples": [
+        {"company": "Cloudflare", "title": "How and why the leap second affected Cloudflare DNS", "url": "https://blog.cloudflare.com/how-and-why-the-leap-second-affected-cloudflare-dns/", "verified": "curl HTTP 200, <title> 相符；Go time.Now() 非單調導致負數時間差，RRDNS panic"},
+        {"company": "Microsoft Azure", "title": "Summary of Windows Azure Service Disruption on Feb 29th, 2012", "url": "https://azure.microsoft.com/en-us/blog/summary-of-windows-azure-service-disruption-on-feb-29th-2012/", "verified": "curl HTTP 200；內文 'The Leap Day Bug'：憑證 valid-to 日期以年份+1 計算得出 2/29/2013 無效日期"},
+        {"company": "Meta", "title": "It's time to leave the leap second in the past", "url": "https://engineering.fb.com/2022/07/25/production-engineering/its-time-to-leave-the-leap-second-in-the-past/", "verified": "curl HTTP 200, <title> 相符；回顧閏秒歷史事故與 smearing 解法"}
+      ],
+      "priority": "medium"
+    },
+    {
+      "id": "security-availability",
+      "name": "攻擊造成的可用性事件（DDoS、協定層濫用）",
+      "why": "與 overload 機制相近，但對手是有適應能力的攻擊者：流量放大、協定漏洞（HTTP/2 Rapid Reset）、需要上游清洗與 edge 吸收，不能只靠 load shedding。面試中 rate limiting / API gateway / CDN 題常被追問。可考慮作為 overload 的子分類而非獨立大類（見 boundaryNotes）。",
+      "examples": [
+        {"company": "GitHub", "title": "February 28th DDoS Incident Report", "url": "https://github.blog/news-insights/company-news/ddos-incident-report/", "verified": "curl HTTP 200, <title> 相符；內文提及 memcached UDP 11211 放大攻擊（1.35 Tbps），轉交 Akamai 清洗"},
+        {"company": "Cloudflare", "title": "HTTP/2 Rapid Reset: deconstructing the record-breaking attack", "url": "https://blog.cloudflare.com/technical-breakdown-http2-rapid-reset-ddos-attack/", "verified": "curl HTTP 200, <title> 相符"}
+      ],
+      "priority": "medium"
+    },
+    {
+      "id": "llm-serving",
+      "name": "LLM / AI 服務特有問題（品質回歸、模型更新、推論基礎設施）",
+      "why": "LLM 服務出現傳統 SLO 抓不到的失敗：服務 200 OK 但輸出品質下降（路由錯 context window 版本、編譯器 bug、取樣錯誤）、模型更新造成行為回歸。面試越來越常出 'design ChatGPT / LLM gateway'，需要談 eval 作為上線閘門、品質監控、KV cache 與 GPU 容量。純 GPU 容量問題可歸 capacity-peaks，但品質回歸是新類型。",
+      "examples": [
+        {"company": "Anthropic", "title": "A postmortem of three recent issues", "url": "https://www.anthropic.com/engineering/a-postmortem-of-three-recent-issues", "verified": "curl HTTP 200, <title> 相符；三個基礎設施 bug（context window 路由錯誤、TPU 輸出損毀、XLA 編譯器 bug）間歇降低回應品質，跨 Trainium/GPU/TPU 平台"},
+        {"company": "OpenAI", "title": "Expanding on what we missed with sycophancy", "url": "https://web.archive.org/web/2025/https://openai.com/index/expanding-on-sycophancy/", "verified": "原站 403，Wayback 快照 HTTP 200 且 <title> 相符；GPT-4o 更新造成諂媚行為回歸並回滾，談 offline eval / A/B 為何沒抓到"},
+        {"company": "Character.AI", "title": "Optimizing AI Inference at Character.AI", "url": "https://blog.character.ai/optimizing-ai-inference-at-character-ai/", "verified": "curl HTTP 200, <title> 相符；非事故，是推論成本/KV cache 的解法篇，可作為補充閱讀"}
+      ],
+      "priority": "medium"
+    }
+  ],
+  "boundaryNotes": [
+    "cascading-failure vs overload：兩者機制連續（過載 → 重試放大 → 級聯 → 亞穩態）。建議劃分：overload = 單一服務如何保護自己（admission control、load shedding、priority、adaptive concurrency）；cascading-failure = 故障如何跨服務傳播與為何無法自癒（retry storm、metastable、thundering herd on recovery、circuit breaker、retry budget）。判準：事故報告的重點是『入口擋不住』歸 overload，『恢復後又崩 / 擴散到其他服務』歸 cascading。",
+    "capacity-peaks vs overload：capacity-peaks 應限定為『可預期或可預測的尖峰與容量規劃』（雙 11、超級盃、新品上線、autoscaling 延遲、預熱）；突發未預期過載歸 overload。否則兩類會收集到大量重複事故。",
+    "cache-hotspot vs tail-latency / cascading-failure：cache 雪崩導致 DB 被打爆時屬 cache-hotspot（根因在快取層），尾延遲報告中若根因是 hot key 也應歸 cache-hotspot。tail-latency 建議限定在『平均正常但 P99 壞』的根因（GC、hedged requests、fan-out 放大、排隊、noisy neighbor）。",
+    "change-induced 是『觸發條件』而非『失效機制』，會與每一類重疊（例：Meta 2021 BGP 設定變更同時是多區域故障；OpenAI 2024-12-11 telemetry 部署壓垮 K8s 控制面同時是級聯故障；Cloudflare 2019 WAF regex 部署同時是 CPU 資源耗盡）。建議：每個事故只有一個 primary problem，以『最值得學的解法』決定；change-induced 收錄重點放在部署/設定流程本身（漸進發布、config 驗證、自動回滾、global config 的 blast radius）。可在 Schema F 加一個 secondary 標籤欄位以容納交叉。",
+    "multi-region-dr vs third-party-dependency：自家區域 / 資料中心切換失敗歸 multi-region-dr（例 Cloudflare 2023-11 PDX 電力故障暴露控制面未真正多區）；依賴外部供應商（雲端託管服務、DNS/CDN 供應商、支付閘道）歸 third-party-dependency。",
+    "db-scaling-migration vs data-integrity：搬遷過程的雙寫、回填、切換屬 db-scaling-migration；若事故核心是資料錯誤或遺失（備份失效、誤刪、靜默損毀）歸 data-integrity，即使發生在資料庫上。",
+    "觀測盲點與事故應變不建議獨立成類，但建議每類事故的 Schema F 條目都加一欄『偵測：怎麼發現的、花多久』，因為多數事故的教訓都含『監控也一起掛 / 告警沒響』（Meta 2021、OpenAI 2024-12-11 K8s 控制面被鎖住無法修復）。"
+  ],
+  "notAdded": [
+    {"candidate": "成本暴增 / 雲端帳單事故", "reason": "公司技術部落格公開的真實事故稀少，多為『省成本的架構重構』而非事故（如 Prime Video monitoring 重構），面試中成本通常是取捨維度而非事故類型；建議當作各類 incident 的取捨註記。"},
+    {"candidate": "觀測盲點（告警沒響、監控一起掛）", "reason": "幾乎都是其他類事故的附帶因素，很少是獨立根因；改為在每筆事故加『偵測』欄位（見 boundaryNotes）。"},
+    {"candidate": "事故應變本身（溝通、on-call、postmortem 文化）", "reason": "屬流程與組織議題，對系統設計面試價值低；Google SRE book 的 postmortem 章節可放在學習頁的閱讀清單。"},
+    {"candidate": "資料延遲 / 串流積壓", "reason": "機制上是 backpressure 與消費端容量，可歸入 overload 或 capacity-peaks；且學習頁已有 data-pipeline domain 涵蓋 Kafka lag、背壓等概念，獨立成類收益不大。"},
+    {"candidate": "憑證過期 / 憑證外洩", "reason": "憑證過期事故（如各家 TLS cert expiry）可歸 time-clock 或 change-induced；憑證外洩偏資安而非系統設計，暫不獨立。"},
+    {"candidate": "GPU 容量不足", "reason": "機制等同容量規劃與 admission control，歸 capacity-peaks / overload；llm-serving 只收『品質回歸』等 LLM 特有失效。"}
+  ]
+}

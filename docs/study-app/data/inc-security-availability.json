@@ -1,0 +1,310 @@
+{
+ "problem": "security-availability",
+ "problemName": "攻擊造成的可用性事件",
+ "incidents": [
+  {
+   "id": "github-2018-memcached-amplification",
+   "problem": "security-availability",
+   "company": "GitHub",
+   "title": "memcached 放大攻擊：9 分鐘內把流量切給 Akamai 清洗",
+   "date": "2018-02",
+   "kind": "postmortem",
+   "symptom": "GitHub 在 2018-02-28 遭遇峰值 1.35 Tbps 的入站流量，服務一度不穩，約 9 分鐘後恢復，之後又出現 400Gbps 的第二波。",
+   "detection": "17:21 UTC 網路監控偵測到 ingress/egress 流量比例異常；5 分鐘後（17:26）就開始切流量，17:30 確認恢復。",
+   "rootCause": "攻擊者偽造來源 IP，對公開暴露的 memcached（UDP 11211）送小請求，由這些伺服器把放大後的回應打向 GitHub，放大倍率最高 51,000 倍。",
+   "whyHard": "流量來自一千多個 ASN、數萬個 endpoint，沒有單一來源可封鎖；峰值超過單一設施的入站頻寬，自己的容量與 ACL 擋不住。",
+   "fix": "止血：撤回對 transit provider 的 BGP 宣告，把流量全部導向 Akamai，由其 edge 在邊界套 ACL 清洗；再撤回部分 internet exchange 路由，把額外 40Gbps 移出 edge。長期：依賴上游清洗服務。",
+   "tradeoff": "改道清洗會把所有流量（含正常流量）繞經第三方，增加延遲與依賴，且要事先有合約與可立即切換的 BGP 操作；容量型攻擊自己建設備不划算。",
+   "lessons": [
+    "容量型（volumetric）攻擊的解法是把吸收點移到容量遠大於攻擊的上游，而不是在自家入口過濾",
+    "偵測到切換的時間（5 分鐘）取決於事先演練過的 runbook 與 BGP 控制權",
+    "放大攻擊的根源在第三方錯誤配置的服務，防禦方無法修，只能吸收"
+   ],
+   "numbers": [
+    "1.35 Tbps 峰值",
+    "126.9 million packets per second",
+    "17:21 偵測、17:26 切換、17:30 恢復（共 9 分鐘）",
+    "51,000 倍放大",
+    "第二波 400 Gbps，約 18:00 UTC"
+   ],
+   "interviewUse": "支撐「DDoS 容量型攻擊必須靠上游 scrubbing / 外包吸收，自己只負責快速偵測與切換」。",
+   "sources": [
+    {
+     "title": "February 28th DDoS Incident Report",
+     "url": "https://github.blog/news-insights/company-news/ddos-incident-report/"
+    }
+   ],
+   "topics": [
+    "rate-limiting",
+    "reliability"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "cloudflare-2018-memcrashed-udp-amplification",
+   "problem": "security-availability",
+   "company": "Cloudflare",
+   "title": "Memcrashed：沒有任何檢查的 UDP 協定如何變成放大器",
+   "date": "2018-02",
+   "kind": "design-writeup",
+   "symptom": "Cloudflare 在其全球 PoP 看到來源 port 11211、封包約 1,400 bytes 的大量入站流量，峰值 260 Gbps。",
+   "detection": "靠封包分析（來源 port 11211、固定約 1,400-byte 回應封包）加上跨 120+ PoP 的頻寬監控發現；原文未寫花了多久。",
+   "rootCause": "memcached 的 UDP 實作對請求來源沒有任何驗證，攻擊者先在暴露的伺服器塞入大 payload，再偽造受害者 IP 發 15 bytes 的 GET，回應最大達 134KB（8,933 倍），實測最高 51,200 倍。",
+   "whyHard": "攻擊只需 5,729 台有漏洞的伺服器就達到 260 Gbps（Shodan 找到 88,000 台暴露），來源真實但被偽造，防禦方不能靠封鎖來源 IP。",
+   "fix": "短期：在網路邊界過濾 port 11211 的 UDP 回應、由 PoP 吸收；根本修法在源頭：memcached 關閉 UDP（-U 0）、只監聽 localhost、防火牆封掉 11211。對協定設計者：回應必須小於請求。",
+   "tradeoff": "邊界過濾 11211 會誤傷合法使用該 port 的對外服務；源頭修補要靠成千上萬個第三方管理員配合，進度慢。",
+   "lessons": [
+    "UDP 協定若不驗證來源又回應大於請求，就是放大器",
+    "內部元件（cache/DB）不要暴露在公網，預設綁 localhost",
+    "無連線協定設計時要有 anti-spoofing 或 amplification 上限"
+   ],
+   "numbers": [
+    "15 bytes 請求 → 134KB 回應（8,933 倍）",
+    "實測最高 51,200 倍（750KB 回應）",
+    "峰值 260 Gbps、約 23 million pps、封包平均 1,400 bytes",
+    "5,729 台伺服器；Shodan 找到 88,000 台暴露",
+    "120+ 個 PoP"
+   ],
+   "interviewUse": "談 memcached/Redis 等內部元件為何不能暴露公網，以及協定層放大的原理（不需細節即可）。",
+   "sources": [
+    {
+     "title": "Memcrashed - Major amplification attacks from UDP port 11211",
+     "url": "https://blog.cloudflare.com/memcrashed-major-amplification-attacks-from-port-11211/"
+    }
+   ],
+   "topics": [
+    "caching",
+    "api-networking"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "cloudflare-2023-http2-rapid-reset",
+   "problem": "security-availability",
+   "company": "Cloudflare",
+   "title": "HTTP/2 Rapid Reset：用取消請求繞過 stream 併發上限",
+   "date": "2023-08",
+   "kind": "postmortem",
+   "symptom": "2023-08-25 起出現創紀錄的 L7 攻擊，峰值 201 million requests/s；初期造成約 1% 請求受影響，8/29 短暫升到 12%，客戶看到 502。",
+   "detection": "Cloudflare 的自動 DDoS 系統立即偵測到攻擊，但初期規則需要調整；502 源於 TLS 解密層與商業邏輯 proxy 之間的連線飽和，客戶分析也看不到發生在 proxy 之前的失敗（可視性缺口）。原文未給偵測耗時。",
+   "rootCause": "HTTP/2 規範中 RST_STREAM 讓 stream 立即進入 closed，不再計入最大併發 stream 數，客戶端因此可以持續『開啟請求後立刻取消』，繞過伺服器宣告的 100 併發上限（CVE-2023-44487）。",
+   "whyHard": "每個請求都很小且合乎規範，只有『取消比率』異常；伺服器仍需處理每個被取消請求的初期成本；影響所有 HTTP/2 實作，且攻擊只用 20,000 台機器。",
+   "fix": "擴充 2019 年既有的 DoS 防護：把 RST_STREAM 計入並在超過門檻時關閉連線；IP Jail 擴大為攻擊 IP 對 Cloudflare 全部網域都不能用 HTTP/2；優化 frame 處理與 request dispatch 佇列。Google 建議的連線層規則：連線超過 100 個請求且取消率超過 50% 時可關閉，並限制每秒 RST_STREAM 數。",
+   "tradeoff": "把併發 stream 上限先降到 64 造成 499（合法客戶端預期 100），後來調回 100；連線層啟發式規則會有誤判風險，門檻要用真實流量校準。",
+   "lessons": [
+    "協定層『資源計量』要涵蓋所有狀態轉換，單看併發數會被規避",
+    "對協定濫用要在最前面的連線層擋，晚到商業邏輯層就已經飽和",
+    "調降限制前要考慮合法客戶端的假設，並留意錯誤碼的可視性"
+   ],
+   "numbers": [
+    "峰值 201 million requests per second",
+    "約 20,000 台機器的 botnet",
+    "server 宣告併發 stream 上限 100",
+    "8/29 短暫 12% 請求受影響，初期約 1%",
+    "Google 回報同一波攻擊峰值 398 million rps"
+   ],
+   "interviewUse": "支撐『rate limiting 要在連線與協定層、而不只是 request 層』，以及 edge 吸收比 origin 防護更有效。",
+   "sources": [
+    {
+     "title": "HTTP/2 Rapid Reset: deconstructing the record-breaking attack",
+     "url": "https://blog.cloudflare.com/technical-breakdown-http2-rapid-reset-ddos-attack/"
+    },
+    {
+     "title": "How it works: The novel HTTP/2 Rapid Reset DDoS attack (Google Cloud)",
+     "url": "https://cloud.google.com/blog/products/identity-security/how-it-works-the-novel-http2-rapid-reset-ddos-attack"
+    }
+   ],
+   "topics": [
+    "rate-limiting",
+    "api-networking"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "google-2022-cloud-armor-46m-rps",
+   "problem": "security-availability",
+   "company": "Google",
+   "title": "Cloud Armor 擋下 46 million rps 的 HTTPS 攻擊",
+   "date": "2022-06",
+   "kind": "design-writeup",
+   "symptom": "2022-06-01 一個 Cloud Armor 客戶的 HTTP/S load balancer 遭 L7 攻擊，69 分鐘內從 1 萬 rps 暴增到 46 million rps；客戶服務維持正常。",
+   "detection": "Cloud Armor Adaptive Protection 約在攻擊開始 8 分鐘、約 100,000 rps 時就發出告警，附攻擊特徵與建議規則（分析數十個特徵），早於攻擊達到峰值。",
+   "rootCause": "使用 HTTP pipelining 的 L7 HTTPS 流量，來自 5,256 個來源 IP、132 個國家，屬 Mēris botnet 家族；其中 1,169 個為 Tor exit node（佔來源 22%、流量 3%，超過 1.3M rps）。",
+   "whyHard": "流量是加密的合法形式 HTTPS，無法只靠網路層過濾；攻擊在 2 分鐘內增加數百倍，人工反應來不及。",
+   "fix": "客戶先把建議規則以 preview mode 驗證，再以 enforcement mode 啟用，動作為 rate limiting 的 throttle；攻擊流量在 Google 網路邊緣就被擋掉，不進客戶應用。",
+   "tradeoff": "自動產生的規則仍需 preview 驗證以防誤殺；ramp-up 太快時，8 分鐘的偵測窗口可能已造成損害；依賴雲端供應商的 edge 能力。",
+   "lessons": [
+    "偵測要在攻擊爬升階段（而非峰值）就給出可執行的 signature",
+    "新規則先 preview 再 enforce 是降低誤殺的標準流程",
+    "攻擊要在離 origin 最遠的 edge 擋，origin 容量不用跟攻擊成正比"
+   ],
+   "numbers": [
+    "峰值 46 million rps（比先前記錄 26M rps 大 76%）",
+    "9:45 PT 開始、約 8 分鐘到 100,000 rps、再 2 分鐘到峰值、10:54 結束（共 69 分鐘）",
+    "5,256 個來源 IP、132 個國家",
+    "1,169 個 Tor exit node"
+   ],
+   "interviewUse": "支撐『L7 DDoS 用 adaptive detection + edge rate limiting，並用 preview 模式降低誤殺』。",
+   "sources": [
+    {
+     "title": "How Google Cloud blocked the largest Layer 7 DDoS attack at 46 million rps",
+     "url": "https://cloud.google.com/blog/products/identity-security/how-google-cloud-blocked-largest-layer-7-ddos-attack-at-46-million-rps"
+    }
+   ],
+   "topics": [
+    "rate-limiting",
+    "api-networking"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "cloudflare-2024-3-8tbps-autonomous-mitigation",
+   "problem": "security-availability",
+   "company": "Cloudflare",
+   "title": "3.8 Tbps 攻擊：anycast 分散吸收與每台機器自主偵測",
+   "date": "2024-09",
+   "kind": "design-writeup",
+   "symptom": "九月間出現 100 多次超大型 L3/4 攻擊，最大 3.8 Tbps、21.4 億 pps，每次僅持續約 60–65 秒。",
+   "detection": "完全自動：每台伺服器上的 dosd 對可疑流量取樣並產生多組 fingerprint；原文未給精確偵測延遲。",
+   "rootCause": "攻擊來自大量被感染的裝置，流量因 anycast 自然分散到最近的 Cloudflare 資料中心（例如 Dallas 的 DVR 打到 Dallas 的伺服器）。",
+   "whyHard": "攻擊只持續約一分鐘，人工響應不可能；集中式 scrubbing 中心會被單點頻寬壓垮。",
+   "fix": "每台伺服器都跑完整的偵測與緩解（沒有專用 scrubbing 中心）；mitigation 指令透過 gossip（multicast）在機房內及跨機房傳播；封包以 XDP/eBPF（l4drop）在網卡層處理。",
+   "tradeoff": "需要每個節點都有完整防禦堆疊與足夠頻寬，只有大規模 anycast 網路才划算；自動規則無人審核，誤殺風險由 fingerprint 品質控制。",
+   "lessons": [
+    "把防禦分散到每個節點，攻擊流量就近被吸收，不需集中清洗",
+    "偵測與緩解必須自動化，攻擊時長短於人工反應",
+    "在 NIC/kernel 層（XDP/eBPF）過濾比在應用層便宜",
+    "丟棄要發生在成本最低的一層（NIC / kernel / 網路邊緣），越晚丟越貴。",
+    "把偵測與緩解下放到每一台機器並互相傳播規則，比集中式清洗中心更快、更少單點。",
+    "正常流量與攻擊流量不對稱時（例如請求小、回應大），可以利用對稱的 ingress 頻寬餘裕。"
+   ],
+   "numbers": [
+    "峰值 3.8 Tbps",
+    "2.14 billion packets per second",
+    "單次攻擊 60–65 秒",
+    "九月內 100 多次 hyper-volumetric L3/4 攻擊"
+   ],
+   "interviewUse": "支撐『anycast + 每節點自主防禦』的設計，以及為何小公司應租用而非自建。",
+   "sources": [
+    {
+     "title": "How Cloudflare auto-mitigated a world record 3.8 Tbps DDoS attack",
+     "url": "https://blog.cloudflare.com/how-cloudflare-auto-mitigated-world-record-3-8-tbps-ddos-attack/"
+    }
+   ],
+   "topics": [
+    "rate-limiting",
+    "api-networking"
+   ],
+   "byAgents": true,
+   "alsoIn": [
+    "overload"
+   ]
+  },
+  {
+   "id": "cloudflare-2021-17m-rps-https-flood",
+   "problem": "security-availability",
+   "company": "Cloudflare",
+   "title": "17.2M rps HTTPS 攻擊：自動產生即時 signature",
+   "date": "2021",
+   "kind": "design-writeup",
+   "symptom": "一個金融產業客戶被打到 17.2 million rps，是當時 Cloudflare 見過最大的 3 倍；同時還有 1.2+ Tbps 的網路層攻擊。",
+   "detection": "自主系統自動偵測並產生帶即時 signature 的緩解規則，無人工介入、無效能下降；原文未寫偵測耗時。",
+   "rootCause": "約 2 萬個 bot（分佈於 125 國）發出數秒內 3.3 億個請求的 HTTPS 洪水，攻擊流量相當於 Cloudflare 平均合法流量的 68%。",
+   "whyHard": "請求量極高且偏短時間爆發，人工規則來不及；HTTPS 流量需在終止 TLS 後才可判斷。",
+   "fix": "在 WAF/CDN 層以自動產生的 signature 過濾；網路層攻擊由 Magic Transit、Spectrum 另行處理。",
+   "tradeoff": "自動 signature 可能誤殺，需要足夠的合法流量基線；小型網站無法承受 TLS 終止的算力成本。",
+   "lessons": [
+    "L7 洪水用 signature-based 自動緩解",
+    "把 L3/4 與 L7 的緩解分層處理",
+    "botnet 規模不需很大（2 萬台）就能產生極高 rps"
+   ],
+   "numbers": [
+    "17.2 million rps，約為先前紀錄的 3 倍",
+    "超過 20,000 個 bot、125 個國家",
+    "數秒內超過 3.3 億個請求",
+    "約佔平均合法流量的 68%",
+    "同週另一波峰值接近 8 million rps"
+   ],
+   "interviewUse": "談 L7 DDoS 為何必須 edge 自動緩解，以及 L3/4 與 L7 分層防禦。",
+   "sources": [
+    {
+     "title": "Cloudflare thwarts 17.2M rps DDoS attack — the largest ever reported",
+     "url": "https://blog.cloudflare.com/cloudflare-thwarts-17-2m-rps-ddos-attack-the-largest-ever-reported/"
+    }
+   ],
+   "topics": [
+    "rate-limiting",
+    "api-networking"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "aws-2023-cloudfront-edge-absorption",
+   "problem": "security-availability",
+   "company": "AWS",
+   "title": "在 edge 吸收攻擊：CloudFront、Shield、Route 53、WAF 的分工",
+   "date": "2023-08",
+   "kind": "design-writeup",
+   "symptom": "2023-08 HTTP/2 Rapid Reset 期間，CloudFront 峰值超過 155 million rps，自動緩解，客戶未受影響。",
+   "detection": "原文寫『偵測後數分鐘內自動緩解』；未提供更精確的偵測方式與耗時。",
+   "rootCause": "將服務放在全球分散的 edge location，讓大部分請求在到達 origin 前就由 CDN 快取或在 edge 被丟棄。",
+   "whyHard": "origin 的容量永遠小於攻擊；DNS 與 L7 都是攻擊面，單一防禦層不夠。",
+   "fix": "CloudFront（快取）+ Shield（自動 DDoS 緩解）+ Route 53（DNS 保護）+ WAF（應用層過濾）疊加，防止不必要請求觸及 origin。",
+   "tradeoff": "動態、不可快取的 API 無法靠 CDN 吸收，仍需 origin 端 rate limiting 與 WAF；多層服務增加成本與配置複雜度。",
+   "lessons": [
+    "把可快取內容放到 edge 是最便宜的 DDoS 防禦",
+    "DNS 也要受保護，不能只保護 HTTP",
+    "防禦是分層疊加，沒有單一銀彈"
+   ],
+   "numbers": [
+    "CloudFront 峰值超過 155 million rps（2023-08 Rapid Reset）",
+    "2023 Q1 阻擋超過 130 萬次 botnet 驅動的 DDoS 攻擊",
+    "協同拆除 23 萬個 L7/HTTP DDoS 攻擊來源"
+   ],
+   "interviewUse": "面試設計 API/CDN 時，用來說明『edge 吸收 + origin 隱藏』的分層防禦。",
+   "sources": [
+    {
+     "title": "How AWS protects customers from DDoS events",
+     "url": "https://aws.amazon.com/blogs/security/how-aws-protects-customers-from-ddos-events/"
+    }
+   ],
+   "topics": [
+    "caching",
+    "api-networking"
+   ],
+   "byAgents": true
+  }
+ ],
+ "quiz": [
+  {
+   "q": "memcached 放大攻擊的 1.35 Tbps 流量來自上千個 ASN，為什麼 GitHub 不能直接封鎖來源 IP？",
+   "a": "來源 IP 是被偽造的，真實流量來自第三方暴露的 memcached 伺服器，數量龐大且分散；唯一可行的是把吸收點移到上游（Akamai 清洗）。",
+   "topic": "security-availability",
+   "kind": "情境"
+  },
+  {
+   "q": "HTTP/2 的 server 宣告最多 100 個併發 stream，為什麼 Rapid Reset 仍能繞過？防禦端該在哪一層擋？",
+   "a": "RST_STREAM 讓 stream 立即 closed、不再計入併發上限，客戶端可無限開了就取消。要在連線層計量（取消比率、RST_STREAM 速率）並直接關閉連線，不能等到商業邏輯層。",
+   "topic": "security-availability",
+   "kind": "取捨"
+  },
+  {
+   "q": "Rate limiter 在 edge 要選 sliding window counter、leaky bucket 還是 fixed window？Cloudflare 為什麼選前者，代價是什麼？",
+   "a": "Fixed window 邊界會被灌出雙倍流量；leaky bucket 需要原子操作且兩個參數難調。Sliding window counter 每 key 只存兩個數字、單次 INCR，代價是近似值（平均誤差 6%）且計數僅限 PoP 內。",
+   "topic": "security-availability",
+   "kind": "取捨"
+  },
+  {
+   "q": "你的 API 遇到 L7 DDoS，為什麼只靠 origin 端的 load shedding 不夠？應該怎麼設計？",
+   "a": "load shedding 只保護自己，攻擊者還是佔滿頻寬與連線，且正常用戶一樣被丟棄。應在 edge（CDN/anycast）吸收並自動緩解，origin 只收被過濾後的流量，並對不可快取 API 加 rate limit。",
+   "topic": "security-availability",
+   "kind": "情境"
+  },
+  {
+   "q": "Google Cloud Armor 對 46M rps 攻擊的規則上線流程為何先 preview 再 enforce？",
+   "a": "自動產生的 signature 可能誤殺合法流量，先 preview 驗證命中範圍，再以 throttle 動作 enforcement；代價是多一段上線時間。",
+   "topic": "security-availability",
+   "kind": "取捨"
+  }
+ ]
+}

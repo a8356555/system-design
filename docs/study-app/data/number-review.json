@@ -1,0 +1,530 @@
+[
+ {
+  "file": "inc-cache-hotspot.json",
+  "id": "nodejs-2023-cache-purge-404",
+  "figure": "完整修復約在 3/16 20:00 UTC，殘留影響到午夜 UTC",
+  "verdict": "supported",
+  "evidence": "full fix being put in place at approximately 8 PM UTC on the 16th ... full impact not resolved until midnight UTC on the 17th",
+  "fix": ""
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "ticketmaster-2022-eras-tour-onsale",
+  "figure": "11 月 15 日單日售出 2 million 張票",
+  "verdict": "supported",
+  "evidence": "Over 2 million tickets were sold on Ticketmaster for Taylor Swift | The Eras Tour on Nov. 15",
+  "fix": ""
+ },
+ {
+  "file": "inc-cascading-failure.json",
+  "id": "roblox-2021-consul-outage",
+  "figure": "18,000 台伺服器、170,000 個 container、5,000 萬日活玩家",
+  "verdict": "supported",
+  "evidence": "over 18,000 servers and 170,000 containers; Fifty million players regularly use Roblox every day",
+  "fix": ""
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "cloudflare-2025-11-bot-feature-file",
+  "figure": "2025-12-05 事故：08:47 開始、09:12 回復，約 25 分鐘，約 28% HTTP 流量受影響",
+  "verdict": "supported",
+  "evidence": "starting at 08:47 UTC ... resolved at 09:12 (~25 minutes total impact) ... approximately 28% of all HTTP traffic",
+  "fix": ""
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "cloudflare-2022-06-bgp-policy-reorder",
+  "figure": "變更在 03:56 開始推到第一個站點，約 2.5 小時後才到 MCP 站點",
+  "verdict": "derived",
+  "evidence": "03:56 UTC first location; rollout reached the MCP-enabled locations at 06:27 -> 2h31m, about 2.5 hours",
+  "fix": ""
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "mozilla-2019-05-addon-cert-expiry",
+  "figure": "1.5 萬以上的 Firefox add-on 受影響",
+  "verdict": "supported",
+  "evidence": "Currently there are over 15,000 Firefox add-ons (1.5 萬 = 15,000)",
+  "fix": ""
+ },
+ {
+  "file": "inc-data-integrity.json",
+  "id": "dropbox-magic-pocket-pocket-watch",
+  "figure": "10+ petabyte staging cluster",
+  "verdict": "wrong",
+  "evidence": "Source: 'This cluster is tens of petabytes in size' (Staging cluster); '10+ petabyte' understates it",
+  "fix": "Dropbox Pocket Watch 所述的 Staging cluster 大小為數十 PB（tens of petabytes）。"
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "anthropic-2026-03-claude-code-quality",
+  "figure": "reasoning effort 變更 3/4 至 4/7 回滾，約 34 天",
+  "verdict": "derived",
+  "evidence": "Changed March 4, reverted April 7 -> 34 days (27 days left in March after 4th + 7 = 34)",
+  "fix": ""
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "openai-2024-12-11-k8s-telemetry",
+  "figure": "持續 4 小時 22 分（15:16–19:38 PST）",
+  "verdict": "derived",
+  "evidence": "Between 3:16 PM PST and 7:38 PM PST -> 4h22m",
+  "fix": ""
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "openai-2024-12-11-k8s-telemetry",
+  "figure": "14 個受影響元件",
+  "verdict": "derived",
+  "evidence": "APIs 9 affected components + ChatGPT 5 affected components = 14",
+  "fix": ""
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "openai-2024-12-11-k8s-telemetry",
+  "figure": "15:13 警報觸發，16:36 第一個 cluster 恢復，19:38 全面恢復",
+  "verdict": "supported",
+  "evidence": "3:13pm: Alerts fired; 4:36pm: First cluster recovered; 7:38pm: All clusters recovered",
+  "fix": ""
+ },
+ {
+  "file": "inc-overload.json",
+  "id": "cloudflare-2017-edge-rate-limiting",
+  "figure": "對 4 億個請求、27 萬個不同來源的分析：0.003% 請求被誤放行或誤限流，真實速率與近似速率平均差 6%，3 個來源略超過門檻卻被放行（實際速率低於門檻的 115%），沒有低於門檻的來源被誤擋",
+  "verdict": "supported",
+  "evidence": "analysis on 400 million requests from 270,000 distinct sources: 0.003% wrongly allowed/limited; 6% avg diff; 3 sources allowed, actual rate less than 15% above threshold (=115%); none below threshold mitigated",
+  "fix": ""
+ },
+ {
+  "file": "inc-resource-exhaustion.json",
+  "id": "mailchimp-2019-02-mandrill-xid-wraparound",
+  "figure": "事故 2/4 05:35 UTC 開始，2/5 22:09 UTC 結束，約 41 小時",
+  "verdict": "derived",
+  "evidence": "began 05:35 UTC Feb 4, resolved Feb 5 22:09 UTC -> 40h34m, about 41 hours",
+  "fix": ""
+ },
+ {
+  "file": "inc-resource-exhaustion.json",
+  "id": "cloudflare-bind-before-connect-ephemeral-ports",
+  "figure": "IP_BIND_ADDRESS_NO_PORT 需 kernel 4.2+",
+  "verdict": "unsupported",
+  "evidence": "Page only says 'later in 2015 Linux introduced a proper fix: the IP_BIND_ADDRESS_NO_PORT socket option'; no 'kernel 4.2' appears",
+  "fix": ""
+ },
+ {
+  "file": "inc-resource-exhaustion.json",
+  "id": "github-2021-05-int32-overflow-scoped-tokens",
+  "figure": "5/16 07:17 UTC 開始，持續 9 小時 48 分",
+  "verdict": "supported",
+  "evidence": "## May 16 07:17 UTC (lasting 9 hours 48 minutes)",
+  "fix": ""
+ },
+ {
+  "file": "inc-resource-exhaustion.json",
+  "id": "ravendb-2023-12-process-per-write-time-wait",
+  "figure": "高峰 32,768 條 TCP 連線，對應 Linux ephemeral port 範圍",
+  "verdict": "supported",
+  "evidence": "it hits 32K connections at its peak ... 32K is also the number of ephemeral port range values for Linux",
+  "fix": ""
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "cloudflare-2018-memcrashed-udp-amplification",
+  "figure": "15 bytes 請求 → 134KB 回應（8,933 倍）",
+  "verdict": "derived",
+  "evidence": "15 bytes of request triggered 134KB of response; 134,000/15 = 8,933x (source itself says ~10,000x)",
+  "fix": ""
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "cloudflare-2024-3-8tbps-autonomous-mitigation",
+  "figure": "九月內 100 多次 hyper-volumetric L3/4 攻擊",
+  "verdict": "supported",
+  "evidence": "mitigated over one hundred hyper-volumetric L3/4 DDoS attacks throughout September",
+  "fix": ""
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "cloudflare-2021-17m-rps-https-flood",
+  "figure": "數秒內超過 3.3 億個請求",
+  "verdict": "supported",
+  "evidence": "Within seconds, the botnet bombarded the Cloudflare edge with over 330 million attack requests (3.3 億)",
+  "fix": ""
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "aws-2023-cloudfront-edge-absorption",
+  "figure": "CloudFront 峰值超過 155 million rps（2023-08 Rapid Reset）",
+  "verdict": "supported",
+  "evidence": "peaking at over 155 million requests per second (RPS); HTTP/2 rapid reset",
+  "fix": ""
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "aws-2023-cloudfront-edge-absorption",
+  "figure": "2023 Q1 阻擋超過 130 萬次 botnet 驅動的 DDoS 攻擊",
+  "verdict": "supported",
+  "evidence": "in the first quarter of 2023, we stopped over 1.3 million botnet-driven DDoS attacks (130 萬)",
+  "fix": ""
+ },
+ {
+  "file": "inc-tail-latency.json",
+  "id": "discord-2020-go-gc-read-states",
+  "figure": "LRU cache 原為數千萬筆 Read States；Rust 版容量提高到 800 萬筆（文中原話為 8 million Read States）",
+  "verdict": "supported",
+  "evidence": "tens of millions of Read States in each cache; increased the cache capacity to 8 million Read States",
+  "fix": ""
+ },
+ {
+  "file": "inc-tail-latency.json",
+  "id": "twitch-2019-go-gc-ballast",
+  "figure": "GC 次數降約 99%",
+  "verdict": "supported",
+  "evidence": "we saw ~99% reduction in GC cycles",
+  "fix": ""
+ },
+ {
+  "file": "inc-tail-latency.json",
+  "id": "twitch-2019-go-gc-ballast",
+  "figure": "尖峰時 P99 API 延遲改善約 45%",
+  "verdict": "supported",
+  "evidence": "reduced overall 99th percentile API latency during peak load by ~45%",
+  "fix": ""
+ },
+ {
+  "file": "inc-tail-latency.json",
+  "id": "datadog-2023-network-latency-hidden-bottlenecks",
+  "figure": "正常 P99 約 100ms，問題期間超過 1000ms，修復後穩定低於 100ms",
+  "verdict": "supported",
+  "evidence": "p99 remote cache latency hovers around 100 ms ... spike upwards of one second ... consistently fell below 100 ms",
+  "fix": ""
+ },
+ {
+  "file": "inc-third-party-dependency.json",
+  "id": "npm-2016-left-pad-unpublish",
+  "figure": "273 個套件被 unpublish（kik + 272 個）",
+  "verdict": "derived",
+  "evidence": "Azer unpublished his kik package and 272 other packages -> 1 + 272 = 273",
+  "fix": ""
+ },
+ {
+  "file": "inc-third-party-dependency.json",
+  "id": "npm-2016-left-pad-unpublish",
+  "figure": "補發 1.0.0 約 10 分鐘內，還原 0.0.3 於 4:55 PM 完成",
+  "verdict": "supported",
+  "evidence": "Within ten minutes, Cameron Westland ... published ... 1.0.0; re-publishing the original 0.0.3 ... completed the operation by 4:55 PM",
+  "fix": ""
+ },
+ {
+  "file": "inc-time-clock.json",
+  "id": "google-leap-smear",
+  "figure": "2016 做法：20 小時（前後各 10 小時）、速率 0.0014%",
+  "verdict": "supported",
+  "evidence": "run the clocks 0.0014% slower across the ten hours before and ten hours after the leap second ... these twenty hours",
+  "fix": ""
+ },
+ {
+  "file": "mech-audio.json",
+  "id": "dejavu-hash-truncation",
+  "figure": "45 首歌共 540 萬筆指紋佔 377 MB，約為 WAV 檔大小的 20%",
+  "verdict": "supported",
+  "evidence": "the database used 377 MB of space for 5.4 million fingerprints ... about 20% of that storage in fingerprints; 45 songs",
+  "fix": ""
+ },
+ {
+  "file": "mech-audio.json",
+  "id": "content-id-reference-claims",
+  "figure": "政策變更：2024 年 10 月 15 日起，1–3 分鐘直式影片被視為 Shorts，有有效 claim 時一律被 block，不看 policy（官方說明頁所述）",
+  "verdict": "supported",
+  "evidence": "Starting on 15 October 2024, all new vertical videos 1-3 minutes ... Shorts; Shorts 1-3 minutes: blocked if active claim, regardless of policy",
+  "fix": ""
+ },
+ {
+  "file": "mech-audio.json",
+  "id": "hum-to-search-embedding",
+  "figure": "比對的曲庫超過 500,000 首歌，且持續更新（部落格所述）",
+  "verdict": "supported",
+  "evidence": "song database that contains over half a million songs that we are continually updating",
+  "fix": ""
+ },
+ {
+  "file": "mech-audio.json",
+  "id": "audio-cnn-cold-start-recsys",
+  "figure": "訓練資料為 100 萬首 Spotify 熱門歌曲的 30 秒片段，約 500,000 訓練、約 5,000 驗證",
+  "verdict": "supported",
+  "evidence": "30 second excerpts ... 1 million most popular tracks on Spotify ... about half for training (0.5M), about 5000 for online validation",
+  "fix": ""
+ },
+ {
+  "file": "mech-classic.json",
+  "id": "geo-index-evolution",
+  "figure": "geohash 5 碼 ≈ 4.9×4.9km、6 碼 ≈ 1.2×0.6km、7 碼 ≈ 153×153m",
+  "verdict": "derived",
+  "evidence": "Wikipedia error table: 5 chars +/-2.4 km (~4.8-4.9 km), 6 chars +/-0.61 km lng / +/-0.0027 deg lat (~1.2 x 0.6 km), 7 chars +/-0.076 km (~153 m); width = 2x error",
+  "fix": ""
+ },
+ {
+  "file": "mech-collab.json",
+  "id": "tombstone-growth-and-gc",
+  "figure": "Yjs B4 benchmark：182k inserts、77k deleted characters，snapshot 的 delete set 僅 4.5Kb",
+  "verdict": "unsupported",
+  "evidence": "Neither Yjs Y.Doc docs, Automerge storage doc nor Figma blog mention the B4 benchmark, 182k inserts, 77k deletions or 4.5Kb delete set",
+  "fix": ""
+ },
+ {
+  "file": "mech-connections.json",
+  "id": "quic-connection-migration",
+  "figure": "QUIC 約佔 Internet 流量 7%（Google 論文發表時）",
+  "verdict": "unsupported",
+  "evidence": "Cloudflare 'The Road to QUIC' page contains no figure of QUIC's share (7%) of Internet traffic",
+  "fix": ""
+ },
+ {
+  "file": "mech-connections.json",
+  "id": "reconnect-storm-jitter",
+  "figure": "Flannel 啟動 payload：1,500 人團隊縮小 7 倍、32,000 人團隊縮小 44 倍",
+  "verdict": "supported",
+  "evidence": "on a 1.5K user team, it reduced the data size by 7 times; on a 32K user team, it was reduced by 44 times",
+  "fix": ""
+ },
+ {
+  "file": "mech-data-pipeline.json",
+  "id": "hudi-incremental-upsert",
+  "figure": "Dimensional Driver Table runtime 220 → 39 分鐘（-82%），成本 -78%",
+  "verdict": "unsupported",
+  "evidence": "Hudi table_types and overview pages contain no Uber Driver Table 220->39 min / -82% / -78% numbers",
+  "fix": ""
+ },
+ {
+  "file": "mech-data-pipeline.json",
+  "id": "hudi-incremental-upsert",
+  "figure": "Driver Status Fact Table runtime -48%、成本 -25%",
+  "verdict": "unsupported",
+  "evidence": "Hudi table_types and overview pages contain no Driver Status Fact Table -48% / -25% numbers",
+  "fix": ""
+ },
+ {
+  "file": "mech-data-pipeline.json",
+  "id": "kappa-backfill-uber-hive-source",
+  "figure": "Uber 在同樣的 75-core production cluster 設定下 backfill 10 TB、9 天的資料",
+  "verdict": "unsupported",
+  "evidence": "O'Reilly 'Questioning the Lambda Architecture' mentions no Uber, 75-core cluster, 10 TB or 9-day backfill",
+  "fix": ""
+ },
+ {
+  "file": "mech-data-pipeline.json",
+  "id": "airbnb-midas-wall-data-quality",
+  "figure": "Midas 為 2020 年啟動的認證流程，含 Spec / Data / Code / Minerva 四種 review",
+  "verdict": "unsupported",
+  "evidence": "Page says 'rolled out Midas, a certification process for critical datasets'; no 2020 date and no Spec/Data/Code/Minerva review types",
+  "fix": ""
+ },
+ {
+  "file": "mech-delivery.json",
+  "id": "delivery-eta-decomposition",
+  "figure": "Swiggy 論文實驗設定：最長送達時間保證 45 分鐘",
+  "verdict": "supported",
+  "evidence": "主 session 以 arXiv 全文 PDF 核對（摘要頁不含此數字）",
+  "fix": ""
+ },
+ {
+  "file": "mech-delivery.json",
+  "id": "prep-time-model-label-inference",
+  "figure": "Swiggy 論文：每家餐廳切成 24 個 1 小時時段，各自用高斯分佈建模",
+  "verdict": "supported",
+  "evidence": "主 session 以 arXiv 全文 PDF 核對（摘要頁不含此數字）",
+  "fix": ""
+ },
+ {
+  "file": "mech-delivery.json",
+  "id": "accumulation-window-reshuffling",
+  "figure": "超過 30 分鐘未派單即拒絕，Ω = 7200 秒",
+  "verdict": "supported",
+  "evidence": "主 session 以 arXiv 全文 PDF 核對（摘要頁不含此數字）",
+  "fix": ""
+ },
+ {
+  "file": "mech-delivery.json",
+  "id": "accumulation-window-reshuffling",
+  "figure": "FoodMatch 相對 Greedy 的 XDT 平均少約 30%、每公里完成訂單數高約 20%",
+  "verdict": "supported",
+  "evidence": "主 session 以 arXiv 全文 PDF 核對（摘要頁不含此數字）",
+  "fix": ""
+ },
+ {
+  "file": "mech-delivery.json",
+  "id": "instacart-availability-replacement",
+  "figure": "約 500 萬種獨立商品、約 9.5 億筆 product listing",
+  "verdict": "supported",
+  "evidence": "about five million unique products in our catalog and about 950,000,000 product listings in total",
+  "fix": ""
+ },
+ {
+  "file": "mech-delivery.json",
+  "id": "merchant-order-state-sync",
+  "figure": "Uber Eats：接單流程超過 11.5 分鐘未接受則取消",
+  "verdict": "unsupported",
+  "evidence": "Wolt merchant page only mentions a 2.5-minute lateness threshold; no Uber Eats 11.5-minute accept timeout",
+  "fix": ""
+ },
+ {
+  "file": "mech-deploy-migration.json",
+  "id": "discord-cassandra-to-scylla",
+  "figure": "migrator 最高每秒 320 萬筆；9 天 vs 預估 3 個月",
+  "verdict": "supported",
+  "evidence": "new estimate: nine days! ... migrating messages at speeds of up to 3.2 million per second; earlier estimate: three months",
+  "fix": ""
+ },
+ {
+  "file": "mech-deploy-migration.json",
+  "id": "feature-flag-kill-switch",
+  "figure": "Cloudflare 2025：5.5 小時",
+  "verdict": "derived",
+  "evidence": "Nov 18 2025: impact started 11:20 UTC, all systems normal as of 17:06 UTC -> about 5h46m (impact from 11:28 = 5h38m); ~5.5 hours is a rounded figure",
+  "fix": ""
+ },
+ {
+  "file": "mech-email.json",
+  "id": "ip-warmup",
+  "figure": "不同供應商約 2 週到最多 6 週建立信譽",
+  "verdict": "supported",
+  "evidence": "establish a positive reputation in around two weeks, while for others it may take up to six weeks",
+  "fix": ""
+ },
+ {
+  "file": "mech-email.json",
+  "id": "tiered-email-search",
+  "figure": "範例使用者 >500,000 封信、archive 索引 >3GB、compact 約 4 分 52 秒",
+  "verdict": "supported",
+  "evidence": "My work account has over half a million emails; compact real 4m52.285s; archive index du 3365336 KB (~3.3 GB)",
+  "fix": ""
+ },
+ {
+  "file": "mech-gaming.json",
+  "id": "auth-server-prediction-reconciliation",
+  "figure": "Gambetta：50ms RTT 下玩家感到約 0.1 秒（a tenth of a second）無回應",
+  "verdict": "wrong",
+  "evidence": "Gambetta: assume data takes 50 ms from client to server ... server sends back 50 ms later -> nothing happened for a tenth of a second (50 ms each way = 100 ms RTT)",
+  "fix": "Gambetta：單程 50ms（來回 RTT 約 100ms）下，玩家按了右鍵後約 0.1 秒（a tenth of a second）沒有反應。"
+ },
+ {
+  "file": "mech-gaming.json",
+  "id": "udp-custom-reliability",
+  "figure": "Gaffer：125ms ping 下 TCP 掉包停滯至少約 1/5 秒，最壞 0.5 秒以上",
+  "verdict": "supported",
+  "evidence": "if you have a 125ms ping, you'll be waiting roughly 1/5th of a second ... worst case ... up to half a second or more",
+  "fix": ""
+ },
+ {
+  "file": "mech-gaming.json",
+  "id": "kernel-anticheat-tradeoff",
+  "figure": "Riot 公開：四年封鎖 360 萬個作弊帳號、約每 37 秒一次封鎖、4% 的封鎖因帳號遭盜用而撤銷",
+  "verdict": "supported",
+  "evidence": "In the last 4 years, we've banned over 3.6 million accounts just for cheating--roughly one ban every 37 seconds; 4% of VALORANT cheating bans are eventually reverted due to a compromised account",
+  "fix": ""
+ },
+ {
+  "file": "mech-iot.json",
+  "id": "telemetry-downsampling",
+  "figure": "50,000 metrics/sec、約 43 億筆/天（100,000 台 server × 5 metrics / 10 秒）",
+  "verdict": "supported",
+  "evidence": "100,000 servers, each emitting 5 metrics every 10 seconds ... 50,000 metrics per second, or 4.3 billion data points per day",
+  "fix": ""
+ },
+ {
+  "file": "mech-maps.json",
+  "id": "contraction-hierarchies",
+  "figure": "Geisberger 論文（靜態情境）：預處理 7.5 分鐘、算路徑長度 0.21 ms、完整路徑 0.56 ms、每節點 23 bytes",
+  "verdict": "unsupported",
+  "evidence": "Cached ae.iti.kit.edu page is Geisberger's 'Heuristic CH with Approximation Guarantee' (2010), not the static CH paper; 7.5 min / 0.21 ms / 0.56 ms / 23 bytes not found; OSRM wiki page also lacks them",
+  "fix": ""
+ },
+ {
+  "file": "mech-maps.json",
+  "id": "gnn-eta",
+  "figure": "ETA 改善幅度 16%（London、Copenhagen）至 51%（Taichung）",
+  "verdict": "unsupported",
+  "evidence": "Page only says 'improve accuracy of real time ETAs by up to 50%' and 'more than 50% in cities like Taichung'; no 16% (London/Copenhagen) or 51% figure",
+  "fix": ""
+ },
+ {
+  "file": "mech-moderation.json",
+  "id": "perceptual-hash-matching",
+  "figure": "PDQ 格式轉換下 99.96% 成功（threshold 30），浮水印約 50%",
+  "verdict": "supported",
+  "evidence": "99.96% of format changed images met the match threshold of 30; just over half of all watermarked images would be missed at threshold 30",
+  "fix": ""
+ },
+ {
+  "file": "mech-moderation.json",
+  "id": "sigma-rule-engine",
+  "figure": "Sigma 服務超過每秒 100 萬 requests",
+  "verdict": "supported",
+  "evidence": "Haskell-powered Sigma now runs in production, serving more than one million requests per second",
+  "fix": ""
+ },
+ {
+  "file": "mech-payments.json",
+  "id": "sca-3ds2-exemptions",
+  "figure": "SCA 自 2019-09-14 起適用（PSD2）",
+  "verdict": "supported",
+  "evidence": "Strong Customer Authentication (SCA), a rule in effect as of September 14, 2019, as part of PSD2",
+  "fix": ""
+ },
+ {
+  "file": "mech-recsys.json",
+  "id": "bandit-exploration",
+  "figure": "Yahoo 資料集超過 3,300 萬事件，相對 context-free bandit 點擊率提升 12.5%",
+  "verdict": "supported",
+  "evidence": "dataset containing over 33 million events. Results showed a 12.5% click lift compared to a standard context-free bandit",
+  "fix": ""
+ },
+ {
+  "file": "mech-recsys.json",
+  "id": "interleaving-vs-ab",
+  "figure": "GenRec：約 10% 流量、約 4 週 A/B（repo 筆記）",
+  "verdict": "unsupported",
+  "evidence": "Spotify interleaving glossary and Meta Instagram Explore pages contain no GenRec 10% traffic / 4 week A/B figures (note itself cites repo notes)",
+  "fix": ""
+ },
+ {
+  "file": "mech-video.json",
+  "id": "per-title-encoding",
+  "figure": "Netflix 原文範例：同畫質下比固定 ladder 的 5800 kbps 省約 20% bitrate",
+  "verdict": "unsupported",
+  "evidence": "Netflix/vmaf GitHub page contains no 5800 kbps ladder or ~20% bitrate saving example",
+  "fix": ""
+ },
+ {
+  "file": "mech-video.json",
+  "id": "buffer-based-abr",
+  "figure": "BBA-0 固定 90 秒 reservoir",
+  "verdict": "supported",
+  "evidence": "主 session 以 arXiv 全文 PDF 核對（摘要頁不含此數字）",
+  "fix": ""
+ },
+ {
+  "file": "mech-web-search.json",
+  "id": "pagerank-iterative",
+  "figure": "論文稱 2,600 萬頁的 PageRank 可在中型工作站上於數小時內算完",
+  "verdict": "supported",
+  "evidence": "a PageRank for 26 million Web pages can be computed in a few hours on a medium size workstation",
+  "fix": ""
+ },
+ {
+  "file": "mech-web-search.json",
+  "id": "pagerank-iterative",
+  "figure": "原型的完整資料庫至少 2,400 萬頁",
+  "verdict": "supported",
+  "evidence": "prototype with a full text and hyperlink database of at least 24 million pages",
+  "fix": ""
+ },
+ {
+  "file": "mech-web-search.json",
+  "id": "postings-compression",
+  "figure": "Google 簡報：7-bit varint 約 1.8 億 numbers/秒、30-bit varint 約 2.4 億、group varint 約 4 億",
+  "verdict": "supported",
+  "evidence": "7-bit-per-byte varint: decode ~180M numbers/second; 30-bit Varint w/ 2-bit length: ~240M; Group varint: ~400M numbers/second",
+  "fix": ""
+ }
+]

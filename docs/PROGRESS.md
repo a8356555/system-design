@@ -24,12 +24,14 @@
   - In the Wild 6 篇已補回原始 eng blog URL
 - [x] 2026-10-19 [threads-chunhao2026/](threads-chunhao2026/README.md) — 作者全部 270 篇貼文(使用者登入收集連結 + urllib 腳本抓全文);posts.md 收系統設計相關 64 組原文;tech-blog/ 15 篇 eng blog 找回原文整理(6 篇直接讀到原文、5 篇經 Wayback 核對、3 篇只有轉載、1 篇找不到);2026-10-24 補收連結預覽卡(22 篇貼文補到連結,無新 eng blog)與 6 篇新貼文
 - [x] 2026-10-19 skill `harvesting-threads-posts`(~/.claude/skills/)— Threads 收集/抓取/追連結/agent 整理流程 + collector.js / fetch_posts.py / html_to_text.py
-- [x] 2026-10-24 [study-app/](study-app/index.html) — 系統設計取捨學習頁:22 個決策主題(選項 × 適合/代價/會壞/規模 + 決策指引 + 面試說法)、53 案例(選擇 vs 不選)、247 條領域機制(2026-10-25 兩批共 19 個領域:影音、地圖、連線、推薦、審核、資料管線、部署遷移、觀測性、撮合、遊戲、音訊、協作、外送、廣告、Email、支付、搜尋引擎、IoT + 原 35 條轉換)、17 元件、195 題自測;已發布 https://claude.ai/artifact/GB7tGPy3DZFUzECkMuycu4 。改資料後在 study-app/ 跑 `python3 build.py` 重建
+- [x] 2026-10-24 [study-app/](study-app/index.html) — 系統設計取捨學習頁:22 個決策主題(選項 × 適合/代價/會壞/規模 + 決策指引 + 面試說法)、53 案例(選擇 vs 不選)、247 條領域機制(2026-10-25 兩批共 19 個領域:影音、地圖、連線、推薦、審核、資料管線、部署遷移、觀測性、撮合、遊戲、音訊、協作、外送、廣告、Email、支付、搜尋引擎、IoT + 原 35 條轉換)、125 篇真實事故(2026-10-26:14 類問題、59 家公司,來自 99 家技術部落格清單 study-app/sources/companies.json;數字逐一回原文核對)、17 元件、278 題自測;已發布 https://claude.ai/artifact/GB7tGPy3DZFUzECkMuycu4 。改資料後在 study-app/ 跑 `python3 build.py` 重建
 
 ## In progress
 - [ ] Threads 長貼文補齊:需使用者登入後在 /@chunhao2026/replies 跑收集腳本,補抓接續留言後重建 posts.md 與 tech-blog「作者的解讀」
 
 ## Next steps
+- [ ] 每週技術部落格掃描 routine:待使用者 /web-setup 連 GitHub 並確認設定(週一 09:00、Sonnet 5.5、開 PR)
+- [ ] 決定經 Wayback / 轉載讀取的內容保留或改標(清單見 scratchpad blogs/archive-derived.txt,已併入 study-app/sources)
 - [ ] Practice re-deriving the 10 examples from scratch (cover the derivation chain, derive, then check)
 - [ ] 按 study-roadmap.md 的 6 週計畫執行;W3-4 的計時 writeup 必選 Payment(原最大缺口)
 - [ ] Mock 後的弱點記回本檔

@@ -1,0 +1,352 @@
+{
+ "problem": "tail-latency",
+ "incidents": [
+  {
+   "id": "google-2013-tail-at-scale",
+   "company": "Google",
+   "title": "The Tail at Scale：fan-out 把 1% 的慢請求放大成多數請求",
+   "date": "2013-02",
+   "kind": "design-writeup",
+   "symptom": "單台 server 平常 10ms、P99 一秒；一個 user request 要 fan-out 到 100 台時，63% 的 user request 會超過一秒。",
+   "rootCause": "單一元件的延遲離群值（共享資源干擾、背景工作、queueing、GC 等）在 fan-out 後被機率放大：request 的完成時間取決於最慢的那台。",
+   "whyHard": "光靠把每個元件做好無法根除變異，共享環境中它是常態；而且 fan-out 越大越糟（2,000 台、單機 1/10,000 慢請求，也會有近五分之一的 user request 變慢）。",
+   "fix": "不消除變異，改成容忍：hedged request（等到 95th-percentile 預期延遲仍未回應才送第二份）、tied request（同時送給兩台並互相取消）、micro-partition、selective replication、latency-induced probation（慢機器暫時剔除並持續送 shadow request 觀察）、good-enough 部分結果、canary request。",
+   "tradeoff": "hedging 會增加負載（等到 P95 才送約多 5% 負載），且要求請求可重複執行（idempotent）或可取消；tied request 在兩邊 queue 都空時仍可能重複執行，需要小延遲（約兩倍網路單趟延遲）；good-enough 結果犧牲完整性。",
+   "lessons": [
+    "先算 fan-out 放大：服務層 P99 由元件 P99.x 決定，不是 P50。",
+    "對 tail 用『冗餘 + 取消』換延遲，延遲門檻設在 P95 可把額外負載壓在約 5%。",
+    "queueing delay 是變異主因之一，請求開始執行後變異會大幅下降，所以要在 enqueue 時就做選擇或取消。"
+   ],
+   "numbers": [
+    "單機 10ms、P99 一秒：fan-out 100 台 → 63% 請求超過 1 秒",
+    "Google 真實服務 Table 1：單一請求 P99 10ms；全部完成的 P99 為 140ms；95% 完成為 70ms",
+    "BigTable 讀 1,000 個 key（分佈在 100 台）：10ms 後送 hedged request，P99.9 從 1,800ms 降到 74ms，只多 2% 請求",
+    "tied request 對 BigTable 讀（隔離叢集）：1ms 後送 tied request，median 降 16%，P99.9 近 40%"
+   ],
+   "interviewUse": "說明為什麼 fan-out 架構要盯 P99 而不是平均，並以 hedged request 作為預設解法，同時講出負載 +5% 與需 idempotent 的代價。",
+   "sources": [
+    {
+     "title": "The Tail at Scale (Dean & Barroso, CACM 2013) — PDF 副本",
+     "url": "https://cseweb.ucsd.edu/classes/sp18/cse291-c/post/schedule/p74-dean.pdf"
+    }
+   ],
+   "topics": [
+    "scaling-reads",
+    "reliability",
+    "fanout"
+   ],
+   "problem": "tail-latency",
+   "byAgents": true
+  },
+  {
+   "id": "discord-2020-go-gc-read-states",
+   "company": "Discord",
+   "title": "Read States 服務的 Go GC 週期性延遲尖峰，改寫成 Rust",
+   "date": "2020-02",
+   "kind": "postmortem",
+   "symptom": "Read States 服務每隔幾分鐘出現大幅延遲尖峰，影響使用者體驗。",
+   "rootCause": "Go 至少每 2 分鐘會強制跑一次 GC；服務裡有存放數千萬筆 Read States 的巨大 LRU cache，GC 掃描它要付出昂貴的成本，造成週期性停頓。",
+   "whyHard": "調 GC percent 完全沒改善；把 LRU 切成很多小分區可降低尖峰幅度，卻因 cache 變小、更多 DB 查詢而讓 P99 變差。強制 GC 的下限是 runtime 行為，無法在應用層調掉。",
+   "fix": "用 Rust 重寫（無 runtime / GC，記憶體在不再使用時立即釋放）；之後升級 Tokio 0.2 CPU 使用持續更低。cache 容量可提高到 800 萬筆 Read States 而效能不退化。",
+   "tradeoff": "整個服務重寫、團隊要承擔 Rust 學習曲線與生態；只有『大量長壽物件 + 低延遲要求』時才值得，一般服務先調 GC 即可。",
+   "lessons": [
+    "大型長壽 in-memory cache 是 tracing GC 的最壞情況：停頓成本與 live heap 成正比。",
+    "以『縮小 cache』換 GC 尖峰會把問題轉移成 cache miss 與 DB 負載。"
+   ],
+   "numbers": [
+    "Go 強制 GC 間隔：至少每 2 分鐘",
+    "LRU cache 原為數千萬筆 Read States；Rust 版容量提高到 800 萬筆（文中原話為 8 million Read States）",
+    "延遲由毫秒級降到微秒級；最大 @mention 延遲降到毫秒級"
+   ],
+   "interviewUse": "講 GC 語言在大 heap 低延遲服務的 P99 風險，並說明解法光譜：調 GC → 切分 heap/off-heap → 換無 GC 語言。",
+   "sources": [
+    {
+     "title": "Why Discord is switching from Go to Rust",
+     "url": "https://discord.com/blog/why-discord-is-switching-from-go-to-rust"
+    }
+   ],
+   "topics": [
+    "caching",
+    "reliability"
+   ],
+   "problem": "tail-latency",
+   "byAgents": true
+  },
+  {
+   "id": "twitch-2019-go-gc-ballast",
+   "company": "Twitch",
+   "title": "Go GC 過於頻繁：用 memory ballast 降低 P99",
+   "date": "2019-04",
+   "kind": "postmortem",
+   "symptom": "Visage API 前端每秒觸發約 8–10 次 GC，超過 30% 的 CPU 週期花在 GC 相關呼叫，雖然 heap 只有約 450MiB、機器有 64GiB。",
+   "rootCause": "Go 的 GC pacer 在 heap 成長一倍時觸發；live heap 很小、可用記憶體很大，導致 GC 週期過密，goroutine 還要在配置時被迫協助 mark（GC assist），拖慢請求。",
+   "whyHard": "CPU 與記憶體都看似充裕，瓶頸卻在 GC 觸發門檻；問題不在『記憶體不足』而在『heap 基準線太小』。",
+   "fix": "啟動時配置一個 10GiB 的 []byte 當 ballast：只佔虛擬記憶體（未存取則不佔實體 RAM），卻把 heap 基準線抬高，GC 觸發次數大減。",
+   "tradeoff": "需要手動決定 ballast 大小，與實際記憶體上限耦合；是繞過 pacer 的 workaround，新版 Go 的 GOMEMLIMIT/GOGC 組合可能更適合（此為我方判斷，非原文）。",
+   "lessons": [
+    "低延遲服務若 GC 頻率過高，先看 GC 觸發門檻而非加機器。",
+    "減少 GC assist 對 P99 的貢獻，往往比降低單次 GC 暫停更重要。"
+   ],
+   "numbers": [
+    "GC 次數降約 99%",
+    "CPU 使用降約 30%",
+    "尖峰時 P99 API 延遲改善約 45%",
+    "ballast 10GiB"
+   ],
+   "interviewUse": "展示 GC 調校的低成本手段，以及它是 workaround 的限制。",
+   "sources": [
+    {
+     "title": "Go memory ballast: How I learnt to stop worrying and love the heap (Twitch)",
+     "url": "https://blog.twitch.tv/en/2019/04/10/go-memory-ballast-how-i-learnt-to-stop-worrying-and-love-the-heap/"
+    }
+   ],
+   "topics": [
+    "reliability"
+   ],
+   "problem": "tail-latency",
+   "byAgents": true
+  },
+  {
+   "id": "datadog-2023-network-latency-hidden-bottlenecks",
+   "company": "Datadog",
+   "title": "一個 P99 延遲問題背後的四個隱藏瓶頸",
+   "date": "2023-05",
+   "kind": "postmortem",
+   "symptom": "remote cache 的 P99 延遲在部署（rollout）期間從約 100ms 飆到 1 秒以上，counter 應用啟動時一直觸發『backlog 過多』告警。",
+   "rootCause": "四個原因同時存在：Envoy sidecar 吃滿分配的兩個 core 被 CPU throttling；Linux kernel bug 讓流量只走 8 個 ENA transmit queue 其中一個；rollout 時 EC2 網路頻寬超出配額，封包在 hypervisor 層被丟；graceful shutdown 失敗，client 持續送請求給正在終止的 cache pod，造成 1 秒 timeout 與重試。",
+   "whyHard": "沒有任何單一變更與延遲對應，修一個原因後仍殘留尖峰；每個原因分屬不同層（proxy、kernel、雲端網路、K8s 生命週期）。",
+   "fix": "給 Envoy 更多 CPU；套用 kernel hotfix 讓流量分散到全部 transmit queue；改用網路強化的 EC2 instance；用 Kubernetes preStop hook 搭配 maintenance mode 訊號做 graceful shutdown。",
+   "tradeoff": "網路優化型 instance 較貴，但他們後續把 remote cache 縮小到六分之一，預期每年省數十萬美元；此抵銷不一定適用於其他工作負載。",
+   "lessons": [
+    "tail 問題常是多重原因疊加，修一個之後要重新量測而不是宣告完成。",
+    "rollout 與 shutdown 流程本身就是延遲來源，要把連線排空列入設計。"
+   ],
+   "numbers": [
+    "正常 P99 約 100ms，問題期間超過 1000ms，修復後穩定低於 100ms",
+    "Envoy 配置 2 core",
+    "8 個 ENA transmit queue 只用其中 1 個",
+    "remote cache 縮小為原來的六分之一"
+   ],
+   "interviewUse": "說明診斷 P99 的方法論：逐層排除（應用 → proxy → kernel → 雲網路 → 生命週期），並強調 graceful drain。",
+   "sources": [
+    {
+     "title": "Not Just Another Network Latency Issue: How We Unraveled a Series of Hidden Bottlenecks",
+     "url": "https://www.datadoghq.com/blog/engineering/not-just-another-network-latency-issue"
+    }
+   ],
+   "topics": [
+    "api-networking",
+    "reliability"
+   ],
+   "problem": "tail-latency",
+   "byAgents": true
+  },
+  {
+   "id": "cloudflare-2017-nginx-socket-balancing",
+   "company": "Cloudflare",
+   "title": "NGINX worker 負載不均：epoll LIFO 與 SO_REUSEPORT 的 tail 取捨",
+   "date": "2017-10",
+   "kind": "design-writeup",
+   "symptom": "進來的連線在 NGINX worker 之間分配不均：一個 worker 處理遠多於其他 worker。",
+   "rootCause": "Linux epoll 的 LIFO 行為讓最近加入等待佇列（最忙）的 process 拿到大部分新連線。",
+   "whyHard": "換成 SO_REUSEPORT（每個 worker 各自 listen socket）能讓連線數平均，但每個 queue 獨立，某個 worker 卡住時其佇列內的請求無法被其他 worker 接手，tail 反而惡化。",
+   "fix": "比較兩種模型：單一 queue（預設）與 SO_REUSEPORT（多 queue），依延遲分佈做選擇，而不是只看 CPU 平均。",
+   "tradeoff": "單一 queue 延遲上限可預測但 worker 使用率不均；SO_REUSEPORT 負載均勻但高負載下延遲變異大。",
+   "lessons": [
+    "『負載均勻』與『尾延遲低』不是同一個目標；單一共享 queue 通常比多個獨立 queue 有更好的 tail。",
+    "評估負載平衡要看 max 與標準差，不能只看 median。"
+   ],
+   "numbers": [
+    "單一 queue：median 30.28ms、max 72.65ms、標準差 1.58ms",
+    "多 queue（SO_REUSEPORT）：median 24.67ms、max 144.55ms、標準差 25.27ms"
+   ],
+   "interviewUse": "支撐『shared queue 優於 per-worker queue 的 tail』論點（對應 queueing theory 的 pooled queue）。",
+   "sources": [
+    {
+     "title": "The Sad State of Linux Socket Balancing (Cloudflare)",
+     "url": "https://blog.cloudflare.com/the-sad-state-of-linux-socket-balancing/"
+    }
+   ],
+   "topics": [
+    "api-networking",
+    "scaling-reads"
+   ],
+   "problem": "tail-latency",
+   "byAgents": true
+  },
+  {
+   "id": "cloudflare-2022-tcp-collapse",
+   "company": "Cloudflare",
+   "title": "TCP receive buffer collapse 造成的延遲尖峰",
+   "date": "2022-07",
+   "kind": "design-writeup",
+   "symptom": "當 client 快速送資料而 server 不讀取時，核心反覆對整個 receive buffer 做 collapse，造成明顯的延遲來源。",
+   "rootCause": "Linux TCP 依剩餘 buffer 空間通告 window，卻沒有充分計入每個封包的 metadata 成本；封包到達速度大於 metadata 被合併的速度時，socket 記憶體預算（skmem_rb）耗盡，核心被迫執行昂貴的 collapse（重寫整個 receive buffer）。",
+   "whyHard": "應用層看不到：延遲發生在 kernel socket memory 管理，需用 skmem_r、rcv_win 與 nstat 的 collapse 計數器等 kernel 觀測才能確認。",
+   "fix": "保守地開 window（利用 rcv_ssthresh 限制初始 window，讓 stack 學到實際 metadata 對 payload 的比例）；對高 BDP 情境提供 kernel patch，可用 initrwnd route option 做積極的初始 window。",
+   "tradeoff": "保守開 window 要多幾個 RTT 才達到全速；積極開 window 在 metadata 成本超出預期時仍會觸發 collapse。",
+   "lessons": [
+    "tail 可能源自 kernel 的記憶體會計，而不是應用程式碼。",
+    "吞吐與延遲在 window 策略上直接對立，沒有免費午餐。"
+   ],
+   "numbers": [
+    "預設 buffer 128KiB（含資料與 metadata），可用資料約 113KiB",
+    "window 預設上限為剩餘 buffer 空間的 50%",
+    "填滿 buffer 需 6 個 RTT",
+    "每個封包的 sk_buff 範例 metadata 為 576 bytes"
+   ],
+   "interviewUse": "在被問到『已排除應用層與網路設備後還有什麼可能』時，提出 kernel TCP buffer/window 行為。",
+   "sources": [
+    {
+     "title": "When the window is not fully open, your TCP stack is doing more than you think (Cloudflare)",
+     "url": "https://blog.cloudflare.com/when-the-window-is-not-fully-open-your-tcp-stack-is-doing-more-than-you-think/"
+    }
+   ],
+   "topics": [
+    "api-networking"
+   ],
+   "problem": "tail-latency",
+   "byAgents": true
+  },
+  {
+   "id": "dropbox-2017-edge-web-server-tuning",
+   "company": "Dropbox",
+   "title": "Edge 網路 NGINX 調校：用 runqlat 與 funclatency 找 tail",
+   "date": "2017-09",
+   "kind": "design-writeup",
+   "symptom": "Edge 網路要同時處理數十 Gbps 流量與數萬筆對延遲敏感的交易；在 runqlat 輸出看到多毫秒的 tail，nginx event loop 的處理時間呈現雙峰分佈（多數 0–1ms，一部分落在 16–31ms）。",
+   "rootCause": "機器上除了 nginx 還有太多其他工作，使 CPU affinity 反而造成 run queue 等待；event loop 中需要碰磁碟的操作會阻塞，使一批請求被拖到 16ms 以上；單次檔案操作可見 12–42ms 延遲。",
+   "whyHard": "平均值與 median 看不出問題；要靠 BCC 工具（runqlat、funclatency、fileslower）看直方圖才會發現雙峰。",
+   "fix": "排程競爭嚴重時關閉 CPU affinity；以 thread pool（aio threads、aio_write）把磁碟 I/O 移出 event loop，且每顆碟一個 pool，以免單顆壞碟影響全部；另有 BBR、FQ+pacing、TLS record 大小等整套 stack 調校。",
+   "tradeoff": "CPU affinity 在 median 較有利，但系統過載時會拉高 tail；thread pool 增加複雜度；大 ring buffer 吸收突發卻增加 bufferbloat；關 interrupt coalescing 降延遲但吃更多 CPU。",
+   "lessons": [
+    "用直方圖（runqlat/funclatency）看分佈，雙峰通常代表某條慢路徑，而非整體變慢。",
+    "阻塞 I/O 進入單執行緒 event loop 是經典的 head-of-line blocking 來源。"
+   ],
+   "numbers": [
+    "event loop 延遲分佈：0–1ms 有 3799 筆、16–31ms 有 409 筆（範例直方圖）",
+    "fileslower 範例延遲 12.18ms、42.08ms、42.39ms",
+    "FQ+pacing 相較 CUBIC 封包遺失降 15–20%",
+    "ECDSA 比 RSA 快 10 倍"
+   ],
+   "interviewUse": "說明 event-loop 伺服器的 tail 來源（阻塞 I/O、排程競爭）及量測方法。",
+   "sources": [
+    {
+     "title": "Optimizing web servers for high throughput and low latency (Dropbox Tech)",
+     "url": "https://dropbox.tech/infrastructure/optimizing-web-servers-for-high-throughput-and-low-latency"
+    }
+   ],
+   "topics": [
+    "api-networking",
+    "async-jobs"
+   ],
+   "problem": "tail-latency",
+   "byAgents": true
+  },
+  {
+   "id": "netflix-2024-noisy-neighbor-ebpf",
+   "company": "Netflix",
+   "title": "用 eBPF 量 run queue latency 偵測 noisy neighbor",
+   "date": "2024-09",
+   "kind": "design-writeup",
+   "symptom": "Titus 多租戶環境中，某個容器吃滿 CPU 使相鄰容器效能下降。範例中基準 P99 run queue latency 為 83 微秒，noisy neighbor 啟動後相鄰容器的 P99 飆到 131 毫秒。",
+   "rootCause": "共用主機上的容器與系統服務爭奪 CPU，被影響的 process 在 scheduler 的 run queue 等很久才拿到 CPU；另外 cgroup CPU 限制造成的 throttling 也會讓 run queue latency 升高，兩者症狀相似但處理方式不同。",
+   "whyHard": "傳統工具額外負擔大、需要專家逐次分析，也抓不到事後才發現的暫時性尖峰；單看 run queue latency 容易把 throttling 誤判成鄰居干擾。",
+   "fix": "用 eBPF 掛在 sched_wakeup、sched_wakeup_new、sched_switch，持續、按容器統計 run queue latency，並搭配 preemption 計數來區分 throttling 與鄰居干擾；kernel 端先做 rate limiting 避免 userspace 吃太多 CPU。",
+   "tradeoff": "每個 sched_* hook 增加不到 600 奈秒開銷，對 Java 服務無顯著影響；需要 kernel 版本與 eBPF 維運能力，且只負責偵測，隔離修正（調度、CPU pinning）仍要另外做。",
+   "lessons": [
+    "noisy neighbor 的第一個指標是 run queue latency，而非 CPU 使用率。",
+    "偵測需要多訊號交叉（run queue + preemption）才能避免誤判。"
+   ],
+   "numbers": [
+    "基準 P99 run queue latency 83 微秒；noisy neighbor 時 131 毫秒",
+    "每個 sched_* hook 開銷小於 600 奈秒"
+   ],
+   "interviewUse": "被問到多租戶下的 tail 與隔離時，講 run queue latency 作為偵測訊號，再接隔離手段。",
+   "sources": [
+    {
+     "title": "Noisy Neighbor Detection with eBPF (Netflix TechBlog；Medium 擋爬，透過 getoto.net 全文轉載閱讀)",
+     "url": "https://noise.getoto.net/2024/09/10/noisy-neighbor-detection-with-ebpf/"
+    }
+   ],
+   "topics": [
+    "scaling-reads",
+    "reliability"
+   ],
+   "problem": "tail-latency",
+   "byAgents": true
+  },
+  {
+   "id": "cockroach-2022-go-scheduler-elastic-work",
+   "company": "Cockroach Labs",
+   "title": "背景備份工作拖高前景查詢 P99：Go scheduler 與彈性 admission control",
+   "date": "2022-12",
+   "kind": "design-writeup",
+   "symptom": "排定的 backup 等背景工作期間，前景查詢的 P99 延遲出現不可接受的上升。",
+   "rootCause": "CPU 密集的 elastic 工作（backup、compaction、GC）造成 goroutine 排程延遲；大部分延遲預算花在跨 RPC 邊界上等待 Go runtime 排程。",
+   "whyHard": "最初使用的指標（每個 processor 上 runnable goroutine 數）不足以反映問題；靠機率式 tracing 才看到排程延遲在 RPC 邊界，並用 Go runtime 的 /sched/latencies:seconds histogram 找到排程延遲與前景延遲的強相關。",
+   "fix": "建立回饋控制迴路：監控 P99 scheduler latency（目標 1ms），動態調整 elastic 工作可用的 CPU 比例（實驗中 5–75%），以 token bucket 強制 CPU 時間配額；並需對 Go runtime 打 patch 以取得每個 goroutine 的 CPU 使用時間。",
+   "tradeoff": "假設 elastic 工作幾乎不阻塞、CPU 與 I/O 比例大致固定，並忽略被 OS 排除排程的 off-CPU 時間；需要維護 Go runtime patch。",
+   "lessons": [
+    "背景工作就是『同一台機器內的 noisy neighbor』，要用優先權／配額隔離，而不是靠時段避開。",
+    "用 scheduler latency 當回饋訊號，比 CPU 使用率更貼近使用者看到的延遲。"
+   ],
+   "numbers": [
+    "P99 scheduler latency 目標 1ms",
+    "elastic 工作 CPU 配置 5–75%（實驗範圍）",
+    "rangefeed catchup scan 的 P99 從超過 10 秒降到 60ms"
+   ],
+   "interviewUse": "說明同一 process 內前景／背景工作的隔離，以及 admission control 以延遲為回饋訊號。",
+   "sources": [
+    {
+     "title": "Rubbing control theory on the Go scheduler (Cockroach Labs)",
+     "url": "https://www.cockroachlabs.com/blog/rubbing-control-theory/"
+    }
+   ],
+   "topics": [
+    "async-jobs",
+    "reliability"
+   ],
+   "problem": "tail-latency",
+   "byAgents": true
+  }
+ ],
+ "quiz": [
+  {
+   "q": "一個 user request 要 fan-out 到 100 台 server，每台 P99 是 1 秒、median 10ms。為什麼服務層 P99 會很差？",
+   "a": "1% 的慢機率在 100 台平行時有 1-(0.99)^100 約 63% 的 user request 至少撞到一台慢機器；完成時間取決於最慢那台。因此要盯元件的 P99.x 並用 tail-tolerant 技術。（Google Tail at Scale）",
+   "topic": "tail-latency",
+   "kind": "概念"
+  },
+  {
+   "q": "你要為 fan-out 讀取加 hedged request。門檻要設多少、代價是什麼、什麼情況不能用？",
+   "a": "等到 P95 預期延遲才送第二份，額外負載約 5%（Google BigTable 1,000 key 例子：P99.9 從 1,800ms 降到 74ms，只多 2% 請求）。代價是額外負載與重複執行；請求必須 idempotent 或可取消；後端已過載時 hedging 會讓情況更糟。",
+   "topic": "tail-latency",
+   "kind": "取捨"
+  },
+  {
+   "q": "Go 服務有巨大 in-memory LRU cache，每幾分鐘出現週期性延遲尖峰，調 GC percent 無效。你會怎麼處理？為什麼不只把 cache 切小？",
+   "a": "Discord 的經驗：GC 掃描數千萬物件的 live heap，成本與 heap 大小成正比，且 Go 至少每 2 分鐘強制 GC。切成小 cache 會降低尖峰，但 miss 變多、DB 查詢增加使 P99 反而變差。可選：移到 off-heap／外部 cache，或換無 GC 語言（Discord 改 Rust）；代價是重寫成本。",
+   "topic": "tail-latency",
+   "kind": "情境"
+  },
+  {
+   "q": "NGINX 多個 worker 想平均分配連線，用 SO_REUSEPORT 取代單一 shared queue，median 變好但 max 變差。為什麼？該怎麼選？",
+   "a": "每個 worker 各有獨立 queue，某 worker 卡住時其 queue 內請求無法被別的 worker 取走，tail 惡化。Cloudflare 實測：單 queue max 72.65ms、標準差 1.58ms；多 queue max 144.55ms、標準差 25.27ms。在乎 P99 選 shared queue，在乎吞吐與負載均勻才選 REUSEPORT。",
+   "topic": "tail-latency",
+   "kind": "取捨"
+  },
+  {
+   "q": "容器 P99 延遲在共用主機上週期性飆高，CPU 使用率不高。你用什麼指標判斷是 noisy neighbor，還要排除什麼誤判？",
+   "a": "看 per-container 的 run queue latency（Netflix 用 eBPF 掛 sched_wakeup/sched_switch；範例基準 83 微秒、鄰居吃滿 CPU 時 131 毫秒），並搭配 preemption 計數。cgroup CPU limit 的 throttling 也會抬高 run queue latency，需區分，因為處理方式不同（調配額 vs 隔離鄰居）。",
+   "topic": "tail-latency",
+   "kind": "情境"
+  },
+  {
+   "q": "服務的 P99 在 rollout 期間從約 100ms 變成 1 秒以上，而你已加過資源。請列出 Datadog 這類案例中可能被忽略的幾個層次。",
+   "a": "sidecar proxy 的 CPU throttling、kernel 網卡 queue 分配 bug、雲端網路頻寬配額導致封包被丟、graceful shutdown 沒排空連線導致打到終止中的 pod（1 秒 timeout + 重試）。要逐層排除，修一個之後重新量測。",
+   "topic": "tail-latency",
+   "kind": "情境"
+  }
+ ]
+}

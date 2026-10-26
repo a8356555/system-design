@@ -1,0 +1,373 @@
+{
+ "problem": "multi-region-dr",
+ "incidents": [
+  {
+   "id": "aws-2025-dynamodb-dns-us-east-1",
+   "problem": "multi-region-dr",
+   "company": "AWS",
+   "title": "DynamoDB DNS race condition：區域 endpoint 消失，連鎖拖垮 EC2 與 NLB",
+   "date": "2025-10",
+   "kind": "postmortem",
+   "symptom": "dynamodb.us-east-1 endpoint 解析失敗，依賴 DynamoDB 的服務無法建立新連線；之後 EC2 新實例無法啟動、NLB 健康檢查異常，持續到隔天下午。",
+   "rootCause": "DNS 管理系統的 Planner / Enactor 出現 latent race condition：延遲的 Enactor 套用了過期 plan，另一個 Enactor 的 cleanup 又刪掉舊 plan，導致 regional endpoint 的所有 IP 被移除，且系統陷入無法自行套用新 plan 的狀態。",
+   "whyHard": "自動化修復機制本身壞了，必須人工介入還原 DNS。DynamoDB 恢復後，EC2 的 DWFM 因租約逾時堆積而 congestive collapse；NLB 的健康檢查誤判又觸發自動 AZ failover，反而移除健康容量。",
+   "fix": "止血：人工還原 DNS、節流 DWFM 工作並重啟、暫時關閉 NLB 自動 failover。長期：全球停用該 DNS 自動化直到修正、加防護避免套用錯誤 plan、對 NLB 容量移除加速度限制、改善 EC2 依佇列大小的節流。",
+   "tradeoff": "自動 failover 在健康檢查本身不可靠時會放大故障，需要 velocity control；DynamoDB global tables 讓其他 region 可讀寫，但 us-east-1 replica 有 replication lag。",
+   "lessons": [
+    "Control plane 對基礎服務（DynamoDB）的依賴要盤點；基礎服務一掛，上層的 lease / 狀態管理會連鎖失效。",
+    "恢復後的 backlog 本身會造成 congestive collapse，recovery 路徑需要 rate limit。",
+    "即使有 multi-region 資料複寫，若服務在其他 region 仍呼叫 us-east-1 的 global API（例如 IAM），仍會被牽連。"
+   ],
+   "numbers": [
+    "事件從 10/19 11:48 PM PDT 到 10/20 2:20 PM PDT",
+    "DNS 於 2:25 AM PDT 人工還原（約 2 小時 37 分後）",
+    "DynamoDB global tables replica 於 2:32 AM 全部追上",
+    "Redshift 以 IAM user 憑證查詢的客戶 11:47 PM 到 1:20 AM 無法連線（因呼叫 us-east-1 IAM API）"
+   ],
+   "interviewUse": "支撐論點：自動 failover / 自我修復系統要有煞車與人工 override，並且要盤點全球功能對單一 region 的隱性依賴。",
+   "sources": [
+    {
+     "title": "Summary of the Amazon DynamoDB Service Disruption in the Northern Virginia (US-EAST-1) Region",
+     "url": "https://aws.amazon.com/message/101925/"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "api-networking"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "aws-builders-static-stability",
+   "problem": "multi-region-dr",
+   "company": "AWS",
+   "title": "Static stability：failover 時不要依賴 control plane",
+   "date": "n/a（Builders' Library 文章，原文未取得日期）",
+   "kind": "design-writeup",
+   "symptom": "n/a（設計文章）：依賴故障時，系統是否還能維持原本的運作而不需要即時的 control plane 操作。",
+   "rootCause": "設計上的反模式：故障當下才用 control plane 去擴容、換機器、改路由。故障時 control plane 通常最不可靠，而且大家同時搶著用。",
+   "whyHard": "Data plane 比 control plane 簡單、可用性目標更高；但為了 static stability 必須事先過量配置，成本很直接，而效益只在故障時才看得到。",
+   "fix": "事先過量配置容量讓一個 AZ 失效時不需擴容；control plane 與 data plane 拆開；元件（如 NAT Gateway）設計為 AZ-local，避免跨 AZ 故障傳播。",
+   "tradeoff": "三個 AZ 時需過量配置 50%，每個 AZ 只跑在壓測上限的 66%；成本換取不依賴 reactive scaling。AZ 數少時過量配置比例更高。",
+   "lessons": [
+    "Failover 的路徑要在 data plane 完成，不要在故障時才呼叫 control plane API。",
+    "用多餘容量換掉 reactive 動作：把決策從故障時搬到平時。"
+   ],
+   "numbers": [
+    "三個 AZ 時過量配置 50%，每個 AZ 只跑在壓測水位的 66%"
+   ],
+   "interviewUse": "支撐論點：跨 AZ / region failover 要預先配置容量與預先設好路由，不能靠故障時才 auto scale。",
+   "sources": [
+    {
+     "title": "Static stability using Availability Zones (AWS Builders' Library)",
+     "url": "https://builder.aws.com/content/3K9SiqiJ369TGkkGzqPM95BuYWI/static-stability-using-availability-zones"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "scaling-reads"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "cloudflare-2023-pdx04-control-plane",
+   "problem": "multi-region-dr",
+   "company": "Cloudflare",
+   "title": "PDX-04 資料中心斷電：control plane 與 analytics 的隱藏單點",
+   "date": "2023-11",
+   "kind": "postmortem",
+   "symptom": "Cloudflare Dashboard、API 與 analytics 等 control plane 長時間不可用；全球資料面大致持續服務，但多個新產品與 log 處理受影響。",
+   "rootCause": "Flexential PDX-04 因 PGE 供電維護加上變壓器 ground fault，兩條市電與全部 10 台發電機同時下線，UPS 電池撐不到設計時間；Cloudflare 的 Kafka、ClickHouse 只在 PDX-04，且部分新產品（如 Stream）未納入 high-availability cluster。",
+   "whyHard": "他們測過單一設施失效，但從未測過整個 PDX-04 完全下線，隱藏依賴因此沒被發現。切到 DR site 後 queued API 請求形成 thundering herd，部分服務（如 Magic WAN）還需要手動重設。",
+   "fix": "止血：啟動歐洲 DR site 並做 rate limiting。長期（Code Orange）：移除 control plane 對核心資料中心的依賴、所有 GA 產品必須進 HA cluster 並有已測試的 DR 計畫、全設施 chaos engineering、設計 log pipeline 在整個設施失效時不丟 log。",
+   "tradeoff": "要求所有產品先進 HA cluster 才能 GA 會拖慢發佈；logging 的 DR 要多一份資料複本與跨站傳輸成本。",
+   "lessons": [
+    "DR 要用整個設施下線的 game day 驗證，只測單一元件失效會漏掉依賴。",
+    "資料面分散不代表 control plane 分散；盤點誰在「HA 叢集外」卻被 HA 內部依賴。",
+    "DR 啟動後的 thundering herd 需要事先設計好 rate limit。"
+   ],
+   "numbers": [
+    "UPS 電池只撐 4 分鐘，設計值為 10 分鐘",
+    "11:43 UTC 斷電，13:40 UTC 決定 failover，13:43 UTC 第一批服務在 DR site 啟動（約 2 小時）",
+    "11/4 04:25 UTC 完全恢復（約 2 天）",
+    "10 台發電機全部下線"
+   ],
+   "interviewUse": "支撐論點：RTO 取決於最慢的隱藏依賴，且 control plane 與 data plane 的 DR 等級要分開評估。",
+   "sources": [
+    {
+     "title": "Post mortem on Cloudflare Control Plane and Analytics Outage",
+     "url": "https://blog.cloudflare.com/post-mortem-on-cloudflare-control-plane-and-analytics-outage/"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "storage-choice"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "cloudflare-2025-workers-kv-gcp",
+   "problem": "multi-region-dr",
+   "company": "Cloudflare",
+   "title": "Workers KV 的第三方儲存依賴：coreless 設計仍有中央真相來源",
+   "date": "2025-06",
+   "kind": "postmortem",
+   "symptom": "Workers KV 請求大量失敗，連帶影響 Access、WARP、Gateway、Images、Stream、Workers AI、Turnstile、Pages、Dashboard 等 20 多個服務。",
+   "rootCause": "Workers KV 的一部分儲存由第三方雲端供應商承載，該供應商故障；KV 雖設計成 coreless，卻仍以一個中央資料儲存作為 single source of truth。",
+   "whyHard": "當時正在把 KV 後端遷往 Cloudflare R2，已移除一個儲存供應商，造成備援空窗，沒有可立刻切換的替代儲存。許多產品把 KV 當成必經依賴，blast radius 因此擴大。",
+   "fix": "移除單一供應商依賴、事故中逐 namespace 漸進重新啟用、各產品各自做 blast-radius 緩解、加速 KV 基礎架構的冗餘。",
+   "tradeoff": "多供應商儲存可消除單點，但資料一致性與運維成本上升；遷移期間本身就是高風險窗口。",
+   "lessons": [
+    "第三方供應商也是 failure domain；多 region 若都建在同一家供應商的同一個後端上，並沒有真正獨立。",
+    "架構遷移期間會暫時降低冗餘，需要為遷移窗口評估風險。",
+    "把共用元件（KV）當成多數產品的硬依賴，等於把它變成全產品線的單點。"
+   ],
+   "numbers": [
+    "事故持續 2 小時 28 分鐘",
+    "Workers KV 請求失敗率 90.22%",
+    "Access 身分登入失敗率 100%"
+   ],
+   "interviewUse": "支撐論點：評估 DR 時要列出所有 source of truth 與其供應商，確認 failure domain 真的獨立。",
+   "sources": [
+    {
+     "title": "Cloudflare service outage June 12, 2025",
+     "url": "https://blog.cloudflare.com/cloudflare-service-outage-june-12-2025/"
+    }
+   ],
+   "topics": [
+    "storage-choice",
+    "reliability"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "slack-2021-az-cell-drain",
+   "problem": "multi-region-dr",
+   "company": "Slack",
+   "title": "Cell-based 架構：用一個按鈕在 5 分鐘內排空有問題的 AZ",
+   "date": "2021-06（事故）/ 2023-08（文章）",
+   "kind": "design-writeup",
+   "symptom": "單一 AZ 的網路連結故障，雖然是 multi-AZ 部署，使用者仍看到錯誤；故障持續約 48 分鐘後再次短暫復發。",
+   "rootCause": "Gray failure：各元件對該 AZ 是否健康看法不一致，自動偵測與修復難以可靠運作，故障元件仍持續接流量。",
+   "whyHard": "自動化判斷 gray failure 太複雜；若在服務間跨 AZ 呼叫，單一 AZ 的問題會擴散到其他 AZ。",
+   "fix": "把每個 AZ 做成 siloed cell（服務只在同一 AZ 內互相呼叫），利用既有 Envoy / xDS 與 weighted clusters、RTDS 動態權重，讓人類按一個按鈕把某 AZ 權重降到 0。傳播在秒級、1% 粒度、不丟棄進行中的查詢。",
+   "tradeoff": "需要過量配置才能在排空一個 AZ 後承接流量；cell 內資源受限於單一 AZ，且把邏輯放在 load balancing 層而非各語言 client，以避免維護多語言 fork。依賴人工判斷也意味著需要值班與演練。",
+   "lessons": [
+    "與其追求完美的自動 failure detection，不如提供可靠的人工 drain 開關，把決策交給人。",
+    "Siloing 讓 failure domain 與流量切換單位一致，drain 才不需要被故障 AZ 內的資源配合。",
+    "把 failover 邏輯集中在 proxy / LB 層，避免每種語言的 client 各做一套。"
+   ],
+   "numbers": [
+    "事故 6/30 11:45 AM 到 12:33 PM PDT，之後 5:22 PM 到 5:31 PM 再次發生",
+    "目標：5 分鐘內移除 AZ 的大部分流量",
+    "傳播時間為秒級，權重調整粒度 1%",
+    "99.99% 可用性 SLA，代表每年不可用時間少於 1 小時"
+   ],
+   "interviewUse": "支撐論點：面對 gray failure，用 cell 隔離加人工 drain 比複雜的自動偵測更可靠。",
+   "sources": [
+    {
+     "title": "Slack's Migration to a Cellular Architecture",
+     "url": "https://slack.engineering/slacks-migration-to-a-cellular-architecture/"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "api-networking"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "gcp-2023-europe-west9-paris",
+   "problem": "multi-region-dr",
+   "company": "Google Cloud",
+   "title": "europe-west9 巴黎：三棟建築的 region，Spanner replica 卻放錯棟",
+   "date": "2023-04",
+   "kind": "postmortem",
+   "symptom": "europe-west9-a 因水管漏水與火災被迫整棟關閉；europe-west9-b、c 的 control plane 也中斷，Cloud Console 與 GCE fanout API 全球受影響。",
+   "rootCause": "冷卻系統水管漏水進入 UPS 房導致火災，需整棟 data center 緊急關機；regional Spanner 的 replica 沒有正確分散到三棟建築，三個中兩個在關閉的那棟，造成 quorum 遺失。",
+   "whyHard": "名義上是 multi-zone，但 control plane 依賴的 Spanner replica placement 違反了獨立性假設，導致 zone 級故障變成 region 級 control plane 故障；IAM policy 更新也停擺。",
+   "fix": "恢復 Spanner quorum、IAM 與 GCE control plane，逐步恢復 VM 與磁碟。長期：確保 replica 正確分散到各建築。",
+   "tradeoff": "多 zone 部署若 replica placement 不獨立就沒有真正的容錯；regional 磁碟只有一個副本在受影響建築時，仍需跨 region 備份才能保資料。",
+   "lessons": [
+    "驗證 failure domain 的獨立性：看 replica 實際位置，而不只是看 zone 數量。",
+    "Quorum 系統的 replica 分佈錯誤，等於把容錯降為零。",
+    "Region 內 control plane 故障會影響仍存活 zone 的管理操作。"
+   ],
+   "numbers": [
+    "europe-west9-a 的 GCE VM 有 58% 直接受影響",
+    "55% 的 PD volumes 被停用，79% 的 regional PD volumes 有一個 replica 在受影響建築",
+    "約 16 小時才撲滅電池房火災",
+    "Spanner quorum 於 4/26 12:47 恢復；區域內有 13 小時沒有 policy 更新"
+   ],
+   "interviewUse": "支撐論點：多 AZ 的價值取決於 replica placement 是否真的跨 failure domain，並需要定期驗證。",
+   "sources": [
+    {
+     "title": "Google Cloud Incident dS9ps52MUnxQfyDGPfkY (europe-west9)",
+     "url": "https://status.cloud.google.com/incidents/dS9ps52MUnxQfyDGPfkY"
+    }
+   ],
+   "topics": [
+    "consistency",
+    "reliability"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "github-2018-orchestrator-failover",
+   "problem": "multi-region-dr",
+   "company": "GitHub",
+   "title": "43 秒網路分區觸發 MySQL 跨區 failover：RPO 與可用性的取捨",
+   "date": "2018-10",
+   "kind": "postmortem",
+   "symptom": "網站資料不一致與延遲，webhook 與 Pages 建置被暫停，整個事故持續 24 小時 11 分鐘。",
+   "rootCause": "更換光纖設備造成 US East Coast hub 與主資料中心之間斷線 43 秒；Orchestrator（用 Raft）跨區形成 quorum，把 MySQL 主庫 failover 到 West Coast，但東岸有尚未複寫的寫入，西岸也累積了新寫入，兩邊資料出現分歧。",
+   "whyHard": "雙邊都有對方沒有的寫入，無法安全 failback；需要從遠端備份還原多 TB 資料並等待 replication catch-up，且恢復曲線不是線性的，又遇上高峰流量。",
+   "fix": "GitHub 選擇資料完整性優先於可用性，fail-forward 以西岸為主並接受長時間降級。之後：Orchestrator 設定改為禁止跨區 primary 晉升、加速元件級狀態回報、啟動 active/active/active 多資料中心計畫、增加故障演練。",
+   "tradeoff": "禁止跨區自動晉升可避免 split-brain，但真正的資料中心故障時要靠人工或更慢的決策；選擇不丟資料（RPO 近 0）的代價是 RTO 很長。",
+   "lessons": [
+    "自動跨 region 晉升 primary 對短暫分區過於敏感，failover 觸發條件要比分區持續時間更保守。",
+    "非同步複寫下，failover 就是在選擇丟寫入或停機；RPO / RTO 要事先決定而不是事故中臨時決定。",
+    "備份還原速度（跨雲傳輸與解壓）決定了下限的 RTO。",
+    "自動 failover 的拓樸必須對齊應用層能承受的（跨區延遲、一致性）假設。",
+    "備份還原時間要靠實測估算，複寫追趕不是線性。",
+    "資料完整性與可用性衝突時，要事先決定優先序。"
+   ],
+   "numbers": [
+    "22:52 UTC 開始，網路分區 43 秒",
+    "整個事故 24 小時 11 分鐘",
+    "西岸主庫累積約 40 分鐘寫入",
+    "有一個繁忙叢集在該窗口有 954 筆寫入需人工對帳",
+    "暫停 5 百萬以上 webhook 事件與 8 萬筆 Pages 建置"
+   ],
+   "interviewUse": "支撐論點：async replication 跨 region failover 的核心是 RPO 取捨，要避免短暫分區觸發自動 failover。",
+   "sources": [
+    {
+     "title": "October 21 post-incident analysis (GitHub)",
+     "url": "https://github.blog/news-insights/company-news/oct21-post-incident-analysis/"
+    }
+   ],
+   "topics": [
+    "consistency",
+    "db-scaling-migration"
+   ],
+   "byAgents": true,
+   "alsoIn": [
+    "db-scaling-migration"
+   ]
+  },
+  {
+   "id": "shopify-pods-datacenter-pair",
+   "problem": "multi-region-dr",
+   "company": "Shopify",
+   "title": "Pods：每個 pod 配一對資料中心，用 Pod Mover 做約一分鐘的疏散",
+   "date": "n/a（原文未標日期）",
+   "kind": "design-writeup",
+   "symptom": "n/a（設計文章）：2015 年資料庫 sharding 後，單一 shard 故障會連鎖影響整個平台，resilience 下降。",
+   "rootCause": "共用資源（job worker、app server、load balancer）可同時存取多個 shard，故障與壓力會跨 shard 傳播。",
+   "whyHard": "既要分片擴展，又要讓每個故障範圍可控；跨資料中心的疏散需要不丟請求與 job。",
+   "fix": "Pod 是一組 shop 加上完全隔離的資料儲存，共用資源一次只與一個 pod 通訊；每個 pod 配一對資料中心（一個 active、一個 recovery），Pod Mover 可在約一分鐘內搬遷而不丟請求或 job；疏散整個資料中心就是依序搬每個 pod；Sorting Hat 負責路由。",
+   "tradeoff": "需要複雜的路由層與 pod 搬遷工具；每個 pod 要預留 recovery 資料中心的容量；單一 pod 內的最大客戶可能造成不均衡。",
+   "lessons": [
+    "把 failure domain 與搬遷單位定成同一個東西（pod），DR 就變成逐個搬遷。",
+    "共用層只能一次碰一個 pod，才能避免故障擴散。"
+   ],
+   "numbers": [
+    "Pod Mover 可在約一分鐘內搬遷 pod 而不丟請求或 job"
+   ],
+   "interviewUse": "支撐論點：multi-tenant 系統用 cell/pod 切分租戶，並讓每個 cell 有自己的 active/standby 資料中心配對。",
+   "sources": [
+    {
+     "title": "A Pods Architecture to Allow Shopify to Scale",
+     "url": "https://shopify.engineering/a-pods-architecture-to-allow-shopify-to-scale"
+    }
+   ],
+   "topics": [
+    "sharding",
+    "reliability"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "atlassian-2022-site-deletion-dr",
+   "problem": "multi-region-dr",
+   "company": "Atlassian",
+   "title": "883 個客戶站台被誤刪：RPO 達標、RTO 14 天",
+   "date": "2022-04",
+   "kind": "postmortem",
+   "symptom": "775 個客戶失去對 883 個站台的存取，完整恢復耗時最長 14 天。",
+   "rootCause": "清理舊 app 的腳本拿到的是 site ID 而非 app ID，刪除 API 同時接受兩種識別碼且沒有驗證；code review 只檢查呼叫哪個 endpoint。",
+   "whyHard": "備份與 failover 架構針對基礎設施故障與單站台刪除設計，缺乏跨產品、跨站台的批次還原自動化；多租戶資料同存於同一資料儲存，個別客戶資料需手動抽取。",
+   "fix": "第一種還原約 70 步、約 48 小時還原一批站台；第二種重用原站台 ID，縮成 30 多步並行，約 12 小時還原一個站台。長期：全面 soft delete、分階段 rollout、加速自動化 DR、定期大規模 DR 演練。",
+   "tradeoff": "Soft delete 與保留期增加儲存成本與 GDPR 類刪除需求的複雜度；為多租戶做 per-customer 還原需要資料結構與工具投資。",
+   "lessons": [
+    "備份可還原不等於 DR 完備；必須演練最壞規模（上百租戶同時還原）的 RTO。",
+    "多租戶共用資料儲存會讓單租戶還原變成手動抽取，是 RTO 的隱藏瓶頸。",
+    "破壞性操作需要 soft delete 與驗證，因為 region 備援不會保護你免於邏輯錯誤。",
+    "刪除要有 soft delete 與分階段 rollout；API 應拒絕模糊輸入類型。",
+    "DR 演練必須涵蓋『大批量、多服務』的情境，而非只有單一資料庫。",
+    "把識別碼視為不可變會讓重建成本爆炸；還原時重用原 ID 可省掉一半以上步驟。"
+   ],
+   "numbers": [
+    "883 個站台、775 個客戶受影響，99.6% 客戶不受影響",
+    "RPO 達標：資料還原到刪除前 5 分鐘；沒有客戶損失超過 5 分鐘資料",
+    "RTO 未達標：4/5 到 4/18 共 14 天",
+    "不可變備份保留 30 天",
+    "57 個客戶的 Confluence / Insight 資料庫還原到早於 5 分鐘的時間點"
+   ],
+   "interviewUse": "支撐論點：multi-region 複寫不防人為誤刪，DR 要有 point-in-time 備份與已演練的 RTO。",
+   "sources": [
+    {
+     "title": "Post-Incident Review on the Atlassian April 2022 outage",
+     "url": "https://www.atlassian.com/blog/atlassian-engineering/post-incident-review-april-2022-outage"
+    }
+   ],
+   "topics": [
+    "storage-choice",
+    "reliability"
+   ],
+   "byAgents": true,
+   "alsoIn": [
+    "data-integrity",
+    "db-scaling-migration"
+   ]
+  }
+ ],
+ "quiz": [
+  {
+   "q": "Cloudflare 2023-11 PDX-04 斷電時，資料面大致持續運作，但 Dashboard / API / analytics 長時間掛掉。為什麼 failover 沒有如預期？下次設計該怎麼改？",
+   "a": "隱藏依賴：Kafka、ClickHouse 只在 PDX-04，HA cluster 內的服務又依賴它們，部分新產品也沒進 HA cluster；而且從沒測過整個設施下線。改法：所有 GA 產品必須有 HA 與已測試 DR 計畫、control plane 不得依賴單一設施、做整設施下線的 chaos 演練。",
+   "topic": "multi-region-dr",
+   "kind": "情境"
+  },
+  {
+   "q": "GitHub 2018 事故中，Orchestrator 因 43 秒分區就把 MySQL primary 跨區晉升。用 async replication 時，這個自動 failover 的代價是什麼？你會怎麼設定？",
+   "a": "兩邊都有對方沒有的寫入，資料分歧後無法安全 failback，只能選擇丟寫入或長時間對帳還原（事故 24 小時）。應提高觸發門檻、禁止短暫分區自動跨區晉升，並事先決定 RPO / RTO：要資料完整就接受較長 RTO。",
+   "topic": "multi-region-dr",
+   "kind": "取捨"
+  },
+  {
+   "q": "Static stability 主張 failover 時不要依賴 control plane（例如故障時才擴容）。三個 AZ 的話要付出什麼成本？為什麼仍然值得？",
+   "a": "需過量配置 50%，每個 AZ 只跑在壓測水位的 66%。換來的是 AZ 失效時直接在 data plane 吸收流量，不必在 control plane 最不可靠、大家搶著用的時候做擴容。若成本不可接受（例如流量極低或可容忍較長 RTO），才改用 reactive scaling。",
+   "topic": "multi-region-dr",
+   "kind": "取捨"
+  },
+  {
+   "q": "Google Cloud 2025-06 的 Service Control 事故為什麼多 region 部署沒有幫助？應該用什麼機制降低同類風險？",
+   "a": "壞的 policy 資料經全球複寫同時進入所有 region，每個 region 的 binary 都執行到同一個 null pointer 路徑，因此是全球性 crash loop。對策：全球資料漸進傳播（staged rollout）、feature flag 保護新程式路徑、fail-open、kill switch，以及重啟時加 randomized exponential backoff。",
+   "topic": "multi-region-dr",
+   "kind": "情境"
+  },
+  {
+   "q": "AWS 在 2017 S3 與 2021 us-east-1 事故中，哪個『與主系統共命運』的元件最讓人無法掌握狀況？設計 DR 時該怎麼避免？",
+   "a": "Service Health Dashboard（以及 2021 年的 support case 系統、監控）依賴出事的服務或 region，導致故障時看不到狀態、求助不了。避免：狀態頁、監控、事故溝通與 support 系統跨 region（AWS 事後都改為多 region），並與被保護的系統不共用依賴。",
+   "topic": "multi-region-dr",
+   "kind": "概念"
+  },
+  {
+   "q": "面試官問：我們已經 multi-AZ，還要做 cell-based 架構嗎？請用 Slack 的案例給出你的論點。",
+   "a": "Slack 2021 年 multi-AZ 仍因單一 AZ 的 gray failure 出現使用者錯誤，因為自動偵測很難可靠。Cell-based（每個 AZ siloed，服務只在同 AZ 內互相呼叫）加上 Envoy/xDS 權重控制，可由人工一鍵在目標 5 分鐘內把 AZ 流量排空（1% 粒度、秒級傳播）。代價：需要過量配置容量與 cell 內資源管理的複雜度。",
+   "topic": "multi-region-dr",
+   "kind": "取捨"
+  }
+ ]
+}

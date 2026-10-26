@@ -1,0 +1,306 @@
+{
+ "problem": "db-scaling-migration",
+ "incidents": [
+  {
+   "id": "notion-2021-shard-postgres-monolith",
+   "problem": "db-scaling-migration",
+   "company": "Notion",
+   "title": "把 Postgres 單體分片成 480 個 logical shard：VACUUM 卡住與 TXID wraparound 威脅",
+   "date": "2021-10",
+   "kind": "design-writeup",
+   "symptom": "on-call 工程師常被資料庫 CPU spike 吵醒；catalog-only 的 migration 變得不安全；Postgres VACUUM 持續 stall，無法回收 dead tuples 的磁碟空間。",
+   "rootCause": "單一 Postgres monolith 撐過五年、四個數量級的成長，block 相關資料暴增；auto-vacuum 卡住後有 transaction ID (TXID) wraparound 風險，一旦發生 Postgres 會停止所有寫入。",
+   "whyHard": "垂直擴充（RDS Resize Instance）在表達到硬體上限前就會因 vacuum 等維運程序退化而失效；又因為資料庫已經吃緊，migration 本身不能再增加負載（不能回填 workspace_id 欄位、無法用 logical replication 雙寫）。",
+   "fix": "選 application-level sharding（不用 Citus/Vitess，要掌控資料分佈）；所有以 foreign key 可達 block 的表一起分片；以 workspace ID 為 partition key；480 logical shard 分佈在 32 台實體 DB（每台 15 個 Postgres schema）。遷移走 double-write（audit log + catch-up script）→ backfill → 驗證（隨機抽樣 UUID range + dark reads）→ switch-over；另準備 reverse audit log 供回滾。",
+   "tradeoff": "停機約 5 分鐘（catch-up script 的吞吐是瓶頸）；若再多花一週優化 catch-up 到 <30 秒，原本可在 load balancer 熱切換達成零停機。分片太晚做，使得遷移工具只能挑「不增加負載」的做法。選 app-level sharding 換到控制權，但路由與跨 shard 查詢全部自己扛。",
+   "lessons": [
+    "在資料庫已經吃緊「之前」分片：越晚做，migration 越不能碰舊庫（不能 backfill 欄位、不能用 logical replication）。",
+    "邏輯 shard 數選高度合成數（480）而非 2 的冪，之後 32→40→48 台可逐步擴而不用倍增。",
+    "migration 與 verification 由不同人實作，避免同一個錯誤在兩邊重複。"
+   ],
+   "numbers": [
+    "480 logical shards / 32 physical DB（每台 15 schema）",
+    "單表上限 500 GB、單實體 DB 上限 10 TB",
+    "至少需要 60K 總 IOPS",
+    "backfill 用 m5.24xlarge（96 CPU）約 3 天",
+    "停機約 5 分鐘"
+   ],
+   "interviewUse": "說明「何時該分片」的訊號（vacuum 卡住 / TXID wraparound）與 partition key = tenant（workspace）以避開跨 shard join，以及 double-write + audit log 的遷移框架。",
+   "sources": [
+    {
+     "title": "Herding elephants: Lessons learned from sharding Postgres at Notion",
+     "url": "https://www.notion.com/blog/sharding-postgres-at-notion"
+    }
+   ],
+   "topics": [
+    "sharding",
+    "scaling-writes"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "notion-2023-reshard-32-to-96",
+   "problem": "db-scaling-migration",
+   "company": "Notion",
+   "title": "線上 re-shard：32 台擴到 96 台、零停機，順手把 PgBouncer 也分片",
+   "date": "2023-07",
+   "kind": "design-writeup",
+   "symptom": "2022 年底部分 shard 在尖峰 CPU 超過 90%、磁碟 IOPS 接近滿載、PgBouncer 連線數逼近上限，且預期新年會有流量高峰。",
+   "rootCause": "32 台 space shard 的容量跟不上成長；水平切分的粒度不夠，每台承載太多 workspace。",
+   "whyHard": "新增 3 倍 shard 時，若舊 PgBouncer 同時連到 96 個 DB，每個舊 shard 的下游連線會從 600（約 100 個 PgBouncer × 6）變成 3 倍；連線太多壓垮 DB，減少又會讓查詢堆積。連線池本身成了遷移瓶頸。",
+   "fix": "每台舊 DB 切成 3 個 publication（各 5 個 logical schema），新 DB 用 Postgres logical replication 訂閱；複製時先不建 index、完成後再重建（3 天縮到 12 小時）；先把 PgBouncer cluster 分成 4 組（各管 24 個 DB）；用 dark reads 驗證；failover 每台 DB 做：暫停 PgBouncer 流量 → 確認 replication 追上 → 改 shard mapping 並反向複製回舊庫 → 恢復流量。",
+   "tradeoff": "選擇水平 re-shard 而非更大機器：垂直擴充遲早撞到同樣上限，且無法依各 shard 負載調整規格。代價是 dark reads 本身增加 CPU（因此只比對回傳 ≤5 rows 並抽樣）、failover 時最多約 1 秒「saving」轉圈。",
+   "lessons": [
+    "連線池（PgBouncer）是分片遷移的隱藏約束，要先規劃它的容量與分組。",
+    "logical replication 初始複製先砍 index 再重建可大幅縮短時間。",
+    "切換用「暫停 → 確認同步 → 換路由 → 反向複製」，反向複製讓回滾成為可能。"
+   ],
+   "numbers": [
+    "32 → 96 台",
+    "尖峰 CPU >90%",
+    "約 100 個 PgBouncer × 6 連線 = 600/shard",
+    "同步時間 3 天 → 12 小時",
+    "新環境尖峰 CPU/IOPS 約 20%",
+    "最差約 1 秒 saving spinner"
+   ],
+   "interviewUse": "回答「分片後再擴容怎麼不停機」：預先切好 logical schema、logical replication、暫停 proxy、改路由、保留反向複製。",
+   "sources": [
+    {
+     "title": "The Great Re-shard: adding Postgres capacity (again) with zero downtime",
+     "url": "https://www.notion.com/blog/the-great-re-shard"
+    }
+   ],
+   "topics": [
+    "sharding",
+    "scaling-writes"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "figma-2023-vertical-partitioning",
+   "problem": "db-scaling-migration",
+   "company": "Figma",
+   "title": "先垂直分割再談水平分片：把 RDS Postgres 的表群搬到獨立資料庫",
+   "date": "2023-04",
+   "kind": "design-writeup",
+   "symptom": "單一 RDS Postgres 在尖峰 CPU 利用率超過 65%，DB 延遲在逼近上限時變得不可預測；若 DB 飽和 Figma 會停擺。",
+   "rootCause": "資料庫流量每年約成長 3 倍；單機寫入佔大量使用率，且部分讀取因對 replication lag 敏感無法移到 read replica。",
+   "whyHard": "戰術性緩解（升到 r5.24xlarge、多個 read replica、PgBouncer、新用途開新 DB）只買到約一年。Ruby/ActiveRecord 動態特性讓靜態分析無法得知 query 碰到哪些表，難以判斷哪些表能安全拆出。",
+   "fix": "評估 NoSQL / Vitess / Postgres-compatible NewSQL / 自架後選擇「垂直分割」：以 average active sessions（查 pg_stat_activity 每 10ms 取樣）衡量影響，並用 ActiveRecord runtime validator 把 query 與 transaction 送進 Snowflake 分析表之間的關聯，挑出高影響且低耦合的表群。遷移：先拆 PgBouncer 層（兩組 bouncer 指向同一 DB 以偵測誤路由）→ logical replication → 暫停 → 以 LSN 確認同步 → 切換 → 反向複製以便回滾。",
+   "tradeoff": "搬表會失去跨表 atomic transaction、foreign key 驗證與 join，應用層要改寫；分區越多，client 需知道的路由越複雜（後來加 query routing service）。單表仍會撞上限，所以只是「墊腳石」。",
+   "lessons": [
+    "先找「影響大且孤立」的表群做垂直分割，是比水平分片便宜得多的槓桿。",
+    "把『路由正確性』的風險與『資料搬移』的風險拆成兩階段（先分 bouncer，再分資料）。",
+    "logical replication 初始複製慢是因為逐列更新 index：先移除 index 再重建，從數天縮到數小時。"
+   ],
+   "numbers": [
+    "CPU >65% 尖峰",
+    "流量約每年 3 倍",
+    "r5.12xlarge → r5.24xlarge",
+    "目標可用性影響 <1 分鐘",
+    "實際約 30 秒、約 2% 請求被丟",
+    "2022 年 10 月最後一次一次搬 50 張表"
+   ],
+   "interviewUse": "示範「垂直分割 → 水平分片」的演進順序，以及不停機切換（暫停連線、LSN 同步、反向複製）。",
+   "sources": [
+    {
+     "title": "The growing pains of database architecture (Figma)",
+     "url": "https://www.figma.com/blog/how-figma-scaled-to-multiple-databases/"
+    }
+   ],
+   "topics": [
+    "sharding",
+    "scaling-writes"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "figma-2024-horizontal-sharding",
+   "problem": "db-scaling-migration",
+   "company": "Figma",
+   "title": "自建 DBProxy 的水平分片：colo、logical vs physical sharding、用 view 先上線",
+   "date": "2024-03",
+   "kind": "design-writeup",
+   "symptom": "部分表達到數 TB、數十億列，Postgres vacuum 造成可靠性衝擊，寫入量最高的表即將超過 RDS 的 IOPS 上限。",
+   "rootCause": "垂直分割的最小單位是單表，單一超大、寫入量高的表無法再切；資料庫堆疊自 2020 年成長近 100 倍。",
+   "whyHard": "水平分片失去 ACID 保證：跨 shard 的 transaction、foreign key、global unique index、schema 變更協調都變難，partial commit failure 需由產品邏輯處理。換到 CockroachDB/TiDB/Spanner/Vitess 要雙寫遷移並重建維運經驗，runway 只剩數月。",
+   "fix": "在既有 RDS Postgres 上自建：將共用 shard key（UserID/FileID/OrgID）的表分組為 colo；以 shard key 的 hash 路由避免 auto-increment/Snowflake ID 熱點；自建 Go 服務 DBProxy（parser → logical planner → physical planner）；先用 Postgres view 做 logical sharding（可用 feature flag 秒級回滾），再做 physical shard split；以 shadow planning 在線上流量預演查詢，決定只支援涵蓋約 90% 查詢的子集；複製整份資料而非 filtered logical replication。",
+   "tradeoff": "不支援跨 shard atomic transaction，hash 路由使 range scan 變差，scatter-gather 太多會讓分片失去意義；自建只支援 SQL 子集，換到最少應用層改動與可回滾。第一張表花了約九個月。",
+   "lessons": [
+    "把 logical sharding 與 physical sharding 解耦，讓風險分批、回滾簡單。",
+    "用 shadow traffic（shadow planning / shadow reads）決定要支援的查詢子集與 shard key，而不是憑感覺。",
+    "遷到另一種資料庫的真實成本，是重建維運與領域知識，不只是資料搬移。"
+   ],
+   "numbers": [
+    "資料庫堆疊自 2020 年成長近 100 倍",
+    "第一張表約九個月",
+    "view 最差額外開銷 <10%",
+    "約 90% 常見查詢被支援"
+   ],
+   "interviewUse": "回答「為什麼不直接換 NewSQL / NoSQL」：關聯式模型複雜 + runway 短 + 維運專長，因此選在熟悉的引擎上做受限的水平分片。",
+   "sources": [
+    {
+     "title": "How Figma’s databases team lived to tell the scale",
+     "url": "https://www.figma.com/blog/how-figmas-databases-team-lived-to-tell-the-scale/"
+    }
+   ],
+   "topics": [
+    "sharding",
+    "consistency",
+    "storage-choice"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "slack-2020-vitess-migration",
+   "problem": "db-scaling-migration",
+   "company": "Slack",
+   "title": "從 workspace 分片的 MySQL active-active 遷到 Vitess：三年漸進遷移",
+   "date": "2020-12",
+   "kind": "design-writeup",
+   "symptom": "大型客戶讓所屬 shard 逼近最大硬體；少數 hot shard、多數機器使用率低；shard 故障時該 shard 上所有 workspace 全面停擺；新產品（Enterprise Grid、Slack Connect）與「資料都在同一 shard」的假設衝突。",
+   "rootCause": "以 workspace id 為唯一 sharding key 且 shard 內是 active-active 雙主（非標準 MySQL 架構）：無法把單一大客戶負載分散、難以拆 shard 與搬 workspace、routing 寫死在 monolith 內。",
+   "whyHard": "把彈性分片做進 application 會與資料儲存邏輯高度耦合（例如『頻道訊息數』假設在同一 team），且解決不了維運與 read replica 問題；換到 NoSQL/NewSQL 則要重寫數千種 query 與整套維運實務。",
+   "fix": "選 Vitess（MySQL 為核心、內建分片、自動 failover/備份、topology service）。先以小功能（RSS feed 整合）做端到端 prototype，再逐表遷移：通用 backfill + application 雙寫、雙讀 diff 驗證；改以 channel id 等更均勻的 key 分片。2017 年開始，三年後 99% 流量在 Vitess 上。",
+   "tradeoff": "需大量投資（改 Vitess topology 服務、補 MySQL 相容性、遷移與壓測工具），並選擇逐表而非逐 shard 遷移的技術；保守地留在 MySQL 以重用既有維運，代價是被 Vitess 能力限制。",
+   "lessons": [
+    "同一引擎上換「分片層」比換引擎風險低：保留 SQL 語意、備份與維運實務。",
+    "以真實但低風險的小功能做 prototype，驗證整條遷移與維運鏈。",
+    "sharding key 要能隨產品演進；以租戶為 key 會讓大客戶變成熱點。"
+   ],
+   "numbers": [
+    "尖峰 2.3M QPS（2M 讀、300K 寫）",
+    "median 查詢 2 ms、p99 11 ms",
+    "2017 年開始、99% 遷移完成",
+    "2020 年 3 月一週內查詢量 +50%",
+    "6 個地區的 Vitess cluster（資料駐留）"
+   ],
+   "interviewUse": "支撐「SQL 不想換又要水平擴展」的選擇：Vitess 類中介層 + 非停機的雙寫/雙讀遷移。",
+   "sources": [
+    {
+     "title": "Scaling Datastores at Slack with Vitess",
+     "url": "https://slack.engineering/scaling-datastores-at-slack-with-vitess/"
+    }
+   ],
+   "topics": [
+    "sharding",
+    "storage-choice"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "gitlab-2017-db-deletion",
+   "problem": "db-scaling-migration",
+   "company": "GitLab",
+   "title": "2017-01：單一 primary 負載飆升、複寫中斷，誤刪 primary 資料目錄且五種備份皆失效",
+   "date": "2017-01",
+   "kind": "postmortem",
+   "symptom": "GitLab.com 因資料庫被清空停機約 18 小時，1/31 17:20 至 23:30 UTC 之間建立的 DB 資料遺失（至少 5000 專案、5000 留言、約 700 使用者）。",
+   "rootCause": "單 primary + 單 hot-standby 架構；垃圾訊息與一個誤排程的刪除帳號背景工作使負載飆高，WAL 在 secondary 取走前被移除而複寫中斷（沒有 WAL archiving）；重建 secondary 時工程師誤在 primary 上執行清空資料目錄（約 300 GB 被刪）。",
+   "whyHard": "備份全部失效：pg_dump 用 9.2 版而 DB 是 9.6，失敗信件因未啟用 DMARC 被拒收；Azure disk snapshot 未對 DB 啟用；LVM snapshot 只是給 staging 用；複寫不是備份。還原只能用 staging 的慢速磁碟（約 60Mbps）複製，耗約 18 小時。",
+   "fix": "用約 6 小時前手動做的 LVM snapshot 還原，並把所有 sequence 加 100,000 避免 ID 重用；之後修正備份、監控、runbook，並拆解單點 DB 的負載。",
+   "tradeoff": "為節省成本在 staging 用標準儲存，結果恢復速度被它決定；『單 primary 撐不住』時，臨時調整參數（max_wal_senders、max_connections）與手動重建複寫是高風險操作。",
+   "lessons": [
+    "複寫不是備份；備份必須定期做還原演練，失敗要能被『看見』。",
+    "高風險破壞性指令前要有保護（確認主機、拆分權限、自動化重建流程）。",
+    "單點 primary 在負載飆升時會連帶破壞 HA，需儘早分擔讀寫負載。"
+   ],
+   "numbers": [
+    "停機約 18 小時",
+    "約 300 GB 資料被刪",
+    "至少 5000 專案 / 5000 留言 / 約 700 使用者",
+    "LVM snapshot 約 6 小時前",
+    "staging 磁碟約 60Mbps、複製約 18 小時",
+    "sequence +100,000",
+    "max_connections 設為 8000"
+   ],
+   "interviewUse": "論證『先把 DB 單點負載拆開』以及『備份要測還原』，並說明 replication 與 backup 的差異。",
+   "sources": [
+    {
+     "title": "Postmortem of database outage of January 31 (GitLab)",
+     "url": "https://about.gitlab.com/blog/postmortem-of-database-outage-of-january-31/"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "storage-choice"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "gadget-2025-shard-without-downtime",
+   "problem": "db-scaling-migration",
+   "company": "Gadget",
+   "title": "用 maintenance mode 逐 app 分片 Postgres：最長暫停 4 秒、零停機",
+   "date": "2025-09",
+   "kind": "design-writeup",
+   "symptom": "單一 Postgres 無法承受 BFCM 預期的 400% app 流量成長，且 Postgres 13 即將 EOL；垂直擴充已到極限。",
+   "rootCause": "control plane（平台自身資料）與 data plane（每個 app 的資料）混在同一個 DB，data plane 的資料量與 IO 高出數個數量級且不可預測。",
+   "whyHard": "分片通常是『大爆炸式』一次切換；需要原子切換、不丟寫、不讀到舊庫的資料；而要停止流量又不能造成錯誤。logical replication 要自行同步 schema，且伺服器的 max logical replication workers 設太低（需重啟才能改），平行遷移受限。",
+   "fix": "先把 data plane 拆出，control plane 留小而中央化；以 app environment 為單位逐一遷移：converge schema → logical replication → 進入 maintenance mode（Postgres advisory lock 以 shared/exclusive 模式阻擋請求，最長交易 8 秒）→ 等複寫追上 → 更新 control plane 指向 → 釋放鎖。所有 DB 存取都經單一 AppWorkUnit 物件以保證遵守鎖。先在 staff app 上來回 ping-pong 測試。",
+   "tradeoff": "切換點之後不可回頭（point of no return），但可事先 dry-run 到最後一步；需讓所有 in-memory 快取知道 maintenance 狀態，等待時間由快取壽命決定；由於 replication workers 限制，遷移速度比預期慢。",
+   "lessons": [
+    "把大爆炸切換拆成『每個租戶一個極短的 maintenance window』。",
+    "用型別/封裝讓『所有 DB 存取必經同一入口』，才能信任 pause 機制。",
+    "能 dry-run 到最後一步的遷移流程，可以在真實環境反覆失敗。"
+   ],
+   "numbers": [
+    "BFCM 預期流量 +400%",
+    "最長暫停 4 秒、p95 250ms",
+    "暫停上限 5 秒",
+    "最長交易 8 秒",
+    "100K+ 商店"
+   ],
+   "interviewUse": "示範『多租戶逐租戶遷移 + 短暫暫停』作為取代大爆炸切換的零停機方案。",
+   "sources": [
+    {
+     "title": "Sharding our core Postgres database (without any downtime)",
+     "url": "https://gadget.dev/blog/sharding-our-core-postgres-database-without-any-downtime"
+    }
+   ],
+   "topics": [
+    "sharding",
+    "scaling-writes"
+   ],
+   "byAgents": true
+  }
+ ],
+ "quiz": [
+  {
+   "q": "Notion 分片 Postgres 時為何選 workspace ID 作為 partition key，而不是 user ID 或隨機 block ID？",
+   "a": "Notion 是團隊型產品，每個 block 屬於一個 workspace，使用者通常一次只查詢單一 workspace，所以以 workspace 分片可避開多數跨 shard join 與跨 shard transaction；代價是單一大型企業客戶可能形成熱點。",
+   "topic": "db-scaling-migration",
+   "kind": "取捨"
+  },
+  {
+   "q": "Figma 為何先做垂直分割、而不是直接換 CockroachDB/Vitess 或做水平分片？",
+   "a": "垂直分割改動小、能快速降低主庫負載並保留關聯式模型與既有 Postgres 維運經驗；換引擎需雙寫遷移並重建維運能力，而當時 runway 只有約一年。缺點是失去跨表 transaction/join，且單表仍會達到上限，因此之後仍需水平分片。",
+   "topic": "db-scaling-migration",
+   "kind": "取捨"
+  },
+  {
+   "q": "在不停機的分片遷移中，為什麼切換前要『暫停流量、確認複寫追上、換路由、並建立反向複製』？",
+   "a": "暫停可避免新寫入在切換瞬間分裂到兩邊；確認追上才保證不丟資料；換路由完成切換；反向複製讓新庫的寫入同步回舊庫，使回滾可行。Notion、Figma 都這樣做。",
+   "topic": "db-scaling-migration",
+   "kind": "情境"
+  },
+  {
+   "q": "Slack 為何選 Vitess 而不是自己在 application 內做新的分片模型，或改用 DynamoDB/Spanner？",
+   "a": "應用層分片會與資料存取邏輯高度耦合，且解決不了維運與 read replica 問題；換 NoSQL/NewSQL 要重寫數千種 query 並重做所有維運實務。Vitess 保留 MySQL 核心與 SQL 語意，又提供內建分片、failover 與 topology 管理。代價是需要投入工程資源補足 Vitess 的缺口。",
+   "topic": "db-scaling-migration",
+   "kind": "取捨"
+  },
+  {
+   "q": "GitHub 2018 事故中，為何選擇 failing-forward 而不是把 primary 直接切回 US East？",
+   "a": "West 已接受約 40 分鐘的寫入，East 又有少量未複寫的寫入，兩邊各有對方沒有的資料，直接切回會遺失資料；他們選擇資料完整性優先，代價是約 24 小時的降級與跨國寫入延遲。",
+   "topic": "db-scaling-migration",
+   "kind": "情境"
+  },
+  {
+   "q": "GitLab 2017 事故中『複寫』與『備份』的差別是什麼？為何當天無法靠任一種還原？",
+   "a": "複寫用於 failover，會同步錯誤與刪除，不是災難復原；當天 secondary 的資料被清空、pg_dump 因版本不符失敗且告警信被拒收、DB 沒有啟用 Azure snapshot，只剩 6 小時前為 staging 做的 LVM snapshot 可用。教訓是定期演練還原並讓備份失敗可見。",
+   "topic": "db-scaling-migration",
+   "kind": "概念"
+  }
+ ]
+}

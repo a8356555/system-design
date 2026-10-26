@@ -1,0 +1,410 @@
+{
+ "problem": "overload",
+ "incidents": [
+  {
+   "id": "aws-2019-using-load-shedding",
+   "problem": "overload",
+   "company": "Amazon (AWS Builders' Library)",
+   "title": "Using load shedding to avoid overload：用 goodput 而不是 throughput 看過載",
+   "date": "2019-12",
+   "kind": "design-writeup",
+   "symptom": "負載升高後 latency 越過 client timeout，median latency 等於 timeout 時一半請求逾時，latency 問題變成 availability 問題；client retry 再放大 offered load。",
+   "rootCause": "Server 超過 inflection point 後 throughput 反而下降（thread contention、context switching、GC、I/O contention），逾時請求的已完成工作全部浪費，retry 形成 positive feedback loop，過載成為穩態。",
+   "whyHard": "靜態的 max connections 很難設對：太低會在還有餘裕時就擋流量，太高則 server 變慢；workload 或 dependency 效能一變，數值又失準。Load shedding 本身也不是免費，且 shedding 若與 CPU-based autoscaling 用同一個 CPU 目標，會讓 autoscaling 收不到訊號。",
+   "fix": "Server 接近過載就快速拒絕多餘請求，只保護它收下的請求的 latency（維持 goodput）；請求帶 timeout hint 並逐 hop 傳遞剩餘時間，從 queue 取出時丟掉已過期請求；queue 要有上限與最長等待時間，必要時用 LIFO；LB 用 spillover（直接拒絕）而非 surge queue；有狀態的 API 優先處理 end() 而非 start()、後續頁優先於第一頁；每個 shedding 事件都記錄 client 與 operation，並且不要讓 fast-fail 污染 latency 指標。",
+   "tradeoff": "被擋的請求 availability 下降，shedding 若誤判（false positive）等於自己製造錯誤；deadline 估算遇到 cache hit/miss 不同速度時可能反而誤殺；需要把服務壓測到壞掉之後很遠才知道真實 headroom，且 load shedding 會讓 CPU 指標低估距離拒絕點有多近，AZ 容量規劃要更保守。",
+   "lessons": [
+    "看 goodput（可用的成功回應）而不是 throughput；壓測要壓到遠超過 goodput 平台期，理想曲線是 goodput 持平。",
+    "丟請求要丟得早、丟得便宜，並且丟掉已經注定逾時的工作（deadline propagation + queue 內 TTL）。",
+    "佇列是隱藏的過載來源：限制長度與等待時間，寧可 fast-fail 也不要 surge queue。"
+   ],
+   "numbers": [
+    "median latency 等於 client timeout 時，client 感知 availability 為 50%",
+    "文中範例：服務 shed 掉 60% 流量時，median latency 會因為 fast-fail 請求而看起來很漂亮",
+    "Classic Load Balancer 使用 surge queue；Application Load Balancer 直接拒絕多餘流量"
+   ],
+   "interviewUse": "被問「過載時 server 該怎麼辦」時，用它說明為什麼要 fast-fail 保護 goodput、為什麼要 deadline propagation 與限制 queue，而不是無腦加 timeout 或 retry。",
+   "sources": [
+    {
+     "title": "Using load shedding to avoid overload (AWS Builders' Library)",
+     "url": "https://aws.amazon.com/builders-library/using-load-shedding-to-avoid-overload/"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "rate-limiting"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "google-sre-handling-overload",
+   "problem": "overload",
+   "company": "Google",
+   "title": "SRE Book「Handling Overload」：criticality、per-customer quota 與 client-side adaptive throttling",
+   "date": "2016",
+   "kind": "design-writeup",
+   "symptom": "即使 load balancing 做得好，系統某部分仍會過載；服務對超額 client 回 out-of-quota 錯誤，但光是處理拒絕就耗盡 backend CPU，或單一 client 的失控流量拖累其他客戶。",
+   "rootCause": "用 QPS 或請求靜態特徵當容量模型不可靠（不同 query 成本差異大、比例會隨版本或時段改變）；而拒絕請求並非零成本，對簡單 RAM lookup 來說拒絕幾乎與處理一樣貴。",
+   "whyHard": "拒絕的成本取決於服務型態，backend 可能 CPU 幾乎都花在拒絕上；retry 在『少數 task 過載』時有幫助，在『整個 datacenter 過載』時卻只會放大流量，client 很難分辨。",
+   "fix": "容量直接用 CPU（資源）衡量；每個 customer 設 quota（可超賣，因為不太可能同時全用滿）；每個請求帶四級 criticality（CRITICAL_PLUS / CRITICAL / SHEDDABLE_PLUS / SHEDDABLE），過載時先拒絕低 criticality，並由 RPC 系統沿 call graph 自動傳遞；client 端做 adaptive throttling（記錄近兩分鐘 requests 與 accepts，超過 K 倍後以機率在本地直接拒絕）；retry 設 per-request 最多 3 次與 per-client 10% retry ratio 預算。",
+   "tradeoff": "K 越小越積極，但 backend 狀態傳回 client 的速度變慢（作者偏好 K=2：多浪費一些 backend 資源換取狀態傳播更快）；client-side throttling 對極少發請求的 client 效果差；四級 criticality 是刻意的限制，更多級別會增加各機制的運維成本；criticality 與 latency 需求正交，不能拿來代替 QoS。",
+   "lessons": [
+    "把重要性做成 RPC 一等公民並自動沿呼叫鏈傳遞，優先級才會一致，不會各服務各自發明。",
+    "Client 端要有自我節流與 retry budget，否則拒絕本身就會成為壓垮 backend 的負載。",
+    "過載訊號用 task 本地的 utilization（例如 executor load average：active threads 數量加指數平滑），閾值依 criticality 分層。"
+   ],
+   "numbers": [
+    "範例：datacenter 有 100 個 backend task、每個每秒 500 個請求，LB 上限為 50,000 QPS",
+    "範例：10,000 CPU 的服務，Gmail 與 Calendar 各 4,000、Android 3,000、Google+ 2,000、其他 500 CPU seconds per second（總和超賣）",
+    "adaptive throttling 保留近 2 分鐘的 requests 與 accepts；偏好 2x 乘數，另舉 1.1 的例子",
+    "per-request retry 最多 3 次、per-client retry 比例 10%；最壞情況放大從近 3X 降到約 1.1x"
+   ],
+   "interviewUse": "回答『被打爆時丟誰』時引用 criticality 四級 + per-customer quota；回答『拒絕也很貴怎麼辦』時引用 client-side adaptive throttling。",
+   "sources": [
+    {
+     "title": "Google SRE Book, Chapter 21: Handling Overload",
+     "url": "https://sre.google/sre-book/handling-overload/"
+    }
+   ],
+   "topics": [
+    "rate-limiting",
+    "reliability"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "stripe-2017-four-rate-limiters",
+   "problem": "overload",
+   "company": "Stripe",
+   "title": "四種 limiter：request rate、concurrent、fleet usage load shedder、worker utilization load shedder",
+   "date": "2017-03",
+   "kind": "design-writeup",
+   "symptom": "API 偶爾流量暴增；某使用者的大量低優先請求（例如分析資料）可能影響其他人的關鍵交易；昂貴 endpoint 因使用者同時打太多而出現資源競爭，使用者等不到回應又重試，雪上加霜。",
+   "rootCause": "只靠加機器無法防止單一行為不良者或腳本失控影響所有人；請求成本不一致，單看 request rate 不足以保護 CPU 密集的 endpoint。",
+   "whyHard": "limiter 本身出 bug 或 Redis 掛掉不能讓 API 受影響；門檻設太緊會誤傷既有使用者的流量樣式；shedding 與恢復若太快會 flapping（丟掉 test mode 就好了，放回去又壞掉）。",
+   "fix": "(1) Request Rate Limiter（token bucket，每個使用者一個 bucket）是最主要的；(2) Concurrent Request Limiter 限制同時進行的請求數；(3) Fleet Usage Load Shedder 把流量分成 critical（如建立 charge）與 non-critical（如列出 charges），保留一部分 fleet 容量給 critical，non-critical 超過配額回 503；(4) Worker Utilization Load Shedder 是最後防線，worker 太忙時由 test mode 流量開始逐步丟，並緩慢加碼與放回。上線守則：fail open、清楚的 429/503 訊息、kill switch、dark launch 先觀察會擋掉什麼。",
+   "tradeoff": "concurrent limiter 要求使用者改變程式模型（fork 出 X 個 job 消化佇列，而非狂打然後 429 back off）；request rate limiter 假設 client 可以調整節奏，對無法延後的即時事件不適用；fail open 代表 limiter 故障時暫時失去保護；第 3、4 種是依整體系統狀態而非使用者身份決策，會犧牲低優先流量。",
+   "lessons": [
+    "分層防禦：預防型（rate / concurrency）與止血型（load shedding）目的不同，不要混為一談。",
+    "丟流量要有優先序（critical vs non-critical、test mode vs live），且升降級要慢，避免震盪。",
+    "任何 limiter 先 dark launch、配 kill switch 與 fail open，再逐步開。"
+   ],
+   "numbers": [
+    "範例：同時最多 20 個進行中的請求（concurrent limiter）",
+    "範例：保留 20% fleet 給 critical 請求，non-critical 超出 80% 配額回 503",
+    "當月 concurrent limiter 觸發約 12,000 次；worker utilization shedder 只拒絕 100 個請求",
+    "request rate limiter 當月拒絕數百萬請求（多為 test mode 失控腳本）"
+   ],
+   "interviewUse": "設計 API rate limiting 時，用它說明要分成 rate、concurrency、優先級 load shedding 三種不同目的的機制，並提 fail open + dark launch 的上線策略。",
+   "sources": [
+    {
+     "title": "Scaling your API with rate limiters (Stripe)",
+     "url": "https://stripe.com/blog/rate-limiters"
+    }
+   ],
+   "topics": [
+    "rate-limiting",
+    "api-networking"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "netflix-2020-prioritized-load-shedding",
+   "problem": "overload",
+   "company": "Netflix",
+   "title": "Zuul 上的 priority-based progressive load shedding：先丟 log，不丟 Play",
+   "date": "2020-11",
+   "kind": "design-writeup",
+   "symptom": "後端或 gateway 吃緊時，過去只有 on/off 的 circuit breaker，沒有漸進式降載；2019 年一次事故讓相當比例的會員無法播放。",
+   "rootCause": "Retry storm、under-scaled 服務、壞部署、網路抖動、雲端問題都會造成非預期負載，而所有請求被一視同仁，高吞吐但不重要的流量（log、背景請求）排擠了影響播放的請求。",
+   "whyHard": "要先知道哪些請求被丟了使用者不會感覺；而且請求的重要性會隨產品演進改變（原本不重要的請求可能突然變重要），裝置種類與版本又多。",
+   "fix": "API gateway（Zuul）在請求進入時依 throughput、functionality、criticality 分成 NON_CRITICAL / DEGRADED_EXPERIENCE / CRITICAL 並算出 1–100 的 priority score；Zuul 在兩個時機降載：對單一後端的 service throttling（看錯誤率與 concurrent requests）與對全體的 global throttling（看 CPU、concurrent requests、連線數）；用 cubic function 控制 priority 閾值，漸進地從最低優先丟起；丟的時候回傳 maxRetries 與 retryAfterSeconds 讓裝置 back off，高優先請求可較積極重試。驗證用 failure injection（FIT）與 ChAP A/B 實驗（45 分鐘），首次實驗就抓到 Android 與 iOS 一個低優先請求的 race condition。",
+   "tradeoff": "分類與分數需要持續維護，並靠 chaos 實驗定期回歸驗證；在 gateway 做 global throttling 影響面大（所有後端），因此只在 Zuul 自己出問題時才啟動；被丟的低優先功能（例如 viewing history、語言選擇）會暫時劣化。",
+   "lessons": [
+    "把優先級計算放在最前面的入口（gateway），整個請求生命週期都能使用，並讓多裝置一致。",
+    "漸進式（cubic）降載比 on/off 的 circuit breaker 好：輕微過載只丟最不重要的，嚴重時才碰重要流量。",
+    "用實驗驗證『丟了沒人感覺』這個假設，並排程定期重跑。"
+   ],
+   "numbers": [
+    "priority score 1 到 100",
+    "cubic 曲線示例：超載 35% 時閾值仍在 90 多，80% 時降到 50，95% 時降到 10",
+    "ChAP 實驗：小量正式用戶分為對照與實驗組，持續 45 分鐘",
+    "2019 年事故無 shedding；2020 年類似事故在部署後數日由 progressive load shedding 擋下，播放不受影響"
+   ],
+   "interviewUse": "回答『過載時丟誰』時，用 Netflix 說明在入口依重要性分級、漸進丟棄，並且用 chaos 實驗驗證分級假設。",
+   "sources": [
+    {
+     "title": "Keeping Netflix Reliable Using Prioritized Load Shedding (Netflix TechBlog)",
+     "url": "https://netflixtechblog.com/keeping-netflix-reliable-using-prioritized-load-shedding-6cc827b02f94"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "api-networking"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "uber-qalm-criticality-shedding",
+   "problem": "overload",
+   "company": "Uber",
+   "title": "QALM：以 criticality 與 CoDel 式 queue latency 偵測做 endpoint 隔離的 load shedding",
+   "date": "2018-03",
+   "kind": "design-writeup",
+   "symptom": "客戶平台的服務在流量過載、資源耗盡或依賴失敗時整體退化；分析六個月的 outage，28% 本來可以靠 graceful degradation 緩解或避免。",
+   "rootCause": "靜態的 inbound rate limit 必須隨容量變動而更新，且各 endpoint 的 SLA 與容量不同，配置複雜；沒有依重要性區分的機制，測試流量或非關鍵 endpoint 的暴增會拖垮關鍵路徑。",
+   "whyHard": "固定門檻跟不上容量變化；以 CPU 等資源指標偵測又與使用者可感知的 latency 相關性不穩定；要大規模推廣到其他團隊，改 code 加改設定的導入成本也是障礙。",
+   "fix": "QALM（QoS Aware Load Management）：每個啟用的 endpoint 有一個輕量 request buffer（goroutine + channel），量測請求到達到 handler 開始處理的等待時間，在滑動視窗內追蹤最小延遲，超過門檻就判定過載（受 CoDel 啟發）；每個 endpoint 獨立的 queue 與 detector 做 endpoint 隔離；四級 criticality（核心基礎設施與核心行程請求不丟，使用者功能可丟，測試等內部流量最先丟）以 caller–endpoint 配對設定；之後改寫成 YARPC inbound middleware 與 UberFx module，導入從數天降到兩分鐘以內。",
+   "tradeoff": "每個 endpoint 一個 buffer 會增加 CPU 開銷（測得約 3%）；criticality 要靠 caller 配置，需要人維護（UI 用 Jaeger tracing 資料預填 caller）；被丟的是低重要性流量，團隊要接受；告警門檻要調高，避免因為正常的 shedding 打擾 on-call。",
+   "lessons": [
+    "用『排隊等待時間』的最小值偵測過載，比固定 QPS 門檻更能自適應容量變化。",
+    "把可靠性機制放在 RPC middleware，與業務邏輯分離，才能自助導入並大規模採用。",
+    "Endpoint 級隔離能保護關鍵 endpoint（例如信用卡申請 apply）不被同服務其他 endpoint 的暴增拖垮。"
+   ],
+   "numbers": [
+    "平台尖峰流量最高 300,000 requests per second，超過 450 個內部服務",
+    "壓測 6,000 RPS：無 QALM 時 latency 可高達 20 秒；啟用後 p99 低於 400 ms，丟掉約 20% 非關鍵請求，成功請求 latency 改善 98%",
+    "雙 caller 各約 2,300 RPS 打同一 endpoint：過載時只丟 non-critical 的 document-staging，critical 的 document 全部成功",
+    "5 個 endpoint 各 100 RPS 的 CPU profile：開銷約 3%",
+    "Uber Visa 測試：getProvidedCard 達 1,800 RPS 時，apply 在 30 分鐘壓測中只有 2 個請求逾時"
+   ],
+   "interviewUse": "被問『怎麼偵測過載且不用人調門檻』時，引用 QALM 的 queue sojourn time 最小值（CoDel 思路）+ criticality 分級 + endpoint 隔離。",
+   "sources": [
+    {
+     "title": "QALM: Uber's QoS Load Management Framework (Uber Engineering)",
+     "url": "https://www.uber.com/blog/qalm-qos-load-management-framework/"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "api-networking"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "linkedin-hodor-overload-detection",
+   "problem": "overload",
+   "company": "LinkedIn",
+   "title": "Hodor：自適應過載偵測（heartbeat / GC / threadpool）+ concurrency 與 traffic tier 的 load shedding",
+   "date": "2022-02",
+   "kind": "design-writeup",
+   "symptom": "1,000 多個 JVM 微服務各有不同的過載型態（CPU、GC、thread pool、downstream backpressure），過去只有各團隊手動設定的固定 concurrency limit；超量供應成本高，circuit breaker 只保護 client。",
+   "rootCause": "過載來源多樣：物理資源（CPU、記憶體、I/O）與虛擬資源（thread、連線池、semaphore）；下游變慢也會讓本機 concurrent requests 增加，即使進來的流量沒變。",
+   "whyHard": "CPU 使用率 100% 不等於過載，OS 層的 CPU 指標無法反映 JVM safepoint pause；queue length 很難對應到業務影響；偵測器若有 false positive 就會無謂地丟掉會員流量，而 latency 增加不一定是過載。",
+   "fix": "三元件：overload detectors、load shedder、各平台 adapter（Rest.li 回 503，client 可安全重試到別的 instance）。CPU heartbeat detector 以背景執行緒 sleep 並比較實際與預期睡眠時間；GC overhead tier detector；threadpool queue wait-time detector；加上 latency confirmation filter 過濾沒有業務影響的誤報。Shedder 用自適應 concurrency limit，平衡後定期 probe，失敗則指數退避，每次過載重新計算；後續加入 traffic tiering（optional / degradable / non-degradable）與 rate-based histogram，並在同一 tier 內以 member ID hash 分桶，一次丟固定的桶以維持一致體驗。Rollout 先用 monitoring mode 觀察至少一週資料，找出 false positive。",
+   "tradeoff": "偵測器偏向 precision 而非 recall（寧可漏報也不要誤殺）；concurrency-based shedder 加上 tiering 時，被丟掉的請求不貢獻 concurrency histogram，才需要改成 rate-based；retry 需要 client 與 server 雙邊 budget，否則整個 cluster 過載時會 retry storm；某些服務因 GC 問題不適合預設閾值，得先調 GC 才能導入。",
+   "lessons": [
+    "從服務自身的角度量測『拿到 CPU 時間的能力』，比讀 OS 的 CPU 使用率更貼近使用者感受的延遲。",
+    "Concurrency limit 比固定百分比丟棄更能適應流量起伏；偵測器要先 monitoring mode 驗證再啟用。",
+    "用 threadpool queue wait-time 不需要知道下游就能偵測 backpressure，並在上游自行降載。"
+   ],
+   "numbers": [
+    "超過 1,000 個 JVM 微服務",
+    "heartbeat 範例：sleep 10ms，一秒視窗內 p99 超過 55ms 為違規，連續 8 個違規視窗判定 CPU 過載",
+    "traffic tier ID：optional 為 1000、degradable 為 5000、non-degradable 為 10000",
+    "上線前至少分析一週的 monitoring 資料；目標可用性為 99.9%"
+   ],
+   "interviewUse": "回答『怎麼自動偵測過載』時，引用 Hodor 的多偵測器 + 延遲確認 + concurrency-based shedding 並說明為何不用 CPU% 或固定百分比。",
+   "sources": [
+    {
+     "title": "Hodor: Detecting and addressing overload in LinkedIn microservices",
+     "url": "https://www.linkedin.com/blog/engineering/data-management/hodor-detecting-and-addressing-overload-in-linkedin-microservic"
+    },
+    {
+     "title": "Hodor: Overload scenarios and the evolution of their detection and handling",
+     "url": "https://www.linkedin.com/blog/engineering/infrastructure/hodor-overload-scenarios-and-the-evolution-of-their-detection-a"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "api-networking"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "shopify-2017-checkout-throttle",
+   "problem": "overload",
+   "company": "Shopify",
+   "title": "Flash sale 的 checkout throttle：edge leaky bucket、公平性失誤與 stateless queue",
+   "date": "2017-02",
+   "kind": "design-writeup",
+   "symptom": "2016 年 2 月 Kylie Cosmetics 的限量開賣讓她自己的店與同一 database shard 上其他店全部掛掉；之後每週一次的 sale 都像一次小型 Black Friday。",
+   "rootCause": "Checkout 大量寫入：每個 checkout session 都會在 MySQL 新增一筆紀錄，且流程每一步都更新同一筆，重構成單次寫入來不及在下週 sale 前完成。",
+   "whyHard": "對消費者來說回 429 看起來就像網站掛了，不能像 API client 那樣處理；第一版 throttle 讓排隊使用者以隨機時間 polling，結果變成抽獎，最久有人排到 40 分鐘，而 sale 本身只有 40 分鐘，等輪到時商品已售完。",
+   "fix": "在 Nginx + OpenResty (Lua) 的 edge 做 leaky bucket 限制進入 checkout 的速率，超過就導到商家設計、Nginx 快取的排隊頁，用 JS polling 或 meta refresh，通過者拿簽章 cookie 免再節流。第二版加上公平性：把使用者第一次嘗試 checkout 的時間戳存進簽章 cookie，每個 load balancer 獨立計算一個時間閾值，只放行比閾值早的人進入 leaky bucket，並用只含比例項的 PID 控制器依 bucket 剩餘容量動態調整閾值。",
+   "tradeoff": "這是重構完成前的短期橋接方案；排隊頁只是把壓力推到 edge，並不降低 checkout 本身的寫入成本；stateless 設計避免新增資料儲存這個單點與跨資料中心複製問題，但只能近似公平；測量用的 Twitter 輿情也說明使用者體驗要有監控。",
+   "lessons": [
+    "保護後端不能破壞使用者感受：用排隊頁取代錯誤頁，而且要有公平性（先來先服務），否則等同抽獎。",
+    "在 edge 用 stateless 方式實作排隊，避免多資料中心的共享狀態。",
+    "先用短期節流橋接，再還技術債（重構 checkout 寫入）。"
+   ],
+   "numbers": [
+    "leaky bucket 的週期為 5 秒",
+    "第一版排隊最久達 40 分鐘，而 sale 本身約 40 分鐘",
+    "2016 年 2 月的 Kylie sale 讓同一 database shard 上的所有店都掛掉"
+   ],
+   "interviewUse": "設計搶購或 flash sale 時，用它說明為什麼前端需要 admission control + 公平排隊，而不是單純回 429 或直接加機器。",
+   "sources": [
+    {
+     "title": "Surviving Flashes of High-Write Traffic Using Scriptable Load Balancers (Part I)",
+     "url": "https://shopify.engineering/surviving-flashes-of-high-write-traffic-using-scriptable-load-balancers-part-i"
+    },
+    {
+     "title": "Surviving Flashes of High-Write Traffic Using Scriptable Load Balancers (Part II)",
+     "url": "https://shopify.engineering/surviving-flashes-of-high-write-traffic-using-scriptable-load-balancers-part-ii"
+    }
+   ],
+   "topics": [
+    "rate-limiting",
+    "contention",
+    "api-networking"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "cloudflare-2017-edge-rate-limiting",
+   "problem": "overload",
+   "company": "Cloudflare",
+   "title": "Edge rate limiting：以滑動視窗近似、PoP 內計數與非同步遞增擋下 L7 攻擊",
+   "date": "2017-06",
+   "kind": "design-writeup",
+   "symptom": "需要對數百萬網域與規則，在全球邊緣節點上快速且準確地限流（例如保護登入頁、昂貴 API），且不能拖慢正常請求。",
+   "rootCause": "標準 NGINX 限流模組只在單機內計數，請求分散到大量伺服器就失效；集中式資料庫的 latency 與可用性也不可接受。",
+   "whyHard": "固定視窗計數在邊界重置，允許規律的突波通過；記錄每個請求時間戳記精確但記憶體與運算太貴；leaky bucket 需要多個非原子操作，受限於 memcached 協定做不到；攻擊期間計數器本身可能被壓垮。",
+   "fix": "利用 anycast 讓同一 IP 通常抵達同一 PoP，於是只需在每個 PoP 內建立獨立的計數系統（Twemproxy 叢集 + consistent hashing）；演算法採用『前一視窗計數 × 剩餘比例 + 當前視窗計數』的滑動視窗近似，每個 counter 只存兩個數字；請求路徑上的遞增改成非同步執行，超過門檻就寫入一個標記通知 PoP 內所有伺服器開始緩解，且緩解結束時間已知，伺服器可把它快取在記憶體，後續請求連查詢都不必。",
+   "tradeoff": "近似演算法假設前一視窗請求率平均分佈，會有誤差；計數只在 PoP 範圍內，不是全球精確；非同步遞增代表攻擊初期會有短暫延遲才觸發緩解。",
+   "lessons": [
+    "限流的準確度可以用近似換取便宜：兩個數字的滑動視窗比精確 log 或 token bucket 更容易分散式實作。",
+    "請求關鍵路徑不要同步依賴計數儲存，把遞增移到非同步並在本機快取緩解狀態。",
+    "利用網路拓撲（anycast）把全球一致性問題縮小成 PoP 內的問題。",
+    "用近似演算法換取 O(1) 記憶體與單次 INCR",
+    "利用 anycast 的路由特性讓狀態不必全球同步",
+    "已被判定超限的 key 要在本機快取，避免計數系統在攻擊中被壓垮"
+   ],
+   "numbers": [
+    "50 requests/minute 範例：當前視窗 18 個請求、前一分鐘 42 個請求",
+    "對 4 億個請求、27 萬個不同來源的分析：0.003% 請求被誤放行或誤限流，真實速率與近似速率平均差 6%，3 個來源略超過門檻卻被放行（實際速率低於門檻的 115%），沒有低於門檻的來源被誤擋",
+    "文中提到曾成功擋下單一網域每秒 40 萬個請求的攻擊"
+   ],
+   "interviewUse": "設計全球分散式 rate limiter 時，用它說明為何選擇滑動視窗近似 + 本地分片計數，而不是中央 Redis。",
+   "sources": [
+    {
+     "title": "How we built rate limiting capable of scaling to millions of domains (Cloudflare Blog)",
+     "url": "https://blog.cloudflare.com/counting-things-a-lot-of-different-things/"
+    }
+   ],
+   "topics": [
+    "rate-limiting",
+    "counting"
+   ],
+   "byAgents": true,
+   "alsoIn": [
+    "security-availability"
+   ]
+  },
+  {
+   "id": "doordash-2023-aperture-global-load-control",
+   "problem": "overload",
+   "company": "DoorDash",
+   "title": "微服務故障型態與 Aperture：從區域性 load shedding 走向全域協調的降載",
+   "date": "2023-03",
+   "kind": "design-writeup",
+   "symptom": "微服務之間出現 cascading failure、retry storm、death spiral、metastable failure 等模式；例如資料庫維護使延遲上升並誤觸 circuit breaker，造成大範圍停擺。",
+   "rootCause": "區域性機制（本機 load shedding、circuit breaker、auto scaling）只看本地指標、用通用啟發式判斷健康，且只能採取本地行動；複雜的跨服務互動型故障需要全域視角。",
+   "whyHard": "僅用 latency 無法判斷一個服務是自己過載，還是因下游變慢；retry 在下游不可用時只會造成 work amplification；死亡螺旋中，剩餘節點被迫扛更多負載而相繼失敗。",
+   "fix": "評估開源的 Aperture：集中式 controller 持續監控可靠性指標（來自 Prometheus，例如 EMA latency），依 YAML policy 觸發警報並下發動作（distributed rate limiting、concurrency limiting 即 load shedding），可設定下游過載時在上游先丟。DoorDash 在測試環境對一個主要服務整合，提高 RPS 時錯誤率上升但 goodput 維持穩定；縮減運算容量時 goodput 降低但 latency 只小幅增加，因為 controller 降低了 concurrency limit。",
+   "tradeoff": "只在測試環境驗證過，作者承認可靠性方案最好在真實事故中檢驗；跨服務協調與升級策略（如持續高負載時觸發 autoscaling）尚未試驗；集中式 controller 也成為新的依賴與複雜度。",
+   "lessons": [
+    "區域性降載只能保護單一服務；跨服務的協調（例如下游過載時在上游就拒絕）能更早、更省地止損。",
+    "判斷過載要區分『我自己慢』與『下游慢』，單看 latency 不夠。",
+    "評估降載方案的標準是 goodput 是否維持平穩。"
+   ],
+   "numbers": [],
+   "interviewUse": "討論 load shedding 的層級時，用它說明區域性 vs 全域式控制的取捨，並強調要用 goodput 驗證。",
+   "sources": [
+    {
+     "title": "Failure Mitigation for Microservices: An Intro to Aperture (DoorDash Engineering)",
+     "url": "https://careersatdoordash.com/blog/failure-mitigation-for-microservices-an-intro-to-aperture/"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "api-networking"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "acm-2012-codel-controlled-delay",
+   "problem": "overload",
+   "company": "ACM Queue (Nichols and Jacobson)",
+   "title": "CoDel：用 queue 的最小等待時間，而非長度，判斷 bad queue 並丟包",
+   "date": "2012-05",
+   "kind": "design-writeup",
+   "symptom": "過大的 buffer 形成 standing queue，延遲飆升卻沒有增加 throughput（bufferbloat）；實測 edge queuing delay 從數百毫秒到數秒。",
+   "rootCause": "Window 大小由 sender 決定，而 queue 在瓶頸出現；queue 同時有好的（吸收突發）與壞的（持續存在）兩種，單看長度、平均值或使用率無法分辨，靜態調整 RED 之類的參數又難以通用。",
+   "whyHard": "最佳 buffer 大小隨連線的頻寬與 RTT 一直變，無法靜態設定；好 queue 在大約一個 RTT 內消失，壞 queue 會持續數個 RTT，需要找一個穩健的指標區分。",
+   "fix": "CoDel 追蹤封包在 queue 內等待（sojourn time）的局部最小值；若最小值超過 target 並持續一個 interval，就開始丟包，並由 control law 決定下一次丟包時間（丟越久，間隔越短）；只需在入隊時記錄時間戳，工作都在出隊時完成，不需鎖，也沒有要調的參數。",
+   "tradeoff": "它是網路封包層的 AQM，要套用到 RPC 或應用層需要類比（例如以請求等待時間取代封包 sojourn time）；target 設得太低會降低使用率，太高則延遲改善有限；真正的驗證仍有賴實際部署，文中以 ns-2 模擬為主。",
+   "lessons": [
+    "用『等待時間的最小值』區分好 queue 與壞 queue，比 queue 長度或平均值穩健。",
+    "自我調整、無參數的指標比靜態閾值更能適應容量與流量變化（Uber QALM 的 overload detector 即借用此思路）。",
+    "過載控制的目標是控制延遲，而不是填滿 buffer。"
+   ],
+   "numbers": [
+    "target 為 5 ms；低於 5 ms 使用率會下降，高於 5 ms 使用率幾乎沒有改善",
+    "模擬涵蓋瓶頸頻寬 64 kbps 至 100 Mbps、端到端延遲 5 ms 至 1 秒",
+    "文中引用的量測：edge queuing delay 從數百毫秒到數秒"
+   ],
+   "interviewUse": "被問『queue 滿了怎麼辦、怎麼設 queue 上限』時，用 CoDel 說明應以等待時間而非長度作為過載訊號。",
+   "sources": [
+    {
+     "title": "Controlling Queue Delay (ACM Queue)",
+     "url": "https://queue.acm.org/detail.cfm?id=2209336"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "api-networking"
+   ],
+   "byAgents": true
+  }
+ ],
+ "quiz": [
+  {
+   "q": "服務過載時，一個團隊提議「把 timeout 調長、並讓 client 多 retry 幾次」來提高成功率。依 AWS Builders' Library 與 Google SRE 的觀點，這樣做的風險是什麼？應該改做什麼？",
+   "a": "逾時後 server 已做的工作白費，retry 又把 offered load 倍增，在多層 call graph 中呈指數放大，形成 positive feedback loop，過載變成穩態。應改為 server 端快速拒絕多餘請求保護 goodput、傳遞 deadline 並丟掉已過期請求，client 端用 retry budget（例如每請求最多 3 次、整體 retry 比例約 10%）與 adaptive throttling。",
+   "topic": "overload",
+   "kind": "情境"
+  },
+  {
+   "q": "要偵測服務過載，用 CPU 使用率、queue 長度、固定 QPS 門檻各有什麼問題？LinkedIn Hodor 與 Uber QALM 分別怎麼解？",
+   "a": "CPU% 無法反映 JVM safepoint/GC pause 且與延遲相關性不穩；queue 長度難以對應業務影響且門檻因服務而異；固定 QPS 要隨容量更新、各 endpoint 成本不同。Hodor 量測 JVM 內 heartbeat 執行緒拿到 CPU 的延遲、GC overhead、threadpool queue wait-time，並用 latency confirmation 過濾誤報；QALM 借用 CoDel，以請求排隊等待時間在滑動視窗內的最小值為訊號。共同點是用等待或延遲而非靜態計數。",
+   "topic": "overload",
+   "kind": "取捨"
+  },
+  {
+   "q": "過載時你只能丟一部分流量。Netflix、Google、Uber、Stripe 各自用什麼維度決定丟誰？優先級要在哪一層決定？",
+   "a": "Netflix 在 Zuul 依請求對播放的影響分三類並算 1–100 分，漸進丟低分；Google 用四級 criticality 並由 RPC 系統沿呼叫鏈自動傳遞；Uber 以 caller–endpoint 配對設定四級 criticality；Stripe 區分 critical（建立 charge）與 non-critical（列出 charges）並從 test mode 流量先丟。優先級應在最靠近使用者的入口（gateway / frontend）決定並向下傳遞，避免各層各自發明、互相衝突。",
+   "topic": "overload",
+   "kind": "取捨"
+  },
+  {
+   "q": "Flash sale 時 checkout 後端寫入撐不住。為什麼 Shopify 不直接回 429，而是在 edge 做排隊頁？第一版隨機 polling 的排隊出了什麼問題，怎麼修？",
+   "a": "對消費者而言 429 就像網站壞了，所以改成導到排隊頁並用 leaky bucket 控制進入速率。第一版排隊者隨機 polling，等同抽獎，有人排到 40 分鐘，等輪到時商品已賣完。修正是把首次嘗試時間戳存在簽章 cookie，各 LB 無狀態地算出時間閾值，只放行較早者，並用 PID（僅比例項）依剩餘容量調整閾值；選擇無狀態是為了避免多資料中心共享資料儲存的單點與複製成本。",
+   "topic": "overload",
+   "kind": "情境"
+  },
+  {
+   "q": "拒絕一個請求本身也要消耗 CPU。當 backend 的大部分 CPU 都花在回 out-of-quota 時，Google 的 client-side adaptive throttling 怎麼運作？K 值調高或調低各代表什麼取捨？",
+   "a": "Client 記錄近兩分鐘的 requests 與 accepts，當 requests 超過 K 倍 accepts 時，以機率在本地直接拒絕，不送到網路。K 調低（如 1.1）更積極，backend 浪費的資源少，但 client 對 backend 狀態變化反應較慢；K 調高（Google 偏好 2）會讓更多請求到達 backend 而多浪費資源，但狀態傳回 client 的速度較快。對極少發請求的 client 效果有限。",
+   "topic": "overload",
+   "kind": "取捨"
+  },
+  {
+   "q": "Slack 在 cache 命中率掉落、DB 過載時選擇 throttle client boot 請求。為什麼先丟這一種？恢復時為什麼不能一次放回？",
+   "a": "Client boot 最耗資源且在 DB 過載時多半逾時，又拖累已 boot 用戶的請求並使 cache 無法回填；throttle 它能讓已連線者恢復正常、降低查詢逾時、讓 cache 填回，代價是未 boot 的用戶暫時連不上。恢復時第一次放寬過多就讓 DB 再度過載，必須小步漸進放寬並看 DB goodput，因為系統處於 metastable 狀態，需明顯降低負載才能離開。",
+   "topic": "overload",
+   "kind": "情境"
+  }
+ ]
+}

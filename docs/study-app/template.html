@@ -204,6 +204,8 @@ details.case[open] > summary { border-bottom: 1px solid var(--rule); }
 .chain > div:last-child { border-right: 0; }
 .chain .k { display: block; font-family: var(--f-mono); font-size: 11px; letter-spacing: .06em; margin-bottom: 3px; font-weight: 600; }
 .c-naive .k { color: var(--ink-2); }
+.chain.inc { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.c-why { background: var(--violet-wash); } .c-why .k { color: var(--violet); }
 .c-break { background: var(--red-wash); } .c-break .k { color: var(--red); }
 .c-trick { background: var(--green-wash); } .c-trick .k { color: var(--green); }
 .c-cost { background: var(--amber-wash); } .c-cost .k { color: var(--amber); }
@@ -223,7 +225,7 @@ details.case[open] > summary { border-bottom: 1px solid var(--rule); }
   .g .arrow { display: none; }
   .g .why { grid-column: 1; }
   .opts, .comps, .groups { grid-template-columns: minmax(0, 1fr); }
-  .chain { grid-template-columns: minmax(0, 1fr); }
+  .chain, .chain.inc { grid-template-columns: minmax(0, 1fr); }
   .chain > div { border-right: 0; border-bottom: 1px solid var(--rule); }
   .chain > div:last-child { border-bottom: 0; }
 }
@@ -264,7 +266,11 @@ window.DATA = /*DATA*/null;
     ["email", "電子郵件"], ["payments", "支付處理"], ["web-search", "網頁搜尋引擎"], ["iot", "物聯網"],
     ["classic", "經典領域機制"],
   ];
+  D.problems = D.problems || [];
+  D.incidents = D.incidents || [];
+  for (const [id, name] of D.problems) DOMAINS.push([id, name]);
   const domainName = Object.fromEntries(DOMAINS);
+  const problemName = Object.fromEntries(D.problems);
   D.mechanisms = D.mechanisms || [];
   const topicById = Object.fromEntries(D.topics.map((t) => [t.id, t]));
   const caseById = Object.fromEntries(D.cases.map((c) => [c.id, c]));
@@ -283,6 +289,7 @@ window.DATA = /*DATA*/null;
     parts.push('<div class="navsec"><a class="navlink' + (active === "home" ? " on" : "") + '" href="#home">總覽</a>');
     parts.push('<a class="navlink' + (active === "cases" ? " on" : "") + '" href="#cases">案例<span class="count">' + D.cases.length + "</span></a>");
     parts.push('<a class="navlink' + (active === "mech" ? " on" : "") + '" href="#mech">領域機制<span class="count">' + D.mechanisms.length + "</span></a>");
+    if (D.incidents.length) parts.push('<a class="navlink' + (active === "inc" ? " on" : "") + '" href="#inc">真實事故<span class="count">' + D.incidents.length + "</span></a>");
     parts.push('<a class="navlink' + (active === "components" ? " on" : "") + '" href="#components">元件速查<span class="count">' + D.components.length + "</span></a>");
     parts.push('<a class="navlink' + (active === "quiz" ? " on" : "") + '" href="#quiz">自測<span class="count">' + D.quiz.length + "</span></a></div>");
     for (const g of GROUPS) {
@@ -303,6 +310,7 @@ window.DATA = /*DATA*/null;
     let h = '<div class="eyebrow">面試前的決策練習</div><h1>每個系統設計問題，最後都是一個取捨</h1>';
     h += '<p class="lede">這裡把 ' + D.topics.length + " 個常見決策拆成「有哪些選項、各自付出什麼代價、會怎麼壞、什麼規模該換」，再用 " + D.cases.length + " 個面試題與業界實例看別人實際怎麼選。</p>";
     if (D.mechanisms.length) h += '<p class="lede" style="margin-top:10px">另外收錄 ' + D.mechanisms.length + ' 條<a href="#mech">領域機制</a>：影音編碼、地圖路線、交易撮合、遊戲同步、音訊指紋、支付、搜尋引擎等特定應用才會用到、從通用 pattern 推不出來的做法。</p>';
+    if (D.incidents.length) h += '<p class="lede" style="margin-top:10px">還有 ' + D.incidents.length + ' 篇<a href="#inc">真實事故</a>：P99 延遲、級聯故障、過載、快取熱點、資料庫遷移、變更事故等，各家公司在線上怎麼發現、修正、付出什麼代價。</p>';
     h += '<div class="how3"><div><b>1．讀一個決策主題</b>先看情境問句，再比較選項的代價與失效方式，最後背下預設答案與面試說法。</div><div><b>2．看案例怎麼選</b>每個案例列出被否決的方案與理由，練習說出「為什麼不選 B」。</div><div><b>3．用自測驗收</b>取捨題和情境題佔一半以上，答不出來的會被標記，下次優先出現。</div></div>';
     h += '<h2>決策主題　<span class="mono" style="font-size:13px;color:var(--ink-2)">已讀 ' + doneN + " / " + D.topics.length + "</span></h2>";
     h += '<div class="groups">';
@@ -363,6 +371,8 @@ window.DATA = /*DATA*/null;
       const notes = Object.fromEntries((t.cases || []).map((c) => [fileToCase[c.ref], c.note]));
       h += '<h2>實際案例怎麼選（' + rc.length + "）</h2><div class=\"cases\">" + rc.map((c) => caseCard(c, notes[c.id])).join("") + "</div>";
     }
+    const ri = D.incidents.filter((x) => (x.topics || []).includes(t.id));
+    if (ri.length) h += '<h2>真實事故（' + ri.length + "）</h2><div class=\"results\">" + ri.map((x) => '<a href="#incitem-' + esc(x.id) + '"><b>' + esc(x.company) + "：" + esc(x.title) + "</b><span>" + esc(x.rootCause) + "</span></a>").join("") + "</div>";
     const rm = D.mechanisms.filter((m) => (m.topics || []).includes(t.id));
     if (rm.length) h += '<h2>相關的領域機制（' + rm.length + "）</h2><div class=\"results\">" + rm.map((m) => '<a href="#mechitem-' + esc(m.id) + '"><b>' + esc(m.title) + "</b><span>" + esc((m.apps || []).join("、")) + "</span></a>").join("") + "</div>";
     const qs = D.quiz.filter((q) => q.topic === t.id);
@@ -418,6 +428,7 @@ window.DATA = /*DATA*/null;
     h += '<div class="chain"><div class="c-naive"><span class="k">直覺做法</span>' + esc(m.naive) + '</div><div class="c-break"><span class="k">哪裡會壞</span>' + esc(m.breaks) +
       '</div><div class="c-trick"><span class="k">實際做法</span>' + esc(m.trick) + '</div><div class="c-cost"><span class="k">代價</span>' + esc(m.cost) + "</div></div>";
     if (m.numbers?.length) h += '<div class="nums">' + m.numbers.map((n) => '<span class="num">' + esc(n) + "</span>").join("") + "</div>";
+    if (m.numbersUnverified) h += '<div class="chips"><span class="badge b-premium" title="來源頁面無法自動讀取，數字未能逐字核對">數字未核對</span></div>';
     if (m.alternatives?.length) h += '<div class="mini"><h5 class="h-b">什麼時候不用它</h5><ul>' + m.alternatives.map((a) => "<li><b>" + esc(a.name) + "</b>：" + esc(a.pickIf) + "</li>").join("") + "</ul></div>";
     if (m.interviewUse) h += '<div class="use"><b>面試怎麼用</b>' + esc(m.interviewUse) + "</div>";
     const tps = (m.topics || []).filter((x) => topicById[x]);
@@ -439,6 +450,41 @@ window.DATA = /*DATA*/null;
     for (const [id, name] of groups) {
       const ms = D.mechanisms.filter((m) => m.domain === id);
       h += "<h2>" + esc(name) + '</h2><div class="mechs">' + ms.map(mechCard).join("") + "</div>";
+    }
+    return h;
+  }
+
+  function incCard(x) {
+    let h = '<article class="mech" id="incitem-' + esc(x.id) + '"><div class="mech-h"><h3>' + esc(x.company) + "：" + esc(x.title) + '</h3><span class="chips">' +
+      (x.date ? '<span class="chip mono">' + esc(x.date) + "</span>" : "") +
+      '<span class="badge ' + (x.kind === "postmortem" ? "b-premium" : "b-src") + '">' + (x.kind === "postmortem" ? "事故檢討" : "設計文章") + "</span>" + (x.byAgents ? agentsBadge : "") + "</span></div>";
+    h += '<div class="chain inc"><div class="c-naive"><span class="k">症狀</span>' + esc(x.symptom) + '</div><div class="c-break"><span class="k">根因</span>' + esc(x.rootCause) +
+      '</div><div class="c-why"><span class="k">為什麼難</span>' + esc(x.whyHard) + '</div><div class="c-trick"><span class="k">修正</span>' + esc(x.fix) +
+      '</div><div class="c-cost"><span class="k">代價</span>' + esc(x.tradeoff) + "</div></div>";
+    if (x.numbers?.length) h += '<div class="nums">' + x.numbers.map((n) => '<span class="num">' + esc(n) + "</span>").join("") + "</div>";
+    if (x.lessons?.length) h += '<div class="mini"><h5 class="h-g">可以帶走的教訓</h5><ul>' + x.lessons.map((l) => "<li>" + esc(l) + "</li>").join("") + "</ul></div>";
+    if (x.detection && !/^(來源)?(未載明|不適用|原文無|未提供|文章未寫|原文未)/.test(x.detection)) h += '<div class="use"><b>怎麼發現的</b>' + esc(x.detection) + "</div>";
+    if (x.interviewUse) h += '<div class="use"><b>面試怎麼用</b>' + esc(x.interviewUse) + "</div>";
+    if (x.alsoIn?.length) h += '<div class="chips"><span class="mono" style="font-size:11px;color:var(--ink-2)">也屬於</span>' + x.alsoIn.map((p) => '<a class="chip" href="#inc-' + esc(p) + '">' + esc(problemName[p] || p) + "</a>").join("") + "</div>";
+    if (x.numbersUnverified) h += '<div class="chips"><span class="badge b-premium" title="來源頁面無法自動讀取，數字未能逐字核對">數字未核對</span></div>';
+    const tps = (x.topics || []).filter((t) => topicById[t]);
+    if (tps.length) h += '<div class="chips">' + tps.map((t) => '<a class="chip" href="#topic-' + t + '">' + esc(shortTitle(topicById[t].title)) + "</a>").join("") + "</div>";
+    if (x.sources?.length) h += '<div class="srcs">' + x.sources.map((s) => s.url ? '<a href="' + esc(s.url) + '" target="_blank" rel="noopener">' + esc(s.title || s.url) + " ↗</a>" : '<span class="path">' + esc(s.title) + "</span>").join("") + "</div>";
+    return h + "</article>";
+  }
+
+  let incProblem = "";
+  function incPage(sel) {
+    if (sel !== undefined) incProblem = sel;
+    const companies = new Set(D.incidents.map((x) => x.company)).size;
+    let h = '<div class="eyebrow">' + D.incidents.length + " 篇 ・ " + companies + ' 家公司</div><h1>真實事故：別人怎麼在線上解決問題</h1><p class="lede">從各家技術部落格與事故檢討整理，每篇都是「症狀 → 根因 → 為什麼難 → 修正 → 代價」。面試時用一個真實事故支撐你的設計選擇，比講原則更有說服力。</p>';
+    h += '<div class="filters"><div class="grp"><span>問題類型</span><a class="chip' + (!incProblem ? " on" : "") + '" href="#inc">全部</a>' +
+      D.problems.map(([id, name]) => '<a class="chip' + (incProblem === id ? " on" : "") + '" href="#inc-' + id + '">' + esc(name) + '<span class="mono" style="font-size:11px">' + D.incidents.filter((x) => x.problem === id).length + "</span></a>").join("") + "</div></div>";
+    for (const [id, name] of D.problems.filter(([id]) => !incProblem || id === incProblem)) {
+      const xs = D.incidents.filter((x) => x.problem === id);
+      const rel = incProblem ? D.incidents.filter((x) => (x.alsoIn || []).includes(id)) : [];
+      if (xs.length) h += "<h2>" + esc(name) + '</h2><div class="mechs">' + xs.map(incCard).join("") + "</div>";
+      if (rel.length) h += "<h2>也跟「" + esc(name) + "」有關（" + rel.length + '）</h2><div class="results">' + rel.map((x) => '<a href="#incitem-' + esc(x.id) + '"><b>' + esc(x.company) + "：" + esc(x.title) + "</b><span>主要歸類：" + esc(problemName[x.problem] || x.problem) + "</span></a>").join("") + "</div>";
     }
     return h;
   }
@@ -467,7 +513,7 @@ window.DATA = /*DATA*/null;
     if (q === undefined) return h + '<p class="empty">這個篩選條件下沒有題目，換一個主題或題型。</p>';
     const t = topicById[q.topic];
     const dn = domainName[q.topic];
-    h += '<div class="qcard"><div class="qmeta"><span class="badge b-src">' + esc(q.kind) + "</span>" + (t ? '<a class="chip" href="#topic-' + t.id + '">' + esc(shortTitle(t.title)) + "</a>" : "") + (dn ? '<a class="chip" href="#mech-' + q.topic + '">' + esc(dn) + "</a>" : "") + (known[id] === false ? '<span class="badge b-premium">上次不熟</span>' : "") + '</div><p class="qq">' + esc(q.q) + "</p>";
+    h += '<div class="qcard"><div class="qmeta"><span class="badge b-src">' + esc(q.kind) + "</span>" + (t ? '<a class="chip" href="#topic-' + t.id + '">' + esc(shortTitle(t.title)) + "</a>" : "") + (dn ? '<a class="chip" href="#' + (problemName[q.topic] ? "inc-" : "mech-") + q.topic + '">' + esc(dn) + "</a>" : "") + (known[id] === false ? '<span class="badge b-premium">上次不熟</span>' : "") + '</div><p class="qq">' + esc(q.q) + "</p>";
     if (quizState.shown) h += '<div class="qa">' + esc(q.a) + "</div>";
     h += '<div class="qbtns">' + (quizState.shown ? '<button type="button" class="btn ok" data-mark="1">答得出來</button><button type="button" class="btn no" data-mark="0">還不熟</button>' : '<button type="button" class="btn pri" id="reveal">看答案</button>') + '<button type="button" class="btn" id="skip">下一題</button></div>';
     const pool = quizPool(); const okN = pool.filter((x) => known[x.i] === true).length;
@@ -478,13 +524,14 @@ window.DATA = /*DATA*/null;
   function searchPage(term) {
     const s = term.toLowerCase();
     const hit = (o) => JSON.stringify(o).toLowerCase().includes(s);
-    const ts = D.topics.filter(hit), cs = D.cases.filter(hit), ps = D.components.filter(hit), ms = D.mechanisms.filter(hit);
+    const ts = D.topics.filter(hit), cs = D.cases.filter(hit), ps = D.components.filter(hit), ms = D.mechanisms.filter(hit), is = D.incidents.filter(hit);
     let h = '<div class="eyebrow">搜尋</div><h1>「' + esc(term) + "」</h1>";
-    if (!ts.length && !cs.length && !ps.length && !ms.length) return h + '<p class="empty">沒有找到，試試英文術語（例如 outbox、HNSW、fencing token）。</p>';
+    if (!ts.length && !cs.length && !ps.length && !ms.length && !is.length) return h + '<p class="empty">沒有找到，試試英文術語（例如 outbox、HNSW、fencing token）。</p>';
     h += '<div class="results">';
     for (const t of ts) h += '<a href="#topic-' + t.id + '"><b>主題・' + esc(t.title) + "</b><span>" + esc(t.oneLiner) + "</span></a>";
     for (const c of cs) h += '<a href="#case-' + c.id + '"><b>案例・' + esc(c.title) + "</b><span>" + esc(c.core) + "</span></a>";
     for (const c of ps) h += '<a href="#comp-' + c.id + '"><b>元件・' + esc(c.name) + "</b><span>" + esc(c.what) + "</span></a>";
+    for (const x of is) h += '<a href="#incitem-' + esc(x.id) + '"><b>事故・' + esc(x.company) + "：" + esc(x.title) + "</b><span>" + esc(x.rootCause) + "</span></a>";
     for (const m of ms) h += '<a href="#mechitem-' + esc(m.id) + '"><b>機制・' + esc(m.title) + "</b><span>" + esc((m.apps || []).join("、") + "｜" + m.trick) + "</span></a>";
     return h + "</div>";
   }
@@ -498,6 +545,8 @@ window.DATA = /*DATA*/null;
     else if (hash === "cases") html = casesPage();
     else if (hash.startsWith("case-")) { caseFilter = { kind: "全部", topic: "" }; html = casesPage(); active = "cases"; }
     else if (hash === "components" || hash.startsWith("comp-")) { html = componentsPage(); active = "components"; }
+    else if (hash === "inc" || hash.startsWith("incitem-")) { html = incPage(""); active = "inc"; }
+    else if (hash.startsWith("inc-")) { html = incPage(hash.slice(4)); active = "inc"; }
     else if (hash === "mech") { html = mechPage(""); active = "mech"; }
     else if (hash.startsWith("mechitem-")) { html = mechPage(""); active = "mech"; }
     else if (hash.startsWith("mech-")) { html = mechPage(hash.slice(5)); active = "mech"; }
@@ -506,7 +555,7 @@ window.DATA = /*DATA*/null;
     $("#view").innerHTML = html;
     nav(active);
     if (hash.startsWith("case-") && !term) { const el = document.getElementById(hash); if (el) { el.open = true; el.scrollIntoView(); } }
-    else if ((hash.startsWith("comp-") || hash.startsWith("mechitem-")) && !term) { const el = document.getElementById(hash); if (el) el.scrollIntoView(); }
+    else if ((hash.startsWith("comp-") || hash.startsWith("mechitem-") || hash.startsWith("incitem-")) && !term) { const el = document.getElementById(hash); if (el) el.scrollIntoView(); }
     else window.scrollTo(0, 0);
     $("#rail").classList.remove("open");
     store.set("last", hash);

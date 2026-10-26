@@ -1,0 +1,623 @@
+[
+ {
+  "file": "inc-cache-hotspot.json",
+  "id": "nodejs-2023-cache-purge-404",
+  "figure": "完整修復約在 3/16 20:00 UTC，殘留影響到午夜 UTC",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___nodejs_org_en_blog_announcements_node_js_march_17_incident.txt"
+  ]
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "ticketmaster-2022-eras-tour-onsale",
+  "figure": "11 月 15 日單日售出 2 million 張票",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___business_ticketmaster_com_press_release_taylor_swift_the_eras_tour_onsale_explained_.txt"
+  ]
+ },
+ {
+  "file": "inc-cascading-failure.json",
+  "id": "roblox-2021-consul-outage",
+  "figure": "18,000 台伺服器、170,000 個 container、5,000 萬日活玩家",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___about_roblox_com_newsroom_2022_01_roblox_return_to_service_10_28_10_31_2021.txt"
+  ]
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "cloudflare-2025-11-bot-feature-file",
+  "figure": "2025-12-05 事故：08:47 開始、09:12 回復，約 25 分鐘，約 28% HTTP 流量受影響",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___blog_cloudflare_com_18_november_2025_outage_.txt",
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___blog_cloudflare_com_5_december_2025_outage_.txt"
+  ]
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "cloudflare-2022-06-bgp-policy-reorder",
+  "figure": "變更在 03:56 開始推到第一個站點，約 2.5 小時後才到 MCP 站點",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___blog_cloudflare_com_cloudflare_outage_on_june_21_2022_.txt"
+  ]
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "mozilla-2019-05-addon-cert-expiry",
+  "figure": "1.5 萬以上的 Firefox add-on 受影響",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___hacks_mozilla_org_2019_05_technical_details_on_the_recent_firefox_add_on_outage_.txt"
+  ]
+ },
+ {
+  "file": "inc-data-integrity.json",
+  "id": "dropbox-magic-pocket-pocket-watch",
+  "figure": "10+ petabyte staging cluster",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___dropbox_tech_infrastructure_pocket_watch.txt"
+  ]
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "anthropic-2026-03-claude-code-quality",
+  "figure": "reasoning effort 變更 3/4 至 4/7 回滾，約 34 天",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___anthropic_com_engineering_april_23_postmortem.txt"
+  ]
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "openai-2024-12-11-k8s-telemetry",
+  "figure": "持續 4 小時 22 分（15:16–19:38 PST）",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___status_openai_com_incidents_ctrsv3lwd797.txt"
+  ]
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "openai-2024-12-11-k8s-telemetry",
+  "figure": "14 個受影響元件",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___status_openai_com_incidents_ctrsv3lwd797.txt"
+  ]
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "openai-2024-12-11-k8s-telemetry",
+  "figure": "15:13 警報觸發，16:36 第一個 cluster 恢復，19:38 全面恢復",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___status_openai_com_incidents_ctrsv3lwd797.txt"
+  ]
+ },
+ {
+  "file": "inc-overload.json",
+  "id": "cloudflare-2017-edge-rate-limiting",
+  "figure": "對 4 億個請求、27 萬個不同來源的分析：0.003% 請求被誤放行或誤限流，真實速率與近似速率平均差 6%，3 個來源略超過門檻卻被放行（實際速率低於門檻的 115%），沒有低於門檻的來源被誤擋",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___blog_cloudflare_com_counting_things_a_lot_of_different_things_.txt"
+  ]
+ },
+ {
+  "file": "inc-resource-exhaustion.json",
+  "id": "mailchimp-2019-02-mandrill-xid-wraparound",
+  "figure": "事故 2/4 05:35 UTC 開始，2/5 22:09 UTC 結束，約 41 小時",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___mailchimp_com_what_we_learned_from_the_recent_mandrill_outage_.txt"
+  ]
+ },
+ {
+  "file": "inc-resource-exhaustion.json",
+  "id": "cloudflare-bind-before-connect-ephemeral-ports",
+  "figure": "IP_BIND_ADDRESS_NO_PORT 需 kernel 4.2+",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___blog_cloudflare_com_how_to_stop_running_out_of_ephemeral_ports_and_start_to_love_long_lived_connections_.txt"
+  ]
+ },
+ {
+  "file": "inc-resource-exhaustion.json",
+  "id": "github-2021-05-int32-overflow-scoped-tokens",
+  "figure": "5/16 07:17 UTC 開始，持續 9 小時 48 分",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___github_blog_2021_06_02_github_availability_report_may_2021_.txt"
+  ]
+ },
+ {
+  "file": "inc-resource-exhaustion.json",
+  "id": "ravendb-2023-12-process-per-write-time-wait",
+  "figure": "高峰 32,768 條 TCP 連線，對應 Linux ephemeral port 範圍",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___ravendb_net_blog_production_postmortem_the_spawn_of_denial_of_service.txt"
+  ]
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "cloudflare-2018-memcrashed-udp-amplification",
+  "figure": "15 bytes 請求 → 134KB 回應（8,933 倍）",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___blog_cloudflare_com_memcrashed_major_amplification_attacks_from_port_11211_.txt"
+  ]
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "cloudflare-2024-3-8tbps-autonomous-mitigation",
+  "figure": "九月內 100 多次 hyper-volumetric L3/4 攻擊",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___blog_cloudflare_com_how_cloudflare_auto_mitigated_world_record_3_8_tbps_ddos_attack_.txt"
+  ]
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "cloudflare-2021-17m-rps-https-flood",
+  "figure": "數秒內超過 3.3 億個請求",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___blog_cloudflare_com_cloudflare_thwarts_17_2m_rps_ddos_attack_the_largest_ever_reported_.txt"
+  ]
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "aws-2023-cloudfront-edge-absorption",
+  "figure": "CloudFront 峰值超過 155 million rps（2023-08 Rapid Reset）",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___aws_amazon_com_blogs_security_how_aws_protects_customers_from_ddos_events_.txt"
+  ]
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "aws-2023-cloudfront-edge-absorption",
+  "figure": "2023 Q1 阻擋超過 130 萬次 botnet 驅動的 DDoS 攻擊",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___aws_amazon_com_blogs_security_how_aws_protects_customers_from_ddos_events_.txt"
+  ]
+ },
+ {
+  "file": "inc-tail-latency.json",
+  "id": "discord-2020-go-gc-read-states",
+  "figure": "LRU cache 原為數千萬筆 Read States；Rust 版容量提高到 800 萬筆（文中原話為 8 million Read States）",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___discord_com_blog_why_discord_is_switching_from_go_to_rust.txt"
+  ]
+ },
+ {
+  "file": "inc-tail-latency.json",
+  "id": "twitch-2019-go-gc-ballast",
+  "figure": "GC 次數降約 99%",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___blog_twitch_tv_en_2019_04_10_go_memory_ballast_how_i_learnt_to_stop_worrying_and_love_the_heap_.txt"
+  ]
+ },
+ {
+  "file": "inc-tail-latency.json",
+  "id": "twitch-2019-go-gc-ballast",
+  "figure": "尖峰時 P99 API 延遲改善約 45%",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___blog_twitch_tv_en_2019_04_10_go_memory_ballast_how_i_learnt_to_stop_worrying_and_love_the_heap_.txt"
+  ]
+ },
+ {
+  "file": "inc-tail-latency.json",
+  "id": "datadog-2023-network-latency-hidden-bottlenecks",
+  "figure": "正常 P99 約 100ms，問題期間超過 1000ms，修復後穩定低於 100ms",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___www_datadoghq_com_blog_engineering_not_just_another_network_latency_issue.txt"
+  ]
+ },
+ {
+  "file": "inc-third-party-dependency.json",
+  "id": "npm-2016-left-pad-unpublish",
+  "figure": "273 個套件被 unpublish（kik + 272 個）",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___blog_npmjs_org_post_141577284765_kik_left_pad_and_npm.txt"
+  ]
+ },
+ {
+  "file": "inc-third-party-dependency.json",
+  "id": "npm-2016-left-pad-unpublish",
+  "figure": "補發 1.0.0 約 10 分鐘內，還原 0.0.3 於 4:55 PM 完成",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___blog_npmjs_org_post_141577284765_kik_left_pad_and_npm.txt"
+  ]
+ },
+ {
+  "file": "inc-time-clock.json",
+  "id": "google-leap-smear",
+  "figure": "2016 做法：20 小時（前後各 10 小時）、速率 0.0014%",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___cloud_google_com_blog_products_gcp_making_every_leap_second_count_with_our_new_public_ntp_servers.txt",
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___developers_google_com_time_smear.txt"
+  ]
+ },
+ {
+  "file": "mech-audio.json",
+  "id": "dejavu-hash-truncation",
+  "figure": "45 首歌共 540 萬筆指紋佔 377 MB，約為 WAV 檔大小的 20%",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___willdrevo_com_fingerprinting_and_audio_recognition_with_python_.txt"
+  ]
+ },
+ {
+  "file": "mech-audio.json",
+  "id": "content-id-reference-claims",
+  "figure": "政策變更：2024 年 10 月 15 日起，1–3 分鐘直式影片被視為 Shorts，有有效 claim 時一律被 block，不看 policy（官方說明頁所述）",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___support_google_com_youtube_answer_2797370.txt",
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___support_google_com_youtube_answer_2605065.txt",
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___support_google_com_youtube_answer_6013276.txt"
+  ]
+ },
+ {
+  "file": "mech-audio.json",
+  "id": "hum-to-search-embedding",
+  "figure": "比對的曲庫超過 500,000 首歌，且持續更新（部落格所述）",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___research_google_blog_the_machine_learning_behind_hum_to_search_.txt"
+  ]
+ },
+ {
+  "file": "mech-audio.json",
+  "id": "audio-cnn-cold-start-recsys",
+  "figure": "訓練資料為 100 萬首 Spotify 熱門歌曲的 30 秒片段，約 500,000 訓練、約 5,000 驗證",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___sander_ai_2014_08_05_spotify_cnns_html.txt"
+  ]
+ },
+ {
+  "file": "mech-classic.json",
+  "id": "geo-index-evolution",
+  "figure": "geohash 5 碼 ≈ 4.9×4.9km、6 碼 ≈ 1.2×0.6km、7 碼 ≈ 153×153m",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___en_wikipedia_org_wiki_Geohash.txt",
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___highscalability_com_how_uber_scales_their_real_time_market_platform_.txt"
+  ]
+ },
+ {
+  "file": "mech-collab.json",
+  "id": "tombstone-growth-and-gc",
+  "figure": "Yjs B4 benchmark：182k inserts、77k deleted characters，snapshot 的 delete set 僅 4.5Kb",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___docs_yjs_dev_api_y_doc.txt",
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___automerge_org_docs_reference_under_the_hood_storage_.txt",
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___www_figma_com_blog_how_figmas_multiplayer_technology_works_.txt"
+  ]
+ },
+ {
+  "file": "mech-connections.json",
+  "id": "quic-connection-migration",
+  "figure": "QUIC 約佔 Internet 流量 7%（Google 論文發表時）",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___blog_cloudflare_com_the_road_to_quic_.txt"
+  ]
+ },
+ {
+  "file": "mech-connections.json",
+  "id": "reconnect-storm-jitter",
+  "figure": "Flannel 啟動 payload：1,500 人團隊縮小 7 倍、32,000 人團隊縮小 44 倍",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___aws_amazon_com_blogs_architecture_exponential_backoff_and_jitter_.txt",
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___slack_engineering_flannel_an_application_level_edge_cache_to_make_slack_scale_.txt"
+  ]
+ },
+ {
+  "file": "mech-data-pipeline.json",
+  "id": "hudi-incremental-upsert",
+  "figure": "Dimensional Driver Table runtime 220 → 39 分鐘（-82%），成本 -78%",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___hudi_apache_org_docs_table_types.txt",
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___hudi_apache_org_docs_overview.txt"
+  ]
+ },
+ {
+  "file": "mech-data-pipeline.json",
+  "id": "hudi-incremental-upsert",
+  "figure": "Driver Status Fact Table runtime -48%、成本 -25%",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___hudi_apache_org_docs_table_types.txt",
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___hudi_apache_org_docs_overview.txt"
+  ]
+ },
+ {
+  "file": "mech-data-pipeline.json",
+  "id": "kappa-backfill-uber-hive-source",
+  "figure": "Uber 在同樣的 75-core production cluster 設定下 backfill 10 TB、9 天的資料",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___www_oreilly_com_radar_questioning_the_lambda_architecture_.txt"
+  ]
+ },
+ {
+  "file": "mech-data-pipeline.json",
+  "id": "airbnb-midas-wall-data-quality",
+  "figure": "Midas 為 2020 年啟動的認證流程，含 Spec / Data / Code / Minerva 四種 review",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___packtcloudpro_substack_com_p_the_hidden_platform_lesson_behind.txt"
+  ]
+ },
+ {
+  "file": "mech-delivery.json",
+  "id": "delivery-eta-decomposition",
+  "figure": "Swiggy 論文實驗設定：最長送達時間保證 45 分鐘",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___arxiv_org_abs_2008_12905.txt",
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___www_infoq_com_articles_uber_eats_time_predictions.txt"
+  ]
+ },
+ {
+  "file": "mech-delivery.json",
+  "id": "prep-time-model-label-inference",
+  "figure": "Swiggy 論文：每家餐廳切成 24 個 1 小時時段，各自用高斯分佈建模",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___www_infoq_com_articles_uber_eats_time_predictions.txt",
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___arxiv_org_abs_2008_12905.txt"
+  ]
+ },
+ {
+  "file": "mech-delivery.json",
+  "id": "accumulation-window-reshuffling",
+  "figure": "超過 30 分鐘未派單即拒絕，Ω = 7200 秒",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___arxiv_org_abs_2008_12905.txt"
+  ]
+ },
+ {
+  "file": "mech-delivery.json",
+  "id": "accumulation-window-reshuffling",
+  "figure": "FoodMatch 相對 Greedy 的 XDT 平均少約 30%、每公里完成訂單數高約 20%",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___arxiv_org_abs_2008_12905.txt"
+  ]
+ },
+ {
+  "file": "mech-delivery.json",
+  "id": "instacart-availability-replacement",
+  "figure": "約 500 萬種獨立商品、約 9.5 億筆 product listing",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___company_instacart_com_tech_innovation_the_story_behind_an_instacart_order_part_3_predicting_the_shop.txt"
+  ]
+ },
+ {
+  "file": "mech-delivery.json",
+  "id": "merchant-order-state-sync",
+  "figure": "Uber Eats：接單流程超過 11.5 分鐘未接受則取消",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___merchant_wolt_com_en_cze_learning_center_how_to_reduce_late_orders.txt"
+  ]
+ },
+ {
+  "file": "mech-deploy-migration.json",
+  "id": "discord-cassandra-to-scylla",
+  "figure": "migrator 最高每秒 320 萬筆；9 天 vs 預估 3 個月",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___discord_com_blog_how_discord_stores_trillions_of_messages.txt"
+  ]
+ },
+ {
+  "file": "mech-deploy-migration.json",
+  "id": "feature-flag-kill-switch",
+  "figure": "Cloudflare 2025：5.5 小時",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___martinfowler_com_articles_feature_toggles_html.txt",
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___blog_cloudflare_com_details_of_the_cloudflare_outage_on_july_2_2019_.txt",
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___blog_cloudflare_com_18_november_2025_outage_.txt"
+  ]
+ },
+ {
+  "file": "mech-email.json",
+  "id": "ip-warmup",
+  "figure": "不同供應商約 2 週到最多 6 週建立信譽",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___docs_aws_amazon_com_ses_latest_dg_dedicated_ip_warming_html.txt"
+  ]
+ },
+ {
+  "file": "mech-email.json",
+  "id": "tiered-email-search",
+  "figure": "範例使用者 >500,000 封信、archive 索引 >3GB、compact 約 4 分 52 秒",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___fastmail_com_blog_email_search_system.txt",
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___www_fastmail_help_hc_en_us_articles_1500000278242_The_Fastmail_storage_architecture.txt"
+  ]
+ },
+ {
+  "file": "mech-gaming.json",
+  "id": "auth-server-prediction-reconciliation",
+  "figure": "Gambetta：50ms RTT 下玩家感到約 0.1 秒（a tenth of a second）無回應",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___www_gabrielgambetta_com_client_server_game_architecture_html.txt",
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___www_gabrielgambetta_com_client_side_prediction_server_reconciliation_html.txt",
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___www_gamedevs_org_uploads_latency_compensation_in_client_server_protocols_pdf.txt",
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___www_riotgames_com_en_news_peeking_valorants_netcode.txt"
+  ]
+ },
+ {
+  "file": "mech-gaming.json",
+  "id": "udp-custom-reliability",
+  "figure": "Gaffer：125ms ping 下 TCP 掉包停滯至少約 1/5 秒，最壞 0.5 秒以上",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___gafferongames_com_post_udp_vs_tcp_.txt",
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___gafferongames_com_post_reliability_ordering_and_congestion_avoidance_over_udp_.txt",
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___www_riotgames_com_en_news_leveling_networking_multi_game_future.txt"
+  ]
+ },
+ {
+  "file": "mech-gaming.json",
+  "id": "kernel-anticheat-tradeoff",
+  "figure": "Riot 公開：四年封鎖 360 萬個作弊帳號、約每 37 秒一次封鎖、4% 的封鎖因帳號遭盜用而撤銷",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___playvalorant_com_en_us_news_game_updates_vanguard_x_valorant_.txt"
+  ]
+ },
+ {
+  "file": "mech-iot.json",
+  "id": "telemetry-downsampling",
+  "figure": "50,000 metrics/sec、約 43 億筆/天（100,000 台 server × 5 metrics / 10 秒）",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___www_hellointerview_com_learn_system_design_deep_dives_time_series_databases.txt"
+  ]
+ },
+ {
+  "file": "mech-maps.json",
+  "id": "contraction-hierarchies",
+  "figure": "Geisberger 論文（靜態情境）：預處理 7.5 分鐘、算路徑長度 0.21 ms、完整路徑 0.56 ms、每節點 23 bytes",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___ae_iti_kit_edu_1498_php.txt",
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___github_com_Project_OSRM_osrm_backend_wiki_Traffic.txt"
+  ]
+ },
+ {
+  "file": "mech-maps.json",
+  "id": "gnn-eta",
+  "figure": "ETA 改善幅度 16%（London、Copenhagen）至 51%（Taichung）",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___deepmind_google_discover_blog_traffic_prediction_with_advanced_graph_neural_networks_.txt"
+  ]
+ },
+ {
+  "file": "mech-moderation.json",
+  "id": "perceptual-hash-matching",
+  "figure": "PDQ 格式轉換下 99.96% 成功（threshold 30），浮水印約 50%",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___ar5iv_labs_arxiv_org_html_1912_07745.txt",
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___news_microsoft_com_features_microsofts_photodna_protecting_children_and_businesses_in_the_cloud_.txt"
+  ]
+ },
+ {
+  "file": "mech-moderation.json",
+  "id": "sigma-rule-engine",
+  "figure": "Sigma 服務超過每秒 100 萬 requests",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___engineering_fb_com_2015_06_26_security_fighting_spam_with_haskell_.txt"
+  ]
+ },
+ {
+  "file": "mech-payments.json",
+  "id": "sca-3ds2-exemptions",
+  "figure": "SCA 自 2019-09-14 起適用（PSD2）",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___docs_stripe_com_payments_3d_secure_strong_customer_authentication_exemptions.txt",
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___docs_stripe_com_payments_3d_secure_authentication_flow.txt",
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___docs_stripe_com_strong_customer_authentication.txt"
+  ]
+ },
+ {
+  "file": "mech-recsys.json",
+  "id": "bandit-exploration",
+  "figure": "Yahoo 資料集超過 3,300 萬事件，相對 context-free bandit 點擊率提升 12.5%",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___arxiv_org_abs_1003_0146.txt"
+  ]
+ },
+ {
+  "file": "mech-recsys.json",
+  "id": "interleaving-vs-ab",
+  "figure": "GenRec：約 10% 流量、約 4 週 A/B（repo 筆記）",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___confidence_spotify_com_glossary_interleaving.txt",
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___engineering_fb_com_2023_08_09_ml_applications_scaling_instagram_explore_recommendations_system_.txt"
+  ]
+ },
+ {
+  "file": "mech-video.json",
+  "id": "per-title-encoding",
+  "figure": "Netflix 原文範例：同畫質下比固定 ladder 的 5800 kbps 省約 20% bitrate",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___github_com_Netflix_vmaf.txt"
+  ]
+ },
+ {
+  "file": "mech-video.json",
+  "id": "buffer-based-abr",
+  "figure": "BBA-0 固定 90 秒 reservoir",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___arxiv_org_abs_1401_2209.txt"
+  ]
+ },
+ {
+  "file": "mech-web-search.json",
+  "id": "pagerank-iterative",
+  "figure": "論文稱 2,600 萬頁的 PageRank 可在中型工作站上於數小時內算完",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/http___snap_stanford_edu_class_cs224w_readings_Brin98Anatomy_pdf.txt"
+  ]
+ },
+ {
+  "file": "mech-web-search.json",
+  "id": "pagerank-iterative",
+  "figure": "原型的完整資料庫至少 2,400 萬頁",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/http___snap_stanford_edu_class_cs224w_readings_Brin98Anatomy_pdf.txt"
+  ]
+ },
+ {
+  "file": "mech-web-search.json",
+  "id": "postings-compression",
+  "figure": "Google 簡報：7-bit varint 約 1.8 億 numbers/秒、30-bit varint 約 2.4 億、group varint 約 4 億",
+  "status": "not_found",
+  "pages": [
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___research_google_com_people_jeff_WSDM09_keynote_pdf.txt",
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___www_elastic_co_blog_frame_of_reference_and_roaring_bitmaps.txt",
+   "/private/tmp/claude-502/-Users-a8356555-Projects-alan-interview-system-design/9666fadf-f030-469b-a18d-180f24e63c69/scratchpad/sd-app/.pagecache/https___arxiv_org_abs_1209_2137.txt"
+  ]
+ }
+]

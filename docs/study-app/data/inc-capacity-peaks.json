@@ -1,0 +1,443 @@
+{
+ "problem": "capacity-peaks",
+ "incidents": [
+  {
+   "id": "shopify-2025-bfcm-scale-tests",
+   "company": "Shopify",
+   "title": "BFCM 2025：5 輪 full-scale test 逼出 Kafka partition、記憶體與 timeout 瓶頸",
+   "date": "2025",
+   "kind": "design-writeup",
+   "symptom": "Black Friday / Cyber Monday 是年度可預期尖峰；早期測試中 checkout queue 在重載下堆積，且只有在測 authenticated checkout 流程時才暴露 rate-limit 路徑的問題。",
+   "rootCause": "尖峰下的瓶頸不在單一服務而在組合：Kafka partition 數不足以維持資料新鮮度、API 層記憶體用量、連線 timeout 設定導致 connection pool 耗盡。這些只有全平台同時跑在 BFCM 量級才會出現。",
+   "whyHard": "單元壓測或單服務 benchmark 看不到這些交互作用；而且測試規模大到需要與 YouTube 和雲端供應商在夜間協調。",
+   "fix": "4 月到 10 月跑 5 輪 scale test：前 2 輪對齊去年基線，後 3 輪拉到今年預測；第 5 輪在上班時間以 p99 流量 200M RPM 做 full dress rehearsal。每輪發現的瓶頸（增加 Kafka partitions、profiling 降記憶體、調 timeout）修完再重測；另外用 Toxiproxy 做網路故障注入的 Game Day，含 Critical Journey（checkout / payment / order creation）。",
+   "tradeoff": "full-scale 測試成本高、要協調外部夥伴、且有 abort switch 等安全機制的建置成本；合成流量仍不等於真實流量，適合「尖峰日期已知、停機成本極高」的場景，小規模服務不划算。",
+   "lessons": [
+    "把尖峰當成排程專案：預測 → 分階段 ramp → 修 → 重測，而不是上線前壓一次。",
+    "autoscaling 之外要主動驗證「整個系統一起滿載」，瓶頸常出現在 Kafka、連線池這類不會自動擴的資源。",
+    "除了容量測試也要做故障注入，因為尖峰時 failover 與 cascading failure 一起發生。"
+   ],
+   "numbers": [
+    "5 輪 scale test（4 月到 10 月）",
+    "Test 4：146 million requests per minute、80,000+ checkouts per minute",
+    "Test 5：200M RPM（p99 流量）"
+   ],
+   "interviewUse": "支撐「可預期尖峰要靠分階段 full-scale load test + game day 預先驗證，不能只信 autoscaling」。",
+   "sources": [
+    {
+     "title": "Shopify Engineering: BFCM readiness 2025",
+     "url": "https://shopify.engineering/bfcm-readiness-2025"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "scaling-writes"
+   ],
+   "problem": "capacity-peaks",
+   "byAgents": true
+  },
+  {
+   "id": "shopify-2022-scale-testing-limits",
+   "company": "Shopify",
+   "title": "Scale testing 撞到 ingress-nginx 1,000 endpoints 上限與 load balancer hot spot",
+   "date": "2022",
+   "kind": "design-writeup",
+   "symptom": "為 BFCM 擴到目標 1,200 pods 時無法順利達成；部分 nginx pods 過載（hot spot），TCP 連線量暴增。",
+   "rootCause": "ingress-nginx 每個 cluster 有 1,000 endpoints 的上限，限制了可擴的 pod 數；load balancer 分配不均造成部分 nginx pod 過載；基礎設施 baseline 變大後 TCP 連線數也跟著超載。",
+   "whyHard": "這類上限是元件內部的隱性限制，只有把真的規模跑出來才會碰到；而且光加機器反而讓連線與 endpoint 問題更嚴重。",
+   "fix": "改成加大每個 pod 的 CPU / memory（在 endpoint 上限內拿到容量），並為 nginx 配置專屬 Kubernetes node pool 讓分佈均衡。",
+   "tradeoff": "vertical scaling 讓單 pod 失效的 blast radius 變大、資源利用率較差；專屬 node pool 增加維運成本。",
+   "lessons": [
+    "橫向擴張有隱性硬上限（endpoint 數、連線數），要在尖峰前實測找出。",
+    "擴到很大時，負載是否『均勻』比總容量更重要。",
+    "合成負載有侷限：流量來源集中在少數 CDN PoP、in-memory cache 會讓結果偏樂觀；『唯一能取代 production 流量的就是 production 流量』。"
+   ],
+   "numbers": [
+    "ingress-nginx 上限 1,000 endpoints / cluster",
+    "目標 1,200 pods"
+   ],
+   "interviewUse": "說明 autoscaling 不夠的另一類原因：元件有硬上限，要靠 full-scale 測試提前發現，並知道 synthetic load 的盲點。",
+   "sources": [
+    {
+     "title": "Shopify Engineering: Scale performance testing",
+     "url": "https://shopify.engineering/scale-performance-testing"
+    }
+   ],
+   "topics": [
+    "scaling-reads",
+    "reliability"
+   ],
+   "problem": "capacity-peaks",
+   "byAgents": true
+  },
+  {
+   "id": "hotstar-2023-world-cup-50m",
+   "company": "Disney+ Hotstar",
+   "title": "為 50M 併發備戰：CDN gateway、NAT Gateway、EKS IP 與 1,000 endpoints 上限",
+   "date": "2023-10",
+   "kind": "design-writeup",
+   "symptom": "Free on Mobile 預期把世界盃板球併發推到約 50 million（先前峰值約 25 million），新架構尚未在此規模驗證；load test 與 production 事件中接連撞到基礎設施上限。",
+   "rootCause": "不是應用程式，而是各層的隱性容量限制：CDN 當 API gateway 時 security / rate control 吃光 edge 節點算力；單一 AZ 一個 NAT Gateway 成為瓶頸；VPC CNI 每 node 預留 35 個 IP（MINIMUM_IP_TARGET）加上 WARM_IP_TARGET 10，使 3 個 /20 subnet 只能擴到約 350 nodes；單一 Service 超過 1000 個 pods 時 Endpoints 物件被截斷。",
+   "whyHard": "尖峰成長速度快，無法邊撞邊修；新架構沒有歷史 baseline；且上限分散在 CDN、網路、K8s control plane 多層，各自要實測才知道。",
+   "fix": "API 分成 cacheable / non-cacheable，cacheable 走獨立 CDN domain 與較輕的安全規則；調降 scorecard 等功能的 refresh rate 以省頻寬（『影片必須能播』）；NAT Gateway 改為 subnet 級；API gateway 用 >=10 Gbps node 並以 topology spread 一 node 一 pod；改用 EKS，pre-scale 每步限制 100–300 nodes 避免 API server throttling；subnet 換 /19 並調 VPC CNI 參數；超過 1000 pods 的服務改 vertical scale 把 pod 數壓在 1000 以下。",
+   "tradeoff": "pre-scale 要靠預測，預測太高浪費、太低會爆；降低 refresh rate 與關閉個人化是用功能換穩定；vertical scaling 的單 pod 失效影響較大。",
+   "lessons": [
+    "逐層找出每個元件的上限（CDN、NAT、IP、control plane、Endpoints），不要假設雲端『無限』。",
+    "先砍需求再加容量：分離可快取流量、降低非核心功能頻率。",
+    "scale-up 本身也會打爆 control plane，要限制每步擴張量並自動化。"
+   ],
+   "numbers": [
+    "先前峰值約 25 million 併發，模型預期接近 50 million",
+    "API server 在同時擴超過 400 nodes 時開始出錯，改為每步 100–300 nodes",
+    "MINIMUM_IP_TARGET 35 → 20、WARM_IP_TARGET 10 → 5，世界盃期間 subnet IP 使用率約 40%",
+    "Service 超過 1000 endpoints 時 Endpoints 物件被截斷"
+   ],
+   "interviewUse": "回答「為什麼 autoscaling 不夠」：尖峰前要逐層盤點雲端與 K8s 的硬上限，並用 pre-scale 加上功能降級。",
+   "sources": [
+    {
+     "title": "Scaling Infrastructure for Millions: From Challenges to Triumphs (Part 1) — Disney+ Hotstar",
+     "url": "https://blog.hotstar.com/scaling-infrastructure-for-millions-from-challenges-to-triumphs-part-1-6099141a99ef"
+    }
+   ],
+   "topics": [
+    "scaling-reads",
+    "caching",
+    "reliability"
+   ],
+   "problem": "capacity-peaks",
+   "byAgents": true
+  },
+  {
+   "id": "epic-2018-fortnite-3-4m-ccu",
+   "company": "Epic Games",
+   "title": "Fortnite 3.4M CCU：兩天 6 起事故（MongoDB、Nginx+Memcached、XMPP、雲端 limits）",
+   "date": "2018-02",
+   "kind": "postmortem",
+   "symptom": "2018-02-03 和 02-04 兩天共 6 起事故，部分或全面中斷；matchmaking 與所有操作變慢，登入被擋，社群功能顯示所有人離線（dark room）。",
+   "rootCause": "成長遠超預期（約 60K CCU 到 3.4M CCU 在數個月內）：matchmaking 所在的 MongoDB shard 寫入排隊（更新時間可到 40k+ ms）、Memcached 失效後 Nginx worker 卡在 100ms timeout 並讓 health check 失敗、XMPP 切換時重連洪流壓垮 Friends Service 的 ELB 且 ELB subnet IP 不足；同時還撞到 region instance 上限、API rate limit 與 /24 subnet IP 耗盡。",
+   "whyHard": "多個事故連鎖：一個元件的修復動作（blue/green 切換）造成下游過載；許多是雲端額度與 IP 這類非應用層限制；DB 寫入排隊的根因當時仍不明，只能反覆手動 failover。",
+   "fix": "止血：反覆手動 primary failover、回滾 thread pool 設定、調高限制。長期：L7 routing 讓非 verify 流量繞過 Nginx、擴大 Memcached 並移除 Nginx+Memcached 耦合、升級 Friends Service 的 load balancer、修 VPC subnet 容量、matchmaking session 改放 in-memory 並重構成可 shard、批次化 client 呼叫、監控雲端 limits 與 subnet IP、降低 blast radius。",
+   "tradeoff": "多雲與多區域能降 blast radius，但維運複雜度大增；把 matchmaking 資料移到 in-memory 要接受不同的持久性假設。",
+   "lessons": [
+    "尖峰不只考驗你的程式：雲端 instance 上限、API rate limit、subnet IP 都要列入容量清單並告警。",
+    "對外的 timeout 太長（100ms × 全部 worker）會把依賴故障放大成全面不可用；health check 與業務流量要隔離。",
+    "正式環境尖峰才會暴露的設定差異（thread pool 調整後延遲從 double ms 變 double seconds）凸顯 pre-prod 負載測試的缺口。"
+   ],
+   "numbers": [
+    "MCP 峰值 124k client requests/sec、318k DB reads/sec、132k DB writes/sec",
+    "Account Service 40k–100k req/sec，land rush 最高 160k/sec",
+    "XMPP 超過 3 million 在線連線、約 600k packets/sec",
+    "MongoDB：9 shards（每 shard 一個 writer、兩個 read replica、一個 hidden replica）",
+    "標準 subnet 為 /24（251 個可用 IP）"
+   ],
+   "interviewUse": "說明成長型尖峰（非排程）如何連鎖爆炸，以及為什麼要把雲端 limits / IP 納入容量規劃。",
+   "sources": [
+    {
+     "title": "Postmortem of Service Outage at 3.4M CCU — Epic Games",
+     "url": "https://www.fortnite.com/news/postmortem-of-service-outage-at-3-4m-ccu"
+    }
+   ],
+   "topics": [
+    "sharding",
+    "reliability",
+    "scaling-writes"
+   ],
+   "problem": "capacity-peaks",
+   "byAgents": true
+  },
+  {
+   "id": "zomato-2023-nye-benchmarking",
+   "company": "Zomato",
+   "title": "NYE 2023：300+ 服務 benchmark、預先擴容 11,000 EC2 instances",
+   "date": "2023-12",
+   "kind": "design-writeup",
+   "symptom": "除夕夜訂單率飆到 8400 orders/min，系統峰值 80.92 million requests/min；目標是撐住不中斷並維持送達時效。",
+   "rootCause": "（無事故）風險來自『規模下一切都會壞』：隱藏的 DB 效能問題、網路瓶頸與微服務在重載下的異常行為，平時無法察覺。",
+   "whyHard": "要在不影響正式營運的前提下對 300+ 微服務做極限測試；寫入型流量難以安全地重播，服務間互相依賴使得同時施壓會互相干擾。",
+   "fix": "SRE 自建 Benchmarking Platform：以只讀或安全寫入流量、隔離環境、逐步增加負載讓 autoscaling 有時間反應、遇到關鍵告警自動中止；搭配 chaos testing（用 Kuma service mesh 注入上游高延遲、觸發 kill switch 進入 degraded mode、注入 cache miss）。除夕當天 SRE 預先擴容（pre-scale）基礎設施。",
+   "tradeoff": "自建壓測平台與 400 TB 級的測試請求儲存成本高；只讀/安全寫入的限制讓部分寫入路徑覆蓋不足；適合有明確日期與大量微服務的公司。",
+   "lessons": [
+    "尖峰前 pre-scale，而 benchmark 時『逐步加壓』是為了讓 autoscaling 有時間跟上並量到真實行為。",
+    "kill switch 與 degraded mode 要在尖峰前演練，而不是出事才找。",
+    "壓測要有自動中止條件，避免壓測本身造成事故。"
+   ],
+   "numbers": [
+    "14,000 分鐘 benchmark、超過 100 個服務、峰值 50 million requests/min、超過 30 billion requests",
+    "除夕當天 11,000 EC2 instances、約 40,000 ECS tasks",
+    "ElastiCache 35 TB 記憶體、每分鐘 1 billion GET 與約 100 million SET",
+    "RDS 峰值 610k select/s 與 16,000 write transactions/s"
+   ],
+   "interviewUse": "說明『預先擴容 + 事前壓測 + kill switch』三件套，以及壓測要有自動中止與隔離。",
+   "sources": [
+    {
+     "title": "A Tale of Scale: Behind the Scenes at Zomato Tech for NYE 2023",
+     "url": "https://blog.zomato.com/a-tale-of-scale-behind-the-scenes-at-zomato-tech-for-nye-2023"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "caching"
+   ],
+   "problem": "capacity-peaks",
+   "byAgents": true
+  },
+  {
+   "id": "swiggy-2022-nye-war-room",
+   "company": "Swiggy",
+   "title": "NYE 2022 war room：預測每分鐘訂單、單 AZ 改 Multi-AZ，但 UPI 仍掛了",
+   "date": "2022-12",
+   "kind": "design-writeup",
+   "symptom": "除夕夜尖峰中，UPI 付款系統因湧入量當掉、餐廳 readiness 訊號功能失效，另有外送員在供給中斷時被登出的風險。",
+   "rootCause": "尖峰超過部分依賴（外部支付通道、內部餐廳狀態功能）能承受的量；這些環節不在 Swiggy 自己可預先擴容的範圍或事前沒被演練。",
+   "whyHard": "外部依賴（UPI）無法由自己擴容；多團隊同時運作的當天要快速判斷並切換備援；訂單與外送員供需必須同步。",
+   "fix": "事前 40 天開始準備、工程 readiness 提前 8–10 週；由歷史資料預測當日最大訂單數與每小時趨勢，推算峰值 orders per minute；把關鍵 cache 與 DB 從單 AZ 改成 Multi-AZ；war room 以 7 個 dashboard、46 個近即時指標監控；UPI 掛掉時即時轉向其他付款方式。",
+   "tradeoff": "war room 靠大量人力（超過 400 人到場、Slack 頻道 950+ 人）成本高；改 Multi-AZ 增加成本與複寫延遲；外部依賴只能靠備援管道。",
+   "lessons": [
+    "容量規劃從業務預測出發（日訂單 → 每小時 → 每分鐘峰值），再往下推到各服務。",
+    "外部依賴是尖峰時最難控的環節，需要備援路徑與即時切換流程。",
+    "把單點（單 AZ 的 cache / DB）在尖峰前消除。"
+   ],
+   "numbers": [
+    "準備開始於事前 40 天，工程 readiness 提前 8–10 週",
+    "23 個團隊、7 個 dashboard、46 個指標",
+    "超過 400 人到場、950+ 人在 Slack #warroom"
+   ],
+   "interviewUse": "作為『尖峰當天的營運面』：預測、war room、外部依賴備援，說明為何光有擴容不夠。",
+   "sources": [
+    {
+     "title": "Swiggy's NYE War Room — Swiggy Blog",
+     "url": "https://blog.swiggy.com/life-at-swiggy/heres-how-swiggy-setup-a-war-room-for-nye/"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "storage-choice"
+   ],
+   "problem": "capacity-peaks",
+   "byAgents": true
+  },
+  {
+   "id": "meta-2018-nye-live-peak",
+   "company": "Meta (Facebook)",
+   "title": "除夕 Facebook Live：三種測試方法與擴容引發的 health check 流量",
+   "date": "2018-02",
+   "kind": "design-writeup",
+   "symptom": "除夕前需確保全球直播量（尤其同時進行的直播數）不會壓垮系統；測試中擴大 Facebook Live servers 反而讓網路路由效能下降。",
+   "rootCause": "容量增加在系統某處會造成下游副作用：擴大後的 Live servers 的 health check 產生每秒數百 megabits 的網路流量，拖累路由。",
+   "whyHard": "最難容納的是『同時並發的直播數』而不是總量；單獨測一個子系統看不到跨系統的副作用。",
+   "fix": "十月開始規劃；三種方法：(1)人為把流量集中到單一 cluster 測每台 host 的上限；(2)合成負載對 storage 系統施壓而不影響真實流量；(3)shadow traffic，把 production 串流複製放大（首選，信心最高）。依總直播數、峰值併發直播數與對依賴系統的連鎖負載三個指標規劃。",
+   "tradeoff": "shadow traffic 需要可複製與放大真實流量的基礎建設，並多佔一份資源；合成負載的真實度較低。",
+   "lessons": [
+    "規劃容量要看『峰值併發』而非日總量。",
+    "擴容本身會製造新負載（health check、metadata），要用整體流量放大測試才看得到。",
+    "優先用放大真實流量（shadow traffic）驗證，合成流量作輔助。"
+   ],
+   "numbers": [
+    "除夕有超過 10 million 人開直播，影片數比前一年多 47%",
+    "健康檢查流量達每秒數百 megabits"
+   ],
+   "interviewUse": "說明三種容量驗證方法的取捨，以及 shadow traffic 為何信心最高。",
+   "sources": [
+    {
+     "title": "How Production Engineers Support Global Events on Facebook",
+     "url": "https://engineering.fb.com/2018/02/12/production-engineering/how-production-engineers-support-global-events-on-facebook/"
+    }
+   ],
+   "topics": [
+    "streaming",
+    "realtime"
+   ],
+   "problem": "capacity-peaks",
+   "byAgents": true
+  },
+  {
+   "id": "ticketmaster-2022-eras-tour-onsale",
+   "company": "Ticketmaster",
+   "title": "Eras Tour presale：3.5 billion system requests，4 倍於前一峰值",
+   "date": "2022-11",
+   "kind": "postmortem",
+   "symptom": "Verified Fan presale 期間 passcode 驗證出錯使粉絲失去已放入購物車的票、排隊時間大幅變長，約 15% 的站上互動出現問題；公開發售被取消。",
+   "rootCause": "機器人攻擊加上沒有邀請碼的粉絲湧入，造成總共 3.5 billion system requests，為先前峰值的 4 倍，超出 Verified Fan 平台設計時的流量預期。",
+   "whyHard": "預註冊人數（3.5 million）已經大，但真正流量由 bot 與無碼者放大，登記制度預期不到的流量形狀；供需極度失衡（需求遠大於票）使重試風暴更激烈。",
+   "fix": "放慢銷售並延後部分場次、queue 只開放給已驗證帳號、結帳時要求輸入 passcode。",
+   "tradeoff": "限制入口與放慢銷售保護系統但犧牲轉換與用戶體驗；Ticketmaster 也指出即使一切順利，需求遠大於供給時多數人仍買不到。",
+   "lessons": [
+    "容量規劃不能只用『預註冊人數』，還要考慮 bot 與未授權流量；入口控制（waiting room、驗證）是容量的一部分。",
+    "重試風暴與未驗證流量要在最外層丟棄，才不會打進核心交易。",
+    "供需失衡的事件，產品層面（候補、抽籤）與容量同樣重要。"
+   ],
+   "numbers": [
+    "3.5 million 預註冊",
+    "約 1.5 million 人收到邀請碼，約 2 million 人在候補名單",
+    "3.5 billion system requests，為先前峰值 4 倍",
+    "約 15% 站上互動遇到問題",
+    "11 月 15 日單日售出 2 million 張票"
+   ],
+   "interviewUse": "支撐『搶票類事件的尖峰由 bot 與重試放大，需靠 waiting room、驗證與限流，而非單純加機器』。",
+   "sources": [
+    {
+     "title": "Taylor Swift | The Eras Tour Onsale Explained — Ticketmaster",
+     "url": "https://business.ticketmaster.com/press-release/taylor-swift-the-eras-tour-onsale-explained/"
+    }
+   ],
+   "topics": [
+    "contention",
+    "rate-limiting"
+   ],
+   "problem": "capacity-peaks",
+   "byAgents": true
+  },
+  {
+   "id": "netflix-live-herd-and-tyson-paul",
+   "company": "Netflix",
+   "title": "Live 事件的 thundering herd：prefetch + 低基數廣播；Tyson vs Paul 的教訓",
+   "date": "2024-11",
+   "kind": "design-writeup",
+   "symptom": "Tyson vs Paul 直播峰值達 65 million 併發串流，部分觀眾遇到緩衝與問題（Down Detector 約 85,000 人回報）；live 事件讓上百萬裝置在極短時間同時要求推薦與播放。",
+   "rootCause": "live 內容無法預先計算與快取，百萬級裝置在開播瞬間同時請求；直播需要每位觀眾獨立連線，對網路與 ISP 互連造成壓力。",
+   "whyHard": "流量在事件開始的瞬間垂直上升，沒有時間靠 autoscaling 慢慢補；不像 VOD 可預先快取，live 的推薦、metadata 與片段都是即時產生。",
+   "fix": "推薦面：兩階段，先在事件前利用一般瀏覽時 prefetch 推薦與 metadata 以攤平負載，開播時再廣播低基數的狀態更新觸發 cache 更新（Kafka、GraphQL、兩層 pub/sub）。傳輸面：用 Open Connect 把分段推到邊緣；Tyson-Paul 後表示會優化系統、加容量並與 ISP 擴大互連。",
+   "tradeoff": "prefetch 需要事先預測並多做工作、事件時間若改動需動態調整；加互連與容量要提前與 ISP 協商，成本與時程長。",
+   "lessons": [
+    "把尖峰的『同步請求』改成『提前拉取 + 事件時廣播』，用時間換取削峰。",
+    "live 的瓶頸往往在邊緣與 ISP 互連，不只在自家機房。",
+    "穩定性優先於全員最佳體驗：選擇保護大多數觀眾的串流穩定。"
+   ],
+   "numbers": [
+    "Tyson vs Paul：65 million 併發串流",
+    "約 85,000 人在 Down Detector 回報問題",
+    "推薦更新送達超過 100 million 裝置，峰值負載下在一分鐘內"
+   ],
+   "interviewUse": "說明 live 事件的 thundering herd 該怎麼削峰（prefetch + 廣播），以及為何 CDN / 互連是容量的一部分。",
+   "sources": [
+    {
+     "title": "InfoQ: Netflix Details Its Live Streaming Pipeline (Behind the Streams)",
+     "url": "https://infoq.com/news/2025/12/netflix-live-streaming-pipeline/"
+    },
+    {
+     "title": "Michigan Public: The Tyson-Paul fight had tech issues",
+     "url": "https://www.michiganpublic.org/2024-11-21/the-tyson-paul-fight-had-tech-issues-can-streaming-handle-more-major-live-events"
+    }
+   ],
+   "topics": [
+    "streaming",
+    "realtime",
+    "fanout"
+   ],
+   "problem": "capacity-peaks",
+   "byAgents": true
+  },
+  {
+   "id": "dream11-2020-ipl-predictive-scaling",
+   "company": "Dream11",
+   "title": "IPL 比賽尖峰：預測式 pre-scale + 反應式 autoscaling 雙軌",
+   "date": "2020-11",
+   "kind": "design-writeup",
+   "symptom": "IPL 期間流量隨比賽開打急遽上升：2020 年達 60 million requests/min、每秒 8,000 次 contest 加入，單場最高 5.5 million 併發使用者。",
+   "rootCause": "（設計說明，非事故）stateless 微服務能 autoscale，但資料庫與有狀態元件反應太慢，無法在賽事開打瞬間追上。",
+   "whyHard": "比賽的開打時間固定、流量陡升，且使用者在開賽前集中進場；有狀態系統擴容慢，不能等到負載升高才加。",
+   "fix": "預測式：自動化平台預測每場比賽的流量，並以小時 / 分鐘級腳本部署 baseline 基礎設施，資料層提前擴容；反應式：微服務水平擴展並啟用 autoscaling 應付突發與 back pressure；持續在負載環境測試以校準 sizing。",
+   "tradeoff": "預測失準會浪費成本或不足；需要專屬負載測試環境與自動化平台的投入，適合賽程固定的產品。",
+   "lessons": [
+    "有狀態元件要提前擴，stateless 元件才交給 autoscaling。",
+    "排程可預知的事件用 schedule-based pre-scale，加上 reactive autoscaling 當保險。",
+    "用持續的負載測試校正預測模型。"
+   ],
+   "numbers": [
+    "60 million requests per minute",
+    "8,000 contest joins per second",
+    "單場最高 5.5 million 併發使用者"
+   ],
+   "interviewUse": "簡潔支撐『predictive + reactive 雙軌，資料層提前擴』的回答。",
+   "sources": [
+    {
+     "title": "How Dream11 manages traffic surge — Dream Sports",
+     "url": "https://www.dreamsports.group/media-and-blog/how-dream11-manages-traffic-surge"
+    }
+   ],
+   "topics": [
+    "scaling-writes",
+    "storage-choice"
+   ],
+   "problem": "capacity-peaks",
+   "byAgents": true
+  },
+  {
+   "id": "amazon-2025-prime-day-readiness",
+   "company": "Amazon (AWS)",
+   "title": "Prime Day：提前一年備戰、6,800 次 FIS 實驗與 Countdown 容量審查",
+   "date": "2025-07",
+   "kind": "design-writeup",
+   "symptom": "Prime Day 是固定日期的大尖峰：2025 年 DynamoDB 峰值 151 million requests/sec，CloudFront 達 3 trillion HTTP requests。",
+   "rootCause": "（設計說明）尖峰可預期，風險在於資源上限與在尖峰中的故障；沒有演練過的 failover 在尖峰下容易失效。",
+   "whyHard": "規模涵蓋大量服務與團隊，單靠 autoscaling 無法驗證容量與故障恢復；故障必須在尖峰前被故意製造出來才能知道。",
+   "fix": "用 AWS Fault Injection Service 做故障實驗（2025 年超過 6,800 次，為 2024 年的 8 倍以上，並加入 ECS 網路故障注入與 CI/CD 整合）；透過 AWS Countdown 支援容量規劃、風險緩解與營運就緒評估；另有控制室（Control Room）協調數千人（2020 年資料）。",
+   "tradeoff": "大規模故障實驗與審查需要大量人力與流程；對日期不固定或規模小的服務過度。",
+   "lessons": [
+    "把故障注入當成尖峰準備的常規，且逐年擴大並整合進 CI/CD。",
+    "容量規劃是組織流程（audit、game day、控制室），不只是技術調整。",
+    "在雲端上，預先與供應商做容量與就緒審查可降低額度與限制風險。"
+   ],
+   "numbers": [
+    "2025：6,800+ AWS FIS 實驗，為 2024 年 8 倍以上",
+    "DynamoDB 151 million requests/sec；SQS 166 million messages/sec",
+    "2020：DynamoDB 峰值 80.1 million requests/sec；EBS 事前加了 241 PB 容量"
+   ],
+   "interviewUse": "作為『大型電商尖峰靠審查 + game day + 故障注入，而非只靠 autoscaling』的業界實例。",
+   "sources": [
+    {
+     "title": "AWS services scale to new heights for Prime Day 2025",
+     "url": "https://aws.amazon.com/blogs/aws/aws-services-scale-to-new-heights-for-prime-day-2025-key-metrics-and-milestones"
+    },
+    {
+     "title": "Amazon Prime Day 2020 – Powered by AWS",
+     "url": "https://aws.amazon.com/blogs/aws/amazon-prime-day-2020-powered-by-aws/"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "scaling-writes"
+   ],
+   "problem": "capacity-peaks",
+   "byAgents": true
+  }
+ ],
+ "quiz": [
+  {
+   "q": "直播賽事開賽時併發每分鐘成長超過 1M，新機器要約 90 秒才健康。為什麼 Hotstar 選擇 pre-scale 而不是只靠 autoscaling？代價是什麼？",
+   "a": "autoscaling 反應時間（約 90 秒）追不上陡升，且可能遇到 insufficient capacity 等錯誤；所以依預測併發在開賽前預先擴容。代價是預測不準會浪費或不足，並且要搭配降級（關掉個人化等）當保險。",
+   "topic": "capacity-peaks",
+   "kind": "情境"
+  },
+  {
+   "q": "Slack 在假期後第一個週一爆掉，他們自己的 web tier 擴得夠快，為什麼仍然失敗？學到什麼？",
+   "a": "瓶頸在 AWS 託管的 Transit Gateway 沒跟上，且擴容管線 provision-service 撞到 open files limit 與 AWS quota；autoscaling 的 CPU 訊號還因網路問題誤導先縮容。教訓：託管服務也要預約容量，擴容管線本身要 load test。",
+   "topic": "capacity-peaks",
+   "kind": "情境"
+  },
+  {
+   "q": "可預期尖峰（如 BFCM）準備時，為什麼要做 full-scale 測試而不是只測單一服務？它的限制是什麼？",
+   "a": "瓶頸常出現在組合：Kafka partition、連線池 timeout、ingress-nginx 1,000 endpoints 上限等，只有全平台同時滿載才暴露。限制：合成流量不等於真實流量（來源集中在少數 CDN PoP、in-memory cache 讓結果偏樂觀），且成本高。",
+   "topic": "capacity-peaks",
+   "kind": "取捨"
+  },
+  {
+   "q": "Ticketmaster 的 Verified Fan 預註冊有 3.5 million 人，為什麼容量規劃不能以此為上限？對應的設計手段是什麼？",
+   "a": "實際流量被 bot 與沒有邀請碼的人放大成 3.5 billion system requests（前一峰值的 4 倍）。要在入口做 waiting room / 驗證 / 限流，只讓已驗證帳號進 queue，並在結帳驗 passcode，而不是單純加機器。",
+   "topic": "capacity-peaks",
+   "kind": "取捨"
+  },
+  {
+   "q": "資料庫與 stateless 微服務在尖峰準備上應該怎麼分工？（以 Dream11 為例）",
+   "a": "stateless 微服務交給 reactive autoscaling 應付突發；資料庫等有狀態元件反應慢，需依每場比賽的流量預測提前（predictive）擴容，並用持續負載測試校準 sizing。",
+   "topic": "capacity-peaks",
+   "kind": "概念"
+  },
+  {
+   "q": "Zomato 對 300+ 微服務做壓測時，為什麼要『逐步增加負載』並設自動中止條件？",
+   "a": "逐步加壓讓 autoscaling 有時間反應，才能量到真實行為；自動中止（關鍵告警或上游錯誤率上升就降載）避免壓測本身造成事故。代價是需自建隔離的壓測平台，且只讀 / 安全寫入的限制讓寫入路徑覆蓋不足。",
+   "topic": "capacity-peaks",
+   "kind": "取捨"
+  }
+ ]
+}

@@ -1,0 +1,4814 @@
+[
+ {
+  "file": "inc-cache-hotspot.json",
+  "id": "meta-2013-memcache-lease-gutter",
+  "figure": "lease token 預設每個 key 10 秒發一次",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cache-hotspot.json",
+  "id": "meta-2013-memcache-lease-gutter",
+  "figure": "易受 thundering herd 的 key 組：無 lease 時 DB 峰值 17K queries/s，有 lease 時 1.3K/s",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cache-hotspot.json",
+  "id": "meta-2013-memcache-lease-gutter",
+  "figure": "Gutter 約佔 cluster 內 memcached server 的 1%",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cache-hotspot.json",
+  "id": "meta-2013-memcache-lease-gutter",
+  "figure": "Gutter 使 client 可見失敗率下降 99%，每天將 10%–25% 的失敗轉為 hit",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cache-hotspot.json",
+  "id": "meta-2013-memcache-lease-gutter",
+  "figure": "單一 key 可佔某 server 20% 的請求",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cache-hotspot.json",
+  "id": "meta-2013-memcache-lease-gutter",
+  "figure": "cold cluster 的 delete 預設 2 秒 hold-off",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cache-hotspot.json",
+  "id": "meta-2010-config-cache-feedback-loop",
+  "figure": "停機約 2.5 小時",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cache-hotspot.json",
+  "id": "meta-2022-cache-consistency-polaris",
+  "figure": "一致性從 99.9999% 提升到 99.99999999%",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cache-hotspot.json",
+  "id": "meta-2022-cache-consistency-polaris",
+  "figure": "五分鐘後不一致的 cache 寫入少於 100 億分之 1",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cache-hotspot.json",
+  "id": "meta-2022-cache-consistency-polaris",
+  "figure": "加上 Polaris 與 consistency tracing 後，除錯時間少於 30 分鐘",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cache-hotspot.json",
+  "id": "discord-2023-hot-partition-coalescing",
+  "figure": "Cassandra 從 177 節點降到 72 個 ScyllaDB 節點",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cache-hotspot.json",
+  "id": "discord-2023-hot-partition-coalescing",
+  "figure": "歷史訊息讀取 p99 由 40-125ms 降到 15ms",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cache-hotspot.json",
+  "id": "discord-2023-hot-partition-coalescing",
+  "figure": "訊息寫入 p99 由 5-70ms 降到穩定 5ms",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cache-hotspot.json",
+  "id": "discord-2023-hot-partition-coalescing",
+  "figure": "每個 ScyllaDB 節點 9 TB 磁碟，Cassandra 平均 4 TB",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cache-hotspot.json",
+  "id": "slack-2022-memcached-flush-scatter-query",
+  "figure": "Consul 升級進行到 25% 的 fleet 時達到臨界點",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cache-hotspot.json",
+  "id": "slack-2022-memcached-flush-scatter-query",
+  "figure": "前兩次各 25% 的步驟在前一週都沒出事",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cache-hotspot.json",
+  "id": "uber-2025-cachefront-consistency",
+  "figure": "尖峰每秒服務超過 1.5 億筆 row 讀取",
+  "status": "unreadable"
+ },
+ {
+  "file": "inc-cache-hotspot.json",
+  "id": "uber-2025-cachefront-consistency",
+  "figure": "部分表的 TTL 延長到 24 小時",
+  "status": "unreadable"
+ },
+ {
+  "file": "inc-cache-hotspot.json",
+  "id": "uber-2025-cachefront-consistency",
+  "figure": "讀寫比通常為 20 或 100",
+  "status": "unreadable"
+ },
+ {
+  "file": "inc-cache-hotspot.json",
+  "id": "uber-2025-cachefront-consistency",
+  "figure": "Cache Inspector 的 CDC 刻意延遲 1 分鐘",
+  "status": "unreadable"
+ },
+ {
+  "file": "inc-cache-hotspot.json",
+  "id": "netflix-2016-evcache-global-replication",
+  "figure": "尖峰每秒超過 3000 萬請求，數百億個物件，數萬個 memcached instance",
+  "status": "unreadable"
+ },
+ {
+  "file": "inc-cache-hotspot.json",
+  "id": "netflix-2016-evcache-global-replication",
+  "figure": "全球每天約 2 兆次請求",
+  "status": "unreadable"
+ },
+ {
+  "file": "inc-cache-hotspot.json",
+  "id": "netflix-2016-evcache-global-replication",
+  "figure": "多數 cache 的端到端複寫延遲 p99 低於 1 秒，最高流量的 cache 約 400ms",
+  "status": "unreadable"
+ },
+ {
+  "file": "inc-cache-hotspot.json",
+  "id": "netflix-2016-evcache-global-replication",
+  "figure": "尖峰複寫超過每秒 150 萬則訊息",
+  "status": "unreadable"
+ },
+ {
+  "file": "inc-cache-hotspot.json",
+  "id": "instagram-2019-promise-cache",
+  "figure": "文中範例：假設 90% 的請求可被 cache，用 cache 可將資源需求降為 1/10",
+  "status": "unreadable"
+ },
+ {
+  "file": "inc-cache-hotspot.json",
+  "id": "instagram-2019-promise-cache",
+  "figure": "範例：100 個並發 miss 會變成 100 次後端請求",
+  "status": "unreadable"
+ },
+ {
+  "file": "inc-cache-hotspot.json",
+  "id": "nodejs-2023-cache-purge-404",
+  "figure": "cache 每 5 分鐘被 purge 一次",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cache-hotspot.json",
+  "id": "nodejs-2023-cache-purge-404",
+  "figure": "部分被快取的 404 有 4 小時 TTL",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cache-hotspot.json",
+  "id": "nodejs-2023-cache-purge-404",
+  "figure": "完整修復約在 3/16 20:00 UTC，殘留影響到午夜 UTC",
+  "status": "not_found"
+ },
+ {
+  "file": "inc-cache-hotspot.json",
+  "id": "twitter-2020-cache-workload-analysis",
+  "figure": "分析 153 個 cache cluster，超過 80 TB 的 trace",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cache-hotspot.json",
+  "id": "twitter-2020-cache-workload-analysis",
+  "figure": "超過 35% 的 cluster 屬寫入比例 > 30% 的 write-heavy",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cache-hotspot.json",
+  "id": "twitter-2020-cache-workload-analysis",
+  "figure": "超過 25% 的 workload 平均 TTL 短於 20 分鐘",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cache-hotspot.json",
+  "id": "twitter-2020-cache-workload-analysis",
+  "figure": "只有 20% 的 Twemcache workload 使用單一 TTL",
+  "status": "verified"
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "shopify-2025-bfcm-scale-tests",
+  "figure": "5 輪 scale test（4 月到 10 月）",
+  "status": "verified"
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "shopify-2025-bfcm-scale-tests",
+  "figure": "Test 4：146 million requests per minute、80,000+ checkouts per minute",
+  "status": "verified"
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "shopify-2025-bfcm-scale-tests",
+  "figure": "Test 5：200M RPM（p99 流量）",
+  "status": "verified"
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "shopify-2022-scale-testing-limits",
+  "figure": "ingress-nginx 上限 1,000 endpoints / cluster",
+  "status": "verified"
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "shopify-2022-scale-testing-limits",
+  "figure": "目標 1,200 pods",
+  "status": "verified"
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "hotstar-2023-world-cup-50m",
+  "figure": "先前峰值約 25 million 併發，模型預期接近 50 million",
+  "status": "unreadable"
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "hotstar-2023-world-cup-50m",
+  "figure": "API server 在同時擴超過 400 nodes 時開始出錯，改為每步 100–300 nodes",
+  "status": "unreadable"
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "hotstar-2023-world-cup-50m",
+  "figure": "MINIMUM_IP_TARGET 35 → 20、WARM_IP_TARGET 10 → 5，世界盃期間 subnet IP 使用率約 40%",
+  "status": "unreadable"
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "hotstar-2023-world-cup-50m",
+  "figure": "Service 超過 1000 endpoints 時 Endpoints 物件被截斷",
+  "status": "unreadable"
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "epic-2018-fortnite-3-4m-ccu",
+  "figure": "MCP 峰值 124k client requests/sec、318k DB reads/sec、132k DB writes/sec",
+  "status": "unreadable"
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "epic-2018-fortnite-3-4m-ccu",
+  "figure": "Account Service 40k–100k req/sec，land rush 最高 160k/sec",
+  "status": "unreadable"
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "epic-2018-fortnite-3-4m-ccu",
+  "figure": "XMPP 超過 3 million 在線連線、約 600k packets/sec",
+  "status": "unreadable"
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "epic-2018-fortnite-3-4m-ccu",
+  "figure": "MongoDB：9 shards（每 shard 一個 writer、兩個 read replica、一個 hidden replica）",
+  "status": "unreadable"
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "epic-2018-fortnite-3-4m-ccu",
+  "figure": "標準 subnet 為 /24（251 個可用 IP）",
+  "status": "unreadable"
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "zomato-2023-nye-benchmarking",
+  "figure": "14,000 分鐘 benchmark、超過 100 個服務、峰值 50 million requests/min、超過 30 billion requests",
+  "status": "verified"
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "zomato-2023-nye-benchmarking",
+  "figure": "除夕當天 11,000 EC2 instances、約 40,000 ECS tasks",
+  "status": "verified"
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "zomato-2023-nye-benchmarking",
+  "figure": "ElastiCache 35 TB 記憶體、每分鐘 1 billion GET 與約 100 million SET",
+  "status": "verified"
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "zomato-2023-nye-benchmarking",
+  "figure": "RDS 峰值 610k select/s 與 16,000 write transactions/s",
+  "status": "verified"
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "swiggy-2022-nye-war-room",
+  "figure": "準備開始於事前 40 天，工程 readiness 提前 8–10 週",
+  "status": "verified"
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "swiggy-2022-nye-war-room",
+  "figure": "23 個團隊、7 個 dashboard、46 個指標",
+  "status": "verified"
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "swiggy-2022-nye-war-room",
+  "figure": "超過 400 人到場、950+ 人在 Slack #warroom",
+  "status": "verified"
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "meta-2018-nye-live-peak",
+  "figure": "除夕有超過 10 million 人開直播，影片數比前一年多 47%",
+  "status": "verified"
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "ticketmaster-2022-eras-tour-onsale",
+  "figure": "3.5 million 預註冊",
+  "status": "verified"
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "ticketmaster-2022-eras-tour-onsale",
+  "figure": "約 1.5 million 人收到邀請碼，約 2 million 人在候補名單",
+  "status": "verified"
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "ticketmaster-2022-eras-tour-onsale",
+  "figure": "3.5 billion system requests，為先前峰值 4 倍",
+  "status": "verified"
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "ticketmaster-2022-eras-tour-onsale",
+  "figure": "約 15% 站上互動遇到問題",
+  "status": "verified"
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "ticketmaster-2022-eras-tour-onsale",
+  "figure": "11 月 15 日單日售出 2 million 張票",
+  "status": "not_found"
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "netflix-live-herd-and-tyson-paul",
+  "figure": "Tyson vs Paul：65 million 併發串流",
+  "status": "verified"
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "netflix-live-herd-and-tyson-paul",
+  "figure": "約 85,000 人在 Down Detector 回報問題",
+  "status": "verified"
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "netflix-live-herd-and-tyson-paul",
+  "figure": "推薦更新送達超過 100 million 裝置，峰值負載下在一分鐘內",
+  "status": "verified"
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "dream11-2020-ipl-predictive-scaling",
+  "figure": "60 million requests per minute",
+  "status": "verified"
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "dream11-2020-ipl-predictive-scaling",
+  "figure": "8,000 contest joins per second",
+  "status": "verified"
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "dream11-2020-ipl-predictive-scaling",
+  "figure": "單場最高 5.5 million 併發使用者",
+  "status": "verified"
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "amazon-2025-prime-day-readiness",
+  "figure": "2025：6,800+ AWS FIS 實驗，為 2024 年 8 倍以上",
+  "status": "verified"
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "amazon-2025-prime-day-readiness",
+  "figure": "DynamoDB 151 million requests/sec；SQS 166 million messages/sec",
+  "status": "verified"
+ },
+ {
+  "file": "inc-capacity-peaks.json",
+  "id": "amazon-2025-prime-day-readiness",
+  "figure": "2020：DynamoDB 峰值 80.1 million requests/sec；EBS 事前加了 241 PB 容量",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cascading-failure.json",
+  "id": "roblox-2021-consul-outage",
+  "figure": "總共 73 小時（10/28 到 10/31 16:45）",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cascading-failure.json",
+  "id": "roblox-2021-consul-outage",
+  "figure": "18,000 台伺服器、170,000 個 container、5,000 萬日活玩家",
+  "status": "not_found"
+ },
+ {
+  "file": "inc-cascading-failure.json",
+  "id": "roblox-2021-consul-outage",
+  "figure": "Consul 5 個 voter + 5 個 non-voter",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cascading-failure.json",
+  "id": "roblox-2021-consul-outage",
+  "figure": "KV 寫入 P50 延遲從 300ms 以下升到 2 秒",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cascading-failure.json",
+  "id": "roblox-2021-consul-outage",
+  "figure": "4.2GB log store 只有 489MB 真實資料，freelist 7.8MB，每次 append 的資料 16kB 以下",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cascading-failure.json",
+  "id": "google-sre-addressing-cascading-failures",
+  "figure": "範例 cluster 原本 1,000 QPS，對方失效後升到 1,200 QPS 即無法承受",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cascading-failure.json",
+  "id": "google-sre-addressing-cascading-failures",
+  "figure": "重試把後端負載推到 10,200 QPS",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cascading-failure.json",
+  "id": "google-sre-addressing-cascading-failures",
+  "figure": "server 級 retry budget 範例：每分鐘 60 次重試",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cascading-failure.json",
+  "id": "google-sre-addressing-cascading-failures",
+  "figure": "佇列長度建議不超過 thread pool 的 50%",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cascading-failure.json",
+  "id": "google-sre-addressing-cascading-failures",
+  "figure": "大錘：先降到約 1% 流量",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cascading-failure.json",
+  "id": "aws-builders-retry-backoff-jitter",
+  "figure": "五層、每層重試 3 次，資料庫負載放大 243 倍",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cascading-failure.json",
+  "id": "aws-builders-retry-backoff-jitter",
+  "figure": "某系統 timeout 約設在 20 毫秒的例子",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cascading-failure.json",
+  "id": "slack-2021-01-04-tgw-outage",
+  "figure": "7:01 到 7:15 之間嘗試增加 1,200 台 web tier 伺服器",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cascading-failure.json",
+  "id": "aws-2021-12-us-east-1-network-congestion",
+  "figure": "7:30 AM PST 觸發",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cascading-failure.json",
+  "id": "aws-2021-12-us-east-1-network-congestion",
+  "figure": "9:28 AM PST DNS 流量改道，部分恢復",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cascading-failure.json",
+  "id": "aws-2021-12-us-east-1-network-congestion",
+  "figure": "1:34 PM 壅塞顯著改善",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cascading-failure.json",
+  "id": "aws-2021-12-us-east-1-network-congestion",
+  "figure": "2:22 PM 網路裝置完全恢復",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cascading-failure.json",
+  "id": "bronson-2021-metastable-failures",
+  "figure": "範例：DB 300 QPS 以下 100ms 內回應；280 QPS 遇 10 秒中斷後因重試變 560 QPS 而卡住",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cascading-failure.json",
+  "id": "bronson-2021-metastable-failures",
+  "figure": "穩定上限約 150 QPS 之下；需降到 150 QPS 以下或限制重試才能恢復",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cascading-failure.json",
+  "id": "bronson-2021-metastable-failures",
+  "figure": "look-aside cache：advertised 3,000 QPS，hidden 300 QPS",
+  "status": "verified"
+ },
+ {
+  "file": "inc-cascading-failure.json",
+  "id": "bronson-2021-metastable-failures",
+  "figure": "90% 命中率的 cache 遺失造成 10 倍查詢放大",
+  "status": "verified"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "cloudflare-2019-waf-regex",
+  "figure": "服務中斷約 27 分鐘（13:42 部署，14:09 恢復）",
+  "status": "verified"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "cloudflare-2019-waf-regex",
+  "figure": "第一個 PagerDuty page 在部署後 3 分鐘",
+  "status": "verified"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "cloudflare-2019-waf-regex",
+  "figure": "過去 60 天 WAF Managed Rules 處理 476 個 change request，約每 3 小時一個",
+  "status": "verified"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "cloudflare-2019-waf-regex",
+  "figure": "Quicksilver 平均每秒分發約 350 個變更，p99 為 2.29 秒送達全球每台機器",
+  "status": "verified"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "cloudflare-2019-waf-regex",
+  "figure": "共 3,868 條 WAF 規則需人工檢查",
+  "status": "verified"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "cloudflare-2025-11-bot-feature-file",
+  "figure": "11:05 部署權限變更，11:28 開始影響客戶流量，14:30 主要問題解決，17:06 全部恢復",
+  "status": "verified"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "cloudflare-2025-11-bot-feature-file",
+  "figure": "feature 數量上限 200，正常使用約 60",
+  "status": "verified"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "cloudflare-2025-11-bot-feature-file",
+  "figure": "feature file 每 5 分鐘產生一次",
+  "status": "verified"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "cloudflare-2025-11-bot-feature-file",
+  "figure": "第一個自動化測試在 11:31 偵測到問題，13:05 起用 bypass 降低 Workers KV / Access 影響",
+  "status": "verified"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "cloudflare-2025-11-bot-feature-file",
+  "figure": "2025-12-05 事故：08:47 開始、09:12 回復，約 25 分鐘，約 28% HTTP 流量受影響",
+  "status": "not_found"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "cloudflare-2022-06-bgp-policy-reorder",
+  "figure": "19 個 data center、約佔網路 4%、影響約 50% 請求",
+  "status": "verified"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "cloudflare-2022-06-bgp-policy-reorder",
+  "figure": "06:27 事故開始，06:58 第一個站點恢復，07:42 全部恢復",
+  "status": "verified"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "cloudflare-2022-06-bgp-policy-reorder",
+  "figure": "變更在 03:56 開始推到第一個站點，約 2.5 小時後才到 MCP 站點",
+  "status": "not_found"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "gcp-2025-06-service-control",
+  "figure": "5/29 部署程式碼，6/12 約 10:45 PDT 寫入 policy",
+  "status": "verified"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "gcp-2025-06-service-control",
+  "figure": "約 2 分鐘開始 triage、10 分鐘找到根因、約 25 分鐘 red-button 就緒、40 分鐘內推出完成",
+  "status": "verified"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "gcp-2025-06-service-control",
+  "figure": "us-central1 完全復原最久約 2h40m",
+  "status": "verified"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "gcp-2025-06-service-control",
+  "figure": "第一份事故公告約在崩潰後 1 小時，因為 Cloud Service Health 本身也掛了",
+  "status": "verified"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "crowdstrike-2024-channel-file-291",
+  "figure": "Template Type 定義 21 個輸入，sensor 實際提供 20 個",
+  "status": "verified"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "crowdstrike-2024-channel-file-291",
+  "figure": "自動化測試使用 12 個靜態案例",
+  "status": "verified"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "crowdstrike-2024-channel-file-291",
+  "figure": "2024-07-19 部署兩個新 Template Instance",
+  "status": "verified"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "crowdstrike-2024-channel-file-291",
+  "figure": "RCA 發佈時約 99% 的 Windows sensor 已恢復在線（與更新前相比）",
+  "status": "verified"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "fastly-2021-06-config-trigger",
+  "figure": "約 85% 的網路回傳錯誤",
+  "status": "verified"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "fastly-2021-06-config-trigger",
+  "figure": "09:47 開始，09:48 被監控發現，約 1 分鐘",
+  "status": "verified"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "fastly-2021-06-config-trigger",
+  "figure": "49 分鐘內 95% 網路恢復",
+  "status": "verified"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "fastly-2021-06-config-trigger",
+  "figure": "5/12 開始部署，6/8 才被觸發",
+  "status": "verified"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "datadog-2023-03-systemd-networkd",
+  "figure": "超過 60% 的 instances 失去網路連線",
+  "status": "verified"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "datadog-2023-03-systemd-networkd",
+  "figure": "事件發生在 2023-03-08 06:00–07:00 UTC；22.04 約佔機隊 90% 以上",
+  "status": "verified"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "datadog-2023-03-systemd-networkd",
+  "figure": "AWS 每 10 分鐘終止超過 8% 的 instances，到 08:00 US1 約 60% 被替換，達數萬台",
+  "status": "verified"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "aws-2017-s3-playbook-command",
+  "figure": "9:37 AM PST 執行指令",
+  "status": "verified"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "aws-2017-s3-playbook-command",
+  "figure": "12:26 PM PST index 開始服務部分請求，1:18 PM 完全恢復，1:54 PM placement 恢復、S3 正常",
+  "status": "verified"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "aws-2017-s3-playbook-command",
+  "figure": "狀態頁到 11:37 AM 之前都無法更新",
+  "status": "verified"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "azure-2026-09-gateway-update-resume",
+  "figure": "2026-09-30 20:30 UTC 影響開始，20:43 ExpressRoute 監控偵測到，2026-10-01 02:15 UTC 結束",
+  "status": "verified"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "azure-2026-09-gateway-update-resume",
+  "figure": "21:45 暫停更新，23:55 找出關聯變更，01:15 開始 rollback",
+  "status": "verified"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "azure-2026-09-gateway-update-resume",
+  "figure": "約 30 分鐘設定取得失敗後 gateway 套用 last-known-good 設定",
+  "status": "verified"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "mozilla-2019-05-addon-cert-expiry",
+  "figure": "1.5 萬以上的 Firefox add-on 受影響",
+  "status": "not_found"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "mozilla-2019-05-addon-cert-expiry",
+  "figure": "5/4 UTC 凌晨 1 點後 intermediate certificate 到期",
+  "status": "verified"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "mozilla-2019-05-addon-cert-expiry",
+  "figure": "約 6 PM PT（5/3）起到 2:44 AM 開始推送修復，不到 9 小時；之後再 6–12 小時多數使用者才收到",
+  "status": "verified"
+ },
+ {
+  "file": "inc-change-induced.json",
+  "id": "mozilla-2019-05-addon-cert-expiry",
+  "figure": "Normandy 用戶端每 6 小時檢查一次更新",
+  "status": "verified"
+ },
+ {
+  "file": "inc-data-integrity.json",
+  "id": "meta-2022-sdc-fleet-detection",
+  "figure": "Ripple: 70% of fleet corruptions within 15 days",
+  "status": "verified"
+ },
+ {
+  "file": "inc-data-integrity.json",
+  "id": "meta-2022-sdc-fleet-detection",
+  "figure": "Opportunistic: about 6 months to reach 70%",
+  "status": "verified"
+ },
+ {
+  "file": "inc-data-integrity.json",
+  "id": "meta-2022-sdc-fleet-detection",
+  "figure": "Ripple: about 2.5 billion unique tests/test seeds per month",
+  "status": "verified"
+ },
+ {
+  "file": "inc-data-integrity.json",
+  "id": "meta-2022-sdc-fleet-detection",
+  "figure": "unique SDC coverage: opportunistic 23%, Ripple 7%",
+  "status": "verified"
+ },
+ {
+  "file": "inc-data-integrity.json",
+  "id": "google-2011-gmail-data-loss-gtape",
+  "figure": "recovered 99%+ of the data before the estimated completion time",
+  "status": "verified"
+ },
+ {
+  "file": "inc-data-integrity.json",
+  "id": "google-2012-music-deletion-pipeline",
+  "figure": "約 600,000 audio references deleted, 21,000 users affected",
+  "status": "verified"
+ },
+ {
+  "file": "inc-data-integrity.json",
+  "id": "google-2012-music-deletion-pipeline",
+  "figure": "436,223 tracks recovered from tape (1.5 PB)",
+  "status": "verified"
+ },
+ {
+  "file": "inc-data-integrity.json",
+  "id": "google-2012-music-deletion-pipeline",
+  "figure": "5,475 restore jobs, over 5,000 tapes recalled",
+  "status": "verified"
+ },
+ {
+  "file": "inc-data-integrity.json",
+  "id": "google-2012-music-deletion-pipeline",
+  "figure": "161,000 files unrecoverable from tape",
+  "status": "verified"
+ },
+ {
+  "file": "inc-data-integrity.json",
+  "id": "google-2011-blogger-missing-replicas",
+  "figure": "read-only for just over 10 hours",
+  "status": "verified"
+ },
+ {
+  "file": "inc-data-integrity.json",
+  "id": "google-cloud-2024-unisuper-gcve",
+  "figure": "management 約 1 年期限後自動刪除",
+  "status": "verified"
+ },
+ {
+  "file": "inc-data-integrity.json",
+  "id": "google-cloud-2024-unisuper-gcve",
+  "figure": "Google 與客戶 24x7 數天復原",
+  "status": "verified"
+ },
+ {
+  "file": "inc-data-integrity.json",
+  "id": "cloudflare-2017-cloudbleed",
+  "figure": "約 1 in 3,300,000 requests 可能洩漏記憶體",
+  "status": "verified"
+ },
+ {
+  "file": "inc-data-integrity.json",
+  "id": "cloudflare-2017-cloudbleed",
+  "figure": "影響最大期間 Feb 13-18",
+  "status": "verified"
+ },
+ {
+  "file": "inc-data-integrity.json",
+  "id": "cloudflare-2017-cloudbleed",
+  "figure": "770 unique URIs across 161 domains in search caches",
+  "status": "verified"
+ },
+ {
+  "file": "inc-data-integrity.json",
+  "id": "cloudflare-2017-cloudbleed",
+  "figure": "47 分鐘初步緩解、7 小時內完成全球止血",
+  "status": "verified"
+ },
+ {
+  "file": "inc-data-integrity.json",
+  "id": "dropbox-magic-pocket-pocket-watch",
+  "figure": "27 nines of durability",
+  "status": "verified"
+ },
+ {
+  "file": "inc-data-integrity.json",
+  "id": "dropbox-magic-pocket-pocket-watch",
+  "figure": "over 50% of disk and database workload is verification traffic",
+  "status": "verified"
+ },
+ {
+  "file": "inc-data-integrity.json",
+  "id": "dropbox-magic-pocket-pocket-watch",
+  "figure": "Storage Watcher samples 1% of written blocks",
+  "status": "verified"
+ },
+ {
+  "file": "inc-data-integrity.json",
+  "id": "dropbox-magic-pocket-pocket-watch",
+  "figure": "10+ petabyte staging cluster",
+  "status": "not_found"
+ },
+ {
+  "file": "inc-db-scaling-migration.json",
+  "id": "notion-2021-shard-postgres-monolith",
+  "figure": "480 logical shards / 32 physical DB（每台 15 schema）",
+  "status": "verified"
+ },
+ {
+  "file": "inc-db-scaling-migration.json",
+  "id": "notion-2021-shard-postgres-monolith",
+  "figure": "單表上限 500 GB、單實體 DB 上限 10 TB",
+  "status": "verified"
+ },
+ {
+  "file": "inc-db-scaling-migration.json",
+  "id": "notion-2021-shard-postgres-monolith",
+  "figure": "至少需要 60K 總 IOPS",
+  "status": "verified"
+ },
+ {
+  "file": "inc-db-scaling-migration.json",
+  "id": "notion-2021-shard-postgres-monolith",
+  "figure": "backfill 用 m5.24xlarge（96 CPU）約 3 天",
+  "status": "verified"
+ },
+ {
+  "file": "inc-db-scaling-migration.json",
+  "id": "notion-2021-shard-postgres-monolith",
+  "figure": "停機約 5 分鐘",
+  "status": "verified"
+ },
+ {
+  "file": "inc-db-scaling-migration.json",
+  "id": "notion-2023-reshard-32-to-96",
+  "figure": "32 → 96 台",
+  "status": "verified"
+ },
+ {
+  "file": "inc-db-scaling-migration.json",
+  "id": "notion-2023-reshard-32-to-96",
+  "figure": "尖峰 CPU >90%",
+  "status": "verified"
+ },
+ {
+  "file": "inc-db-scaling-migration.json",
+  "id": "notion-2023-reshard-32-to-96",
+  "figure": "約 100 個 PgBouncer × 6 連線 = 600/shard",
+  "status": "verified"
+ },
+ {
+  "file": "inc-db-scaling-migration.json",
+  "id": "notion-2023-reshard-32-to-96",
+  "figure": "同步時間 3 天 → 12 小時",
+  "status": "verified"
+ },
+ {
+  "file": "inc-db-scaling-migration.json",
+  "id": "notion-2023-reshard-32-to-96",
+  "figure": "新環境尖峰 CPU/IOPS 約 20%",
+  "status": "verified"
+ },
+ {
+  "file": "inc-db-scaling-migration.json",
+  "id": "notion-2023-reshard-32-to-96",
+  "figure": "最差約 1 秒 saving spinner",
+  "status": "verified"
+ },
+ {
+  "file": "inc-db-scaling-migration.json",
+  "id": "figma-2023-vertical-partitioning",
+  "figure": "CPU >65% 尖峰",
+  "status": "verified"
+ },
+ {
+  "file": "inc-db-scaling-migration.json",
+  "id": "figma-2023-vertical-partitioning",
+  "figure": "流量約每年 3 倍",
+  "status": "verified"
+ },
+ {
+  "file": "inc-db-scaling-migration.json",
+  "id": "figma-2023-vertical-partitioning",
+  "figure": "r5.12xlarge → r5.24xlarge",
+  "status": "verified"
+ },
+ {
+  "file": "inc-db-scaling-migration.json",
+  "id": "figma-2023-vertical-partitioning",
+  "figure": "目標可用性影響 <1 分鐘",
+  "status": "verified"
+ },
+ {
+  "file": "inc-db-scaling-migration.json",
+  "id": "figma-2023-vertical-partitioning",
+  "figure": "實際約 30 秒、約 2% 請求被丟",
+  "status": "verified"
+ },
+ {
+  "file": "inc-db-scaling-migration.json",
+  "id": "figma-2023-vertical-partitioning",
+  "figure": "2022 年 10 月最後一次一次搬 50 張表",
+  "status": "verified"
+ },
+ {
+  "file": "inc-db-scaling-migration.json",
+  "id": "figma-2024-horizontal-sharding",
+  "figure": "資料庫堆疊自 2020 年成長近 100 倍",
+  "status": "verified"
+ },
+ {
+  "file": "inc-db-scaling-migration.json",
+  "id": "figma-2024-horizontal-sharding",
+  "figure": "view 最差額外開銷 <10%",
+  "status": "verified"
+ },
+ {
+  "file": "inc-db-scaling-migration.json",
+  "id": "figma-2024-horizontal-sharding",
+  "figure": "約 90% 常見查詢被支援",
+  "status": "verified"
+ },
+ {
+  "file": "inc-db-scaling-migration.json",
+  "id": "slack-2020-vitess-migration",
+  "figure": "尖峰 2.3M QPS（2M 讀、300K 寫）",
+  "status": "verified"
+ },
+ {
+  "file": "inc-db-scaling-migration.json",
+  "id": "slack-2020-vitess-migration",
+  "figure": "median 查詢 2 ms、p99 11 ms",
+  "status": "verified"
+ },
+ {
+  "file": "inc-db-scaling-migration.json",
+  "id": "slack-2020-vitess-migration",
+  "figure": "2017 年開始、99% 遷移完成",
+  "status": "verified"
+ },
+ {
+  "file": "inc-db-scaling-migration.json",
+  "id": "slack-2020-vitess-migration",
+  "figure": "2020 年 3 月一週內查詢量 +50%",
+  "status": "verified"
+ },
+ {
+  "file": "inc-db-scaling-migration.json",
+  "id": "slack-2020-vitess-migration",
+  "figure": "6 個地區的 Vitess cluster（資料駐留）",
+  "status": "verified"
+ },
+ {
+  "file": "inc-db-scaling-migration.json",
+  "id": "gitlab-2017-db-deletion",
+  "figure": "停機約 18 小時",
+  "status": "verified"
+ },
+ {
+  "file": "inc-db-scaling-migration.json",
+  "id": "gitlab-2017-db-deletion",
+  "figure": "約 300 GB 資料被刪",
+  "status": "verified"
+ },
+ {
+  "file": "inc-db-scaling-migration.json",
+  "id": "gitlab-2017-db-deletion",
+  "figure": "至少 5000 專案 / 5000 留言 / 約 700 使用者",
+  "status": "verified"
+ },
+ {
+  "file": "inc-db-scaling-migration.json",
+  "id": "gitlab-2017-db-deletion",
+  "figure": "LVM snapshot 約 6 小時前",
+  "status": "verified"
+ },
+ {
+  "file": "inc-db-scaling-migration.json",
+  "id": "gitlab-2017-db-deletion",
+  "figure": "staging 磁碟約 60Mbps、複製約 18 小時",
+  "status": "verified"
+ },
+ {
+  "file": "inc-db-scaling-migration.json",
+  "id": "gitlab-2017-db-deletion",
+  "figure": "sequence +100,000",
+  "status": "verified"
+ },
+ {
+  "file": "inc-db-scaling-migration.json",
+  "id": "gitlab-2017-db-deletion",
+  "figure": "max_connections 設為 8000",
+  "status": "verified"
+ },
+ {
+  "file": "inc-db-scaling-migration.json",
+  "id": "gadget-2025-shard-without-downtime",
+  "figure": "BFCM 預期流量 +400%",
+  "status": "verified"
+ },
+ {
+  "file": "inc-db-scaling-migration.json",
+  "id": "gadget-2025-shard-without-downtime",
+  "figure": "最長暫停 4 秒、p95 250ms",
+  "status": "verified"
+ },
+ {
+  "file": "inc-db-scaling-migration.json",
+  "id": "gadget-2025-shard-without-downtime",
+  "figure": "暫停上限 5 秒",
+  "status": "verified"
+ },
+ {
+  "file": "inc-db-scaling-migration.json",
+  "id": "gadget-2025-shard-without-downtime",
+  "figure": "最長交易 8 秒",
+  "status": "verified"
+ },
+ {
+  "file": "inc-db-scaling-migration.json",
+  "id": "gadget-2025-shard-without-downtime",
+  "figure": "100K+ 商店",
+  "status": "verified"
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "anthropic-2025-08-three-bugs",
+  "figure": "Sonnet 4 請求受影響比例：初期 0.8%，8/31 高峰 16%",
+  "status": "verified"
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "anthropic-2025-08-three-bugs",
+  "figure": "約 30% 的 Claude Code 使用者至少有一則訊息被誤路由",
+  "status": "verified"
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "anthropic-2025-08-three-bugs",
+  "figure": "Bedrock 高峰 0.18%；Vertex AI 8/27–9/16 低於 0.0004%",
+  "status": "verified"
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "anthropic-2025-08-three-bugs",
+  "figure": "Opus 4.1 / Opus 4 輸出損毀 8/25–8/28；Sonnet 4 8/25–9/2",
+  "status": "verified"
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "anthropic-2026-03-claude-code-quality",
+  "figure": "ablation 顯示 verbosity prompt 造成 3% 效能下降",
+  "status": "verified"
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "anthropic-2026-03-claude-code-quality",
+  "figure": "reasoning effort 變更 3/4 至 4/7 回滾，約 34 天",
+  "status": "not_found"
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "anthropic-2026-03-claude-code-quality",
+  "figure": "thinking 清除 bug 3/26 至 4/10 修復，約 15 天",
+  "status": "verified"
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "anthropic-2026-03-claude-code-quality",
+  "figure": "verbosity prompt 4/16 至 4/20 回滾，4 天",
+  "status": "verified"
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "openai-2024-02-chatgpt-gibberish",
+  "figure": "事故視窗約 25.5 小時（2/20–2/22）",
+  "status": "unreadable"
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "openai-2024-02-chatgpt-gibberish",
+  "figure": "5 個受影響元件（Conversations、Login、Search、File uploads、Voice mode）",
+  "status": "unreadable"
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "openai-2024-02-chatgpt-gibberish",
+  "figure": "2/21 07:47 UTC 確認問題",
+  "status": "unreadable"
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "openai-2024-12-11-k8s-telemetry",
+  "figure": "持續 4 小時 22 分（15:16–19:38 PST）",
+  "status": "not_found"
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "openai-2024-12-11-k8s-telemetry",
+  "figure": "14 個受影響元件",
+  "status": "not_found"
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "openai-2024-12-11-k8s-telemetry",
+  "figure": "15:13 警報觸發，16:36 第一個 cluster 恢復，19:38 全面恢復",
+  "status": "not_found"
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "characterai-2024-inference-cost",
+  "figure": "約 20,000 queries per second（約 Google Search 流量的 20%）",
+  "status": "verified"
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "characterai-2024-inference-cost",
+  "figure": "自 2022 年上線以來成本降低 33 倍",
+  "status": "verified"
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "characterai-2024-inference-cost",
+  "figure": "比使用主流商用 API 的競爭者便宜 13.5 倍",
+  "status": "verified"
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "vllm-2023-pagedattention",
+  "figure": "既有系統浪費 60%–80% 記憶體",
+  "status": "verified"
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "vllm-2023-pagedattention",
+  "figure": "vLLM 浪費低於 4%",
+  "status": "verified"
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "vllm-2023-pagedattention",
+  "figure": "吞吐最高為 HuggingFace Transformers 的 24 倍、TGI 的 3.5 倍",
+  "status": "verified"
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "vllm-2023-pagedattention",
+  "figure": "LMSYS 部署：最高 30 倍吞吐並減少 50% GPU",
+  "status": "verified"
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "vllm-2023-pagedattention",
+  "figure": "共享 block 可減少最高 55% 記憶體",
+  "status": "verified"
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "anyscale-2023-continuous-batching",
+  "figure": "vLLM 相對 naive static batching 提升 23 倍",
+  "status": "verified"
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "anyscale-2023-continuous-batching",
+  "figure": "TGI / Ray Serve 提升 8 倍；NVIDIA FasterTransformer 靜態最佳化提升 4 倍",
+  "status": "verified"
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "anyscale-2023-continuous-batching",
+  "figure": "基準：OPT-13B 於 A100 40GB",
+  "status": "verified"
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "anyscale-2023-continuous-batching",
+  "figure": "13B 模型每 token 近 1MB 狀態",
+  "status": "verified"
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "databricks-2023-llm-inference-perf",
+  "figure": "continuous batching 比 dynamic batching 高 10x–20x 吞吐",
+  "status": "verified"
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "databricks-2023-llm-inference-perf",
+  "figure": "A100 上 batch 1 到 64：吞吐提升 14 倍、延遲增加 4 倍",
+  "status": "verified"
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "databricks-2023-llm-inference-perf",
+  "figure": "Llama2-70B 由 4 張改 8 張 A100，延遲只降到 0.7 倍",
+  "status": "verified"
+ },
+ {
+  "file": "inc-llm-serving.json",
+  "id": "databricks-2023-llm-inference-perf",
+  "figure": "Llama2-70B 在 1024 tokens、batch 64 的 KV cache：FP16 20GB，INT8 10GB",
+  "status": "verified"
+ },
+ {
+  "file": "inc-multi-region-dr.json",
+  "id": "aws-2025-dynamodb-dns-us-east-1",
+  "figure": "事件從 10/19 11:48 PM PDT 到 10/20 2:20 PM PDT",
+  "status": "verified"
+ },
+ {
+  "file": "inc-multi-region-dr.json",
+  "id": "aws-2025-dynamodb-dns-us-east-1",
+  "figure": "DNS 於 2:25 AM PDT 人工還原（約 2 小時 37 分後）",
+  "status": "verified"
+ },
+ {
+  "file": "inc-multi-region-dr.json",
+  "id": "aws-2025-dynamodb-dns-us-east-1",
+  "figure": "DynamoDB global tables replica 於 2:32 AM 全部追上",
+  "status": "verified"
+ },
+ {
+  "file": "inc-multi-region-dr.json",
+  "id": "aws-2025-dynamodb-dns-us-east-1",
+  "figure": "Redshift 以 IAM user 憑證查詢的客戶 11:47 PM 到 1:20 AM 無法連線（因呼叫 us-east-1 IAM API）",
+  "status": "verified"
+ },
+ {
+  "file": "inc-multi-region-dr.json",
+  "id": "aws-builders-static-stability",
+  "figure": "三個 AZ 時過量配置 50%，每個 AZ 只跑在壓測水位的 66%",
+  "status": "verified"
+ },
+ {
+  "file": "inc-multi-region-dr.json",
+  "id": "cloudflare-2023-pdx04-control-plane",
+  "figure": "UPS 電池只撐 4 分鐘，設計值為 10 分鐘",
+  "status": "verified"
+ },
+ {
+  "file": "inc-multi-region-dr.json",
+  "id": "cloudflare-2023-pdx04-control-plane",
+  "figure": "11:43 UTC 斷電，13:40 UTC 決定 failover，13:43 UTC 第一批服務在 DR site 啟動（約 2 小時）",
+  "status": "verified"
+ },
+ {
+  "file": "inc-multi-region-dr.json",
+  "id": "cloudflare-2023-pdx04-control-plane",
+  "figure": "11/4 04:25 UTC 完全恢復（約 2 天）",
+  "status": "verified"
+ },
+ {
+  "file": "inc-multi-region-dr.json",
+  "id": "cloudflare-2023-pdx04-control-plane",
+  "figure": "10 台發電機全部下線",
+  "status": "verified"
+ },
+ {
+  "file": "inc-multi-region-dr.json",
+  "id": "cloudflare-2025-workers-kv-gcp",
+  "figure": "事故持續 2 小時 28 分鐘",
+  "status": "verified"
+ },
+ {
+  "file": "inc-multi-region-dr.json",
+  "id": "cloudflare-2025-workers-kv-gcp",
+  "figure": "Workers KV 請求失敗率 90.22%",
+  "status": "verified"
+ },
+ {
+  "file": "inc-multi-region-dr.json",
+  "id": "cloudflare-2025-workers-kv-gcp",
+  "figure": "Access 身分登入失敗率 100%",
+  "status": "verified"
+ },
+ {
+  "file": "inc-multi-region-dr.json",
+  "id": "slack-2021-az-cell-drain",
+  "figure": "事故 6/30 11:45 AM 到 12:33 PM PDT，之後 5:22 PM 到 5:31 PM 再次發生",
+  "status": "verified"
+ },
+ {
+  "file": "inc-multi-region-dr.json",
+  "id": "slack-2021-az-cell-drain",
+  "figure": "目標：5 分鐘內移除 AZ 的大部分流量",
+  "status": "verified"
+ },
+ {
+  "file": "inc-multi-region-dr.json",
+  "id": "slack-2021-az-cell-drain",
+  "figure": "傳播時間為秒級，權重調整粒度 1%",
+  "status": "verified"
+ },
+ {
+  "file": "inc-multi-region-dr.json",
+  "id": "slack-2021-az-cell-drain",
+  "figure": "99.99% 可用性 SLA，代表每年不可用時間少於 1 小時",
+  "status": "verified"
+ },
+ {
+  "file": "inc-multi-region-dr.json",
+  "id": "gcp-2023-europe-west9-paris",
+  "figure": "europe-west9-a 的 GCE VM 有 58% 直接受影響",
+  "status": "verified"
+ },
+ {
+  "file": "inc-multi-region-dr.json",
+  "id": "gcp-2023-europe-west9-paris",
+  "figure": "55% 的 PD volumes 被停用，79% 的 regional PD volumes 有一個 replica 在受影響建築",
+  "status": "verified"
+ },
+ {
+  "file": "inc-multi-region-dr.json",
+  "id": "gcp-2023-europe-west9-paris",
+  "figure": "約 16 小時才撲滅電池房火災",
+  "status": "verified"
+ },
+ {
+  "file": "inc-multi-region-dr.json",
+  "id": "gcp-2023-europe-west9-paris",
+  "figure": "Spanner quorum 於 4/26 12:47 恢復；區域內有 13 小時沒有 policy 更新",
+  "status": "verified"
+ },
+ {
+  "file": "inc-multi-region-dr.json",
+  "id": "github-2018-orchestrator-failover",
+  "figure": "22:52 UTC 開始，網路分區 43 秒",
+  "status": "verified"
+ },
+ {
+  "file": "inc-multi-region-dr.json",
+  "id": "github-2018-orchestrator-failover",
+  "figure": "整個事故 24 小時 11 分鐘",
+  "status": "verified"
+ },
+ {
+  "file": "inc-multi-region-dr.json",
+  "id": "github-2018-orchestrator-failover",
+  "figure": "西岸主庫累積約 40 分鐘寫入",
+  "status": "verified"
+ },
+ {
+  "file": "inc-multi-region-dr.json",
+  "id": "github-2018-orchestrator-failover",
+  "figure": "有一個繁忙叢集在該窗口有 954 筆寫入需人工對帳",
+  "status": "verified"
+ },
+ {
+  "file": "inc-multi-region-dr.json",
+  "id": "github-2018-orchestrator-failover",
+  "figure": "暫停 5 百萬以上 webhook 事件與 8 萬筆 Pages 建置",
+  "status": "verified"
+ },
+ {
+  "file": "inc-multi-region-dr.json",
+  "id": "atlassian-2022-site-deletion-dr",
+  "figure": "883 個站台、775 個客戶受影響，99.6% 客戶不受影響",
+  "status": "verified"
+ },
+ {
+  "file": "inc-multi-region-dr.json",
+  "id": "atlassian-2022-site-deletion-dr",
+  "figure": "RPO 達標：資料還原到刪除前 5 分鐘；沒有客戶損失超過 5 分鐘資料",
+  "status": "verified"
+ },
+ {
+  "file": "inc-multi-region-dr.json",
+  "id": "atlassian-2022-site-deletion-dr",
+  "figure": "RTO 未達標：4/5 到 4/18 共 14 天",
+  "status": "verified"
+ },
+ {
+  "file": "inc-multi-region-dr.json",
+  "id": "atlassian-2022-site-deletion-dr",
+  "figure": "不可變備份保留 30 天",
+  "status": "verified"
+ },
+ {
+  "file": "inc-multi-region-dr.json",
+  "id": "atlassian-2022-site-deletion-dr",
+  "figure": "57 個客戶的 Confluence / Insight 資料庫還原到早於 5 分鐘的時間點",
+  "status": "verified"
+ },
+ {
+  "file": "inc-overload.json",
+  "id": "aws-2019-using-load-shedding",
+  "figure": "median latency 等於 client timeout 時，client 感知 availability 為 50%",
+  "status": "verified"
+ },
+ {
+  "file": "inc-overload.json",
+  "id": "aws-2019-using-load-shedding",
+  "figure": "文中範例：服務 shed 掉 60% 流量時，median latency 會因為 fast-fail 請求而看起來很漂亮",
+  "status": "verified"
+ },
+ {
+  "file": "inc-overload.json",
+  "id": "google-sre-handling-overload",
+  "figure": "範例：datacenter 有 100 個 backend task、每個每秒 500 個請求，LB 上限為 50,000 QPS",
+  "status": "verified"
+ },
+ {
+  "file": "inc-overload.json",
+  "id": "google-sre-handling-overload",
+  "figure": "範例：10,000 CPU 的服務，Gmail 與 Calendar 各 4,000、Android 3,000、Google+ 2,000、其他 500 CPU seconds per second（總和超賣）",
+  "status": "verified"
+ },
+ {
+  "file": "inc-overload.json",
+  "id": "google-sre-handling-overload",
+  "figure": "adaptive throttling 保留近 2 分鐘的 requests 與 accepts；偏好 2x 乘數，另舉 1.1 的例子",
+  "status": "verified"
+ },
+ {
+  "file": "inc-overload.json",
+  "id": "google-sre-handling-overload",
+  "figure": "per-request retry 最多 3 次、per-client retry 比例 10%；最壞情況放大從近 3X 降到約 1.1x",
+  "status": "verified"
+ },
+ {
+  "file": "inc-overload.json",
+  "id": "stripe-2017-four-rate-limiters",
+  "figure": "範例：同時最多 20 個進行中的請求（concurrent limiter）",
+  "status": "verified"
+ },
+ {
+  "file": "inc-overload.json",
+  "id": "stripe-2017-four-rate-limiters",
+  "figure": "範例：保留 20% fleet 給 critical 請求，non-critical 超出 80% 配額回 503",
+  "status": "verified"
+ },
+ {
+  "file": "inc-overload.json",
+  "id": "stripe-2017-four-rate-limiters",
+  "figure": "當月 concurrent limiter 觸發約 12,000 次；worker utilization shedder 只拒絕 100 個請求",
+  "status": "verified"
+ },
+ {
+  "file": "inc-overload.json",
+  "id": "netflix-2020-prioritized-load-shedding",
+  "figure": "priority score 1 到 100",
+  "status": "unreadable"
+ },
+ {
+  "file": "inc-overload.json",
+  "id": "netflix-2020-prioritized-load-shedding",
+  "figure": "cubic 曲線示例：超載 35% 時閾值仍在 90 多，80% 時降到 50，95% 時降到 10",
+  "status": "unreadable"
+ },
+ {
+  "file": "inc-overload.json",
+  "id": "netflix-2020-prioritized-load-shedding",
+  "figure": "ChAP 實驗：小量正式用戶分為對照與實驗組，持續 45 分鐘",
+  "status": "unreadable"
+ },
+ {
+  "file": "inc-overload.json",
+  "id": "uber-qalm-criticality-shedding",
+  "figure": "平台尖峰流量最高 300,000 requests per second，超過 450 個內部服務",
+  "status": "unreadable"
+ },
+ {
+  "file": "inc-overload.json",
+  "id": "uber-qalm-criticality-shedding",
+  "figure": "壓測 6,000 RPS：無 QALM 時 latency 可高達 20 秒；啟用後 p99 低於 400 ms，丟掉約 20% 非關鍵請求，成功請求 latency 改善 98%",
+  "status": "unreadable"
+ },
+ {
+  "file": "inc-overload.json",
+  "id": "uber-qalm-criticality-shedding",
+  "figure": "雙 caller 各約 2,300 RPS 打同一 endpoint：過載時只丟 non-critical 的 document-staging，critical 的 document 全部成功",
+  "status": "unreadable"
+ },
+ {
+  "file": "inc-overload.json",
+  "id": "uber-qalm-criticality-shedding",
+  "figure": "5 個 endpoint 各 100 RPS 的 CPU profile：開銷約 3%",
+  "status": "unreadable"
+ },
+ {
+  "file": "inc-overload.json",
+  "id": "uber-qalm-criticality-shedding",
+  "figure": "Uber Visa 測試：getProvidedCard 達 1,800 RPS 時，apply 在 30 分鐘壓測中只有 2 個請求逾時",
+  "status": "unreadable"
+ },
+ {
+  "file": "inc-overload.json",
+  "id": "linkedin-hodor-overload-detection",
+  "figure": "超過 1,000 個 JVM 微服務",
+  "status": "verified"
+ },
+ {
+  "file": "inc-overload.json",
+  "id": "linkedin-hodor-overload-detection",
+  "figure": "heartbeat 範例：sleep 10ms，一秒視窗內 p99 超過 55ms 為違規，連續 8 個違規視窗判定 CPU 過載",
+  "status": "verified"
+ },
+ {
+  "file": "inc-overload.json",
+  "id": "linkedin-hodor-overload-detection",
+  "figure": "traffic tier ID：optional 為 1000、degradable 為 5000、non-degradable 為 10000",
+  "status": "verified"
+ },
+ {
+  "file": "inc-overload.json",
+  "id": "linkedin-hodor-overload-detection",
+  "figure": "上線前至少分析一週的 monitoring 資料；目標可用性為 99.9%",
+  "status": "verified"
+ },
+ {
+  "file": "inc-overload.json",
+  "id": "shopify-2017-checkout-throttle",
+  "figure": "leaky bucket 的週期為 5 秒",
+  "status": "verified"
+ },
+ {
+  "file": "inc-overload.json",
+  "id": "shopify-2017-checkout-throttle",
+  "figure": "第一版排隊最久達 40 分鐘，而 sale 本身約 40 分鐘",
+  "status": "verified"
+ },
+ {
+  "file": "inc-overload.json",
+  "id": "shopify-2017-checkout-throttle",
+  "figure": "2016 年 2 月的 Kylie sale 讓同一 database shard 上的所有店都掛掉",
+  "status": "verified"
+ },
+ {
+  "file": "inc-overload.json",
+  "id": "cloudflare-2017-edge-rate-limiting",
+  "figure": "50 requests/minute 範例：當前視窗 18 個請求、前一分鐘 42 個請求",
+  "status": "verified"
+ },
+ {
+  "file": "inc-overload.json",
+  "id": "cloudflare-2017-edge-rate-limiting",
+  "figure": "對 4 億個請求、27 萬個不同來源的分析：0.003% 請求被誤放行或誤限流，真實速率與近似速率平均差 6%，3 個來源略超過門檻卻被放行（實際速率低於門檻的 115%），沒有低於門檻的來源被誤擋",
+  "status": "not_found"
+ },
+ {
+  "file": "inc-overload.json",
+  "id": "cloudflare-2017-edge-rate-limiting",
+  "figure": "文中提到曾成功擋下單一網域每秒 40 萬個請求的攻擊",
+  "status": "verified"
+ },
+ {
+  "file": "inc-overload.json",
+  "id": "acm-2012-codel-controlled-delay",
+  "figure": "target 為 5 ms；低於 5 ms 使用率會下降，高於 5 ms 使用率幾乎沒有改善",
+  "status": "unreadable"
+ },
+ {
+  "file": "inc-overload.json",
+  "id": "acm-2012-codel-controlled-delay",
+  "figure": "模擬涵蓋瓶頸頻寬 64 kbps 至 100 Mbps、端到端延遲 5 ms 至 1 秒",
+  "status": "unreadable"
+ },
+ {
+  "file": "inc-resource-exhaustion.json",
+  "id": "sentry-2015-07-xid-wraparound",
+  "figure": "XID 上限約 2 billion（原文：something around 2 billion）",
+  "status": "verified"
+ },
+ {
+  "file": "inc-resource-exhaustion.json",
+  "id": "sentry-2015-07-xid-wraparound",
+  "figure": "剩餘少於 1 million 個 XID 時 Postgres 停止接受指令",
+  "status": "verified"
+ },
+ {
+  "file": "inc-resource-exhaustion.json",
+  "id": "sentry-2015-07-xid-wraparound",
+  "figure": "事後硬體：256GB memory（由 128GB 升級）、24 cores",
+  "status": "verified"
+ },
+ {
+  "file": "inc-resource-exhaustion.json",
+  "id": "sentry-2015-07-xid-wraparound",
+  "figure": "autovacuum_freeze_max_age = 500000000、autovacuum_max_workers = 6、autovacuum_naptime = 15s",
+  "status": "verified"
+ },
+ {
+  "file": "inc-resource-exhaustion.json",
+  "id": "sentry-2015-07-xid-wraparound",
+  "figure": "maintenance_work_mem 設 10GB，但有 1GB 內部硬上限",
+  "status": "verified"
+ },
+ {
+  "file": "inc-resource-exhaustion.json",
+  "id": "mailchimp-2019-02-mandrill-xid-wraparound",
+  "figure": "事故 2/4 05:35 UTC 開始，2/5 22:09 UTC 結束，約 41 小時",
+  "status": "not_found"
+ },
+ {
+  "file": "inc-resource-exhaustion.json",
+  "id": "mailchimp-2019-02-mandrill-xid-wraparound",
+  "figure": "僅約 80% 排隊郵件被送出",
+  "status": "verified"
+ },
+ {
+  "file": "inc-resource-exhaustion.json",
+  "id": "mailchimp-2019-02-mandrill-xid-wraparound",
+  "figure": "2/4 14:16 UTC 開始 vacuum，2/5 19:12 UTC truncate 兩張 TB 級表，vacuum 約一小時完成",
+  "status": "verified"
+ },
+ {
+  "file": "inc-resource-exhaustion.json",
+  "id": "mailchimp-2019-02-mandrill-xid-wraparound",
+  "figure": "2018 年 11 月已知尖峰 XID 約達上限一半",
+  "status": "verified"
+ },
+ {
+  "file": "inc-resource-exhaustion.json",
+  "id": "cloudflare-bind-before-connect-ephemeral-ports",
+  "figure": "預設 ephemeral port 範圍 32768–60999，共 28,232 個",
+  "status": "verified"
+ },
+ {
+  "file": "inc-resource-exhaustion.json",
+  "id": "cloudflare-bind-before-connect-ephemeral-ports",
+  "figure": "每個協定約 28,000 並發連線上限",
+  "status": "verified"
+ },
+ {
+  "file": "inc-resource-exhaustion.json",
+  "id": "cloudflare-bind-before-connect-ephemeral-ports",
+  "figure": "IP_BIND_ADDRESS_NO_PORT 需 kernel 4.2+",
+  "status": "not_found"
+ },
+ {
+  "file": "inc-resource-exhaustion.json",
+  "id": "github-2021-05-int32-overflow-scoped-tokens",
+  "figure": "5/16 07:17 UTC 開始，持續 9 小時 48 分",
+  "status": "not_found"
+ },
+ {
+  "file": "inc-resource-exhaustion.json",
+  "id": "github-2021-05-int32-overflow-scoped-tokens",
+  "figure": "foreign key 超過 max INT32",
+  "status": "verified"
+ },
+ {
+  "file": "inc-resource-exhaustion.json",
+  "id": "bluesky-2026-04-unbounded-rpc-port-exhaustion",
+  "figure": "約 50% 使用者受影響，約 8 小時",
+  "status": "verified"
+ },
+ {
+  "file": "inc-resource-exhaustion.json",
+  "id": "bluesky-2026-04-unbounded-rpc-port-exhaustion",
+  "figure": "單次請求 15–20 thousand URIs",
+  "status": "verified"
+ },
+ {
+  "file": "inc-resource-exhaustion.json",
+  "id": "bluesky-2026-04-unbounded-rpc-port-exhaustion",
+  "figure": "OS thread 由 150 增至 1500（10x）",
+  "status": "verified"
+ },
+ {
+  "file": "inc-resource-exhaustion.json",
+  "id": "bluesky-2026-04-unbounded-rpc-port-exhaustion",
+  "figure": "典型請求查 1–50 個 post",
+  "status": "verified"
+ },
+ {
+  "file": "inc-resource-exhaustion.json",
+  "id": "pagerduty-2025-08-kafka-producer-per-request",
+  "figure": "尖峰每小時約 4.2 million 個額外 producer，為正常新 producer 數的 84 倍",
+  "status": "verified"
+ },
+ {
+  "file": "inc-resource-exhaustion.json",
+  "id": "pagerduty-2025-08-kafka-producer-per-request",
+  "figure": "18.87% create event 請求回 5xx",
+  "status": "verified"
+ },
+ {
+  "file": "inc-resource-exhaustion.json",
+  "id": "pagerduty-2025-08-kafka-producer-per-request",
+  "figure": "約 95% 事件被拒絕（尖峰）",
+  "status": "verified"
+ },
+ {
+  "file": "inc-resource-exhaustion.json",
+  "id": "pagerduty-2025-08-kafka-producer-per-request",
+  "figure": "第一次 03:53–10:10 UTC，第二次 16:38–20:24 UTC",
+  "status": "verified"
+ },
+ {
+  "file": "inc-resource-exhaustion.json",
+  "id": "gitlab-2025-09-runner-file-descriptors",
+  "figure": "29.3K 使用者、4,534 個 top-level namespaces 受影響",
+  "status": "verified"
+ },
+ {
+  "file": "inc-resource-exhaustion.json",
+  "id": "gitlab-2025-09-runner-file-descriptors",
+  "figure": "16M 請求、217K CI jobs",
+  "status": "verified"
+ },
+ {
+  "file": "inc-resource-exhaustion.json",
+  "id": "gitlab-2025-09-runner-file-descriptors",
+  "figure": "影響 00:58–02:45 UTC，約 1 小時 47 分",
+  "status": "verified"
+ },
+ {
+  "file": "inc-resource-exhaustion.json",
+  "id": "gitlab-2025-09-runner-file-descriptors",
+  "figure": "Sev3 01:04 → Sev2 01:20 → Sev1 02:06 UTC",
+  "status": "verified"
+ },
+ {
+  "file": "inc-resource-exhaustion.json",
+  "id": "ravendb-2023-12-process-per-write-time-wait",
+  "figure": "高峰 32,768 條 TCP 連線，對應 Linux ephemeral port 範圍",
+  "status": "not_found"
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "github-2018-memcached-amplification",
+  "figure": "1.35 Tbps 峰值",
+  "status": "verified"
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "github-2018-memcached-amplification",
+  "figure": "126.9 million packets per second",
+  "status": "verified"
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "github-2018-memcached-amplification",
+  "figure": "17:21 偵測、17:26 切換、17:30 恢復（共 9 分鐘）",
+  "status": "verified"
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "github-2018-memcached-amplification",
+  "figure": "51,000 倍放大",
+  "status": "verified"
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "github-2018-memcached-amplification",
+  "figure": "第二波 400 Gbps，約 18:00 UTC",
+  "status": "verified"
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "cloudflare-2018-memcrashed-udp-amplification",
+  "figure": "15 bytes 請求 → 134KB 回應（8,933 倍）",
+  "status": "not_found"
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "cloudflare-2018-memcrashed-udp-amplification",
+  "figure": "實測最高 51,200 倍（750KB 回應）",
+  "status": "verified"
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "cloudflare-2018-memcrashed-udp-amplification",
+  "figure": "峰值 260 Gbps、約 23 million pps、封包平均 1,400 bytes",
+  "status": "verified"
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "cloudflare-2018-memcrashed-udp-amplification",
+  "figure": "5,729 台伺服器；Shodan 找到 88,000 台暴露",
+  "status": "verified"
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "cloudflare-2018-memcrashed-udp-amplification",
+  "figure": "120+ 個 PoP",
+  "status": "verified"
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "cloudflare-2023-http2-rapid-reset",
+  "figure": "峰值 201 million requests per second",
+  "status": "verified"
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "cloudflare-2023-http2-rapid-reset",
+  "figure": "約 20,000 台機器的 botnet",
+  "status": "verified"
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "cloudflare-2023-http2-rapid-reset",
+  "figure": "server 宣告併發 stream 上限 100",
+  "status": "verified"
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "cloudflare-2023-http2-rapid-reset",
+  "figure": "8/29 短暫 12% 請求受影響，初期約 1%",
+  "status": "verified"
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "cloudflare-2023-http2-rapid-reset",
+  "figure": "Google 回報同一波攻擊峰值 398 million rps",
+  "status": "verified"
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "google-2022-cloud-armor-46m-rps",
+  "figure": "峰值 46 million rps（比先前記錄 26M rps 大 76%）",
+  "status": "verified"
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "google-2022-cloud-armor-46m-rps",
+  "figure": "9:45 PT 開始、約 8 分鐘到 100,000 rps、再 2 分鐘到峰值、10:54 結束（共 69 分鐘）",
+  "status": "verified"
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "google-2022-cloud-armor-46m-rps",
+  "figure": "5,256 個來源 IP、132 個國家",
+  "status": "verified"
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "google-2022-cloud-armor-46m-rps",
+  "figure": "1,169 個 Tor exit node",
+  "status": "verified"
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "cloudflare-2024-3-8tbps-autonomous-mitigation",
+  "figure": "峰值 3.8 Tbps",
+  "status": "verified"
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "cloudflare-2024-3-8tbps-autonomous-mitigation",
+  "figure": "2.14 billion packets per second",
+  "status": "verified"
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "cloudflare-2024-3-8tbps-autonomous-mitigation",
+  "figure": "單次攻擊 60–65 秒",
+  "status": "verified"
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "cloudflare-2024-3-8tbps-autonomous-mitigation",
+  "figure": "九月內 100 多次 hyper-volumetric L3/4 攻擊",
+  "status": "not_found"
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "cloudflare-2021-17m-rps-https-flood",
+  "figure": "17.2 million rps，約為先前紀錄的 3 倍",
+  "status": "verified"
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "cloudflare-2021-17m-rps-https-flood",
+  "figure": "超過 20,000 個 bot、125 個國家",
+  "status": "verified"
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "cloudflare-2021-17m-rps-https-flood",
+  "figure": "數秒內超過 3.3 億個請求",
+  "status": "not_found"
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "cloudflare-2021-17m-rps-https-flood",
+  "figure": "約佔平均合法流量的 68%",
+  "status": "verified"
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "cloudflare-2021-17m-rps-https-flood",
+  "figure": "同週另一波峰值接近 8 million rps",
+  "status": "verified"
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "aws-2023-cloudfront-edge-absorption",
+  "figure": "CloudFront 峰值超過 155 million rps（2023-08 Rapid Reset）",
+  "status": "not_found"
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "aws-2023-cloudfront-edge-absorption",
+  "figure": "2023 Q1 阻擋超過 130 萬次 botnet 驅動的 DDoS 攻擊",
+  "status": "not_found"
+ },
+ {
+  "file": "inc-security-availability.json",
+  "id": "aws-2023-cloudfront-edge-absorption",
+  "figure": "協同拆除 23 萬個 L7/HTTP DDoS 攻擊來源",
+  "status": "verified"
+ },
+ {
+  "file": "inc-tail-latency.json",
+  "id": "google-2013-tail-at-scale",
+  "figure": "單機 10ms、P99 一秒：fan-out 100 台 → 63% 請求超過 1 秒",
+  "status": "verified"
+ },
+ {
+  "file": "inc-tail-latency.json",
+  "id": "google-2013-tail-at-scale",
+  "figure": "Google 真實服務 Table 1：單一請求 P99 10ms；全部完成的 P99 為 140ms；95% 完成為 70ms",
+  "status": "verified"
+ },
+ {
+  "file": "inc-tail-latency.json",
+  "id": "google-2013-tail-at-scale",
+  "figure": "BigTable 讀 1,000 個 key（分佈在 100 台）：10ms 後送 hedged request，P99.9 從 1,800ms 降到 74ms，只多 2% 請求",
+  "status": "verified"
+ },
+ {
+  "file": "inc-tail-latency.json",
+  "id": "google-2013-tail-at-scale",
+  "figure": "tied request 對 BigTable 讀（隔離叢集）：1ms 後送 tied request，median 降 16%，P99.9 近 40%",
+  "status": "verified"
+ },
+ {
+  "file": "inc-tail-latency.json",
+  "id": "discord-2020-go-gc-read-states",
+  "figure": "Go 強制 GC 間隔：至少每 2 分鐘",
+  "status": "verified"
+ },
+ {
+  "file": "inc-tail-latency.json",
+  "id": "discord-2020-go-gc-read-states",
+  "figure": "LRU cache 原為數千萬筆 Read States；Rust 版容量提高到 800 萬筆（文中原話為 8 million Read States）",
+  "status": "not_found"
+ },
+ {
+  "file": "inc-tail-latency.json",
+  "id": "twitch-2019-go-gc-ballast",
+  "figure": "GC 次數降約 99%",
+  "status": "not_found"
+ },
+ {
+  "file": "inc-tail-latency.json",
+  "id": "twitch-2019-go-gc-ballast",
+  "figure": "CPU 使用降約 30%",
+  "status": "verified"
+ },
+ {
+  "file": "inc-tail-latency.json",
+  "id": "twitch-2019-go-gc-ballast",
+  "figure": "尖峰時 P99 API 延遲改善約 45%",
+  "status": "not_found"
+ },
+ {
+  "file": "inc-tail-latency.json",
+  "id": "twitch-2019-go-gc-ballast",
+  "figure": "ballast 10GiB",
+  "status": "verified"
+ },
+ {
+  "file": "inc-tail-latency.json",
+  "id": "datadog-2023-network-latency-hidden-bottlenecks",
+  "figure": "正常 P99 約 100ms，問題期間超過 1000ms，修復後穩定低於 100ms",
+  "status": "not_found"
+ },
+ {
+  "file": "inc-tail-latency.json",
+  "id": "datadog-2023-network-latency-hidden-bottlenecks",
+  "figure": "Envoy 配置 2 core",
+  "status": "verified"
+ },
+ {
+  "file": "inc-tail-latency.json",
+  "id": "datadog-2023-network-latency-hidden-bottlenecks",
+  "figure": "8 個 ENA transmit queue 只用其中 1 個",
+  "status": "verified"
+ },
+ {
+  "file": "inc-tail-latency.json",
+  "id": "cloudflare-2017-nginx-socket-balancing",
+  "figure": "單一 queue：median 30.28ms、max 72.65ms、標準差 1.58ms",
+  "status": "verified"
+ },
+ {
+  "file": "inc-tail-latency.json",
+  "id": "cloudflare-2017-nginx-socket-balancing",
+  "figure": "多 queue（SO_REUSEPORT）：median 24.67ms、max 144.55ms、標準差 25.27ms",
+  "status": "verified"
+ },
+ {
+  "file": "inc-tail-latency.json",
+  "id": "cloudflare-2022-tcp-collapse",
+  "figure": "預設 buffer 128KiB（含資料與 metadata），可用資料約 113KiB",
+  "status": "verified"
+ },
+ {
+  "file": "inc-tail-latency.json",
+  "id": "cloudflare-2022-tcp-collapse",
+  "figure": "window 預設上限為剩餘 buffer 空間的 50%",
+  "status": "verified"
+ },
+ {
+  "file": "inc-tail-latency.json",
+  "id": "cloudflare-2022-tcp-collapse",
+  "figure": "填滿 buffer 需 6 個 RTT",
+  "status": "verified"
+ },
+ {
+  "file": "inc-tail-latency.json",
+  "id": "cloudflare-2022-tcp-collapse",
+  "figure": "每個封包的 sk_buff 範例 metadata 為 576 bytes",
+  "status": "verified"
+ },
+ {
+  "file": "inc-tail-latency.json",
+  "id": "dropbox-2017-edge-web-server-tuning",
+  "figure": "event loop 延遲分佈：0–1ms 有 3799 筆、16–31ms 有 409 筆（範例直方圖）",
+  "status": "verified"
+ },
+ {
+  "file": "inc-tail-latency.json",
+  "id": "dropbox-2017-edge-web-server-tuning",
+  "figure": "fileslower 範例延遲 12.18ms、42.08ms、42.39ms",
+  "status": "verified"
+ },
+ {
+  "file": "inc-tail-latency.json",
+  "id": "dropbox-2017-edge-web-server-tuning",
+  "figure": "FQ+pacing 相較 CUBIC 封包遺失降 15–20%",
+  "status": "verified"
+ },
+ {
+  "file": "inc-tail-latency.json",
+  "id": "dropbox-2017-edge-web-server-tuning",
+  "figure": "ECDSA 比 RSA 快 10 倍",
+  "status": "verified"
+ },
+ {
+  "file": "inc-tail-latency.json",
+  "id": "netflix-2024-noisy-neighbor-ebpf",
+  "figure": "基準 P99 run queue latency 83 微秒；noisy neighbor 時 131 毫秒",
+  "status": "verified"
+ },
+ {
+  "file": "inc-tail-latency.json",
+  "id": "netflix-2024-noisy-neighbor-ebpf",
+  "figure": "每個 sched_* hook 開銷小於 600 奈秒",
+  "status": "verified"
+ },
+ {
+  "file": "inc-tail-latency.json",
+  "id": "cockroach-2022-go-scheduler-elastic-work",
+  "figure": "P99 scheduler latency 目標 1ms",
+  "status": "verified"
+ },
+ {
+  "file": "inc-tail-latency.json",
+  "id": "cockroach-2022-go-scheduler-elastic-work",
+  "figure": "elastic 工作 CPU 配置 5–75%（實驗範圍）",
+  "status": "verified"
+ },
+ {
+  "file": "inc-tail-latency.json",
+  "id": "cockroach-2022-go-scheduler-elastic-work",
+  "figure": "rangefeed catchup scan 的 P99 從超過 10 秒降到 60ms",
+  "status": "verified"
+ },
+ {
+  "file": "inc-third-party-dependency.json",
+  "id": "npm-2016-left-pad-unpublish",
+  "figure": "273 個套件被 unpublish（kik + 272 個）",
+  "status": "not_found"
+ },
+ {
+  "file": "inc-third-party-dependency.json",
+  "id": "npm-2016-left-pad-unpublish",
+  "figure": "約 2:30 PM PT 起每分鐘數百次失敗",
+  "status": "verified"
+ },
+ {
+  "file": "inc-third-party-dependency.json",
+  "id": "npm-2016-left-pad-unpublish",
+  "figure": "中斷 2.5 小時",
+  "status": "verified"
+ },
+ {
+  "file": "inc-third-party-dependency.json",
+  "id": "npm-2016-left-pad-unpublish",
+  "figure": "補發 1.0.0 約 10 分鐘內，還原 0.0.3 於 4:55 PM 完成",
+  "status": "not_found"
+ },
+ {
+  "file": "inc-third-party-dependency.json",
+  "id": "atlassian-2021-05-auth-provider-outage",
+  "figure": "05:43–07:05 UTC 受影響",
+  "status": "verified"
+ },
+ {
+  "file": "inc-third-party-dependency.json",
+  "id": "atlassian-2021-05-auth-provider-outage",
+  "figure": "登入頁失敗率接近 20%",
+  "status": "verified"
+ },
+ {
+  "file": "inc-third-party-dependency.json",
+  "id": "atlassian-2021-05-auth-provider-outage",
+  "figure": "4 分鐘內被自動監控發現",
+  "status": "verified"
+ },
+ {
+  "file": "inc-third-party-dependency.json",
+  "id": "atlassian-2021-05-auth-provider-outage",
+  "figure": "總解決時間約 1 小時 22 分",
+  "status": "verified"
+ },
+ {
+  "file": "inc-third-party-dependency.json",
+  "id": "jsdelivr-2024-05-cloudflare-cert-validation",
+  "figure": "持續超過 5 小時",
+  "status": "verified"
+ },
+ {
+  "file": "inc-third-party-dependency.json",
+  "id": "jsdelivr-2024-05-cloudflare-cert-validation",
+  "figure": "Cloudflare 託管憑證機制運作近 10 年",
+  "status": "verified"
+ },
+ {
+  "file": "inc-third-party-dependency.json",
+  "id": "lucidworks-2025-12-okta-ip-block",
+  "figure": "2025-12-03 13:30 UTC 開始，22:03 UTC 恢復",
+  "status": "verified"
+ },
+ {
+  "file": "inc-third-party-dependency.json",
+  "id": "lucidworks-2025-12-okta-ip-block",
+  "figure": "2025-12-05 16:17–19:00 UTC 再度發生",
+  "status": "verified"
+ },
+ {
+  "file": "inc-third-party-dependency.json",
+  "id": "lucidworks-2025-12-okta-ip-block",
+  "figure": "建議升級到 Fusion 5.9.15 以上取得自動 lexical fallback",
+  "status": "verified"
+ },
+ {
+  "file": "inc-third-party-dependency.json",
+  "id": "heroku-2025-10-aws-us-east-1",
+  "figure": "06:53 UTC 首次告警，10/21 03:33 UTC 結案",
+  "status": "verified"
+ },
+ {
+  "file": "inc-third-party-dependency.json",
+  "id": "heroku-2025-10-aws-us-east-1",
+  "figure": "部分 provisioning 請求延遲最多 4 小時",
+  "status": "verified"
+ },
+ {
+  "file": "inc-third-party-dependency.json",
+  "id": "heroku-2025-10-aws-us-east-1",
+  "figure": "19:11 UTC 人工修正 KVS",
+  "status": "verified"
+ },
+ {
+  "file": "inc-third-party-dependency.json",
+  "id": "cloudflare-2025-08-aws-peering-congestion",
+  "figure": "16:27 UTC 開始，20:18 UTC 結束",
+  "status": "verified"
+ },
+ {
+  "file": "inc-third-party-dependency.json",
+  "id": "cloudflare-2025-08-aws-peering-congestion",
+  "figure": "19:38 UTC 前影響大幅降低",
+  "status": "verified"
+ },
+ {
+  "file": "inc-third-party-dependency.json",
+  "id": "github-2025-06-copilot-model-provider",
+  "figure": "3 小時 12 分（17:55–21:07 UTC）",
+  "status": "verified"
+ },
+ {
+  "file": "inc-third-party-dependency.json",
+  "id": "github-2025-10-codespaces-third-party",
+  "figure": "10/20 錯誤率平均 39.5%、峰值 71%",
+  "status": "verified"
+ },
+ {
+  "file": "inc-third-party-dependency.json",
+  "id": "github-2025-10-codespaces-third-party",
+  "figure": "10/20 resume 錯誤率平均 23.4%、峰值 46%",
+  "status": "verified"
+ },
+ {
+  "file": "inc-third-party-dependency.json",
+  "id": "github-2025-10-codespaces-third-party",
+  "figure": "10/29 持續 6 小時 58 分，Codespaces 平均 90%",
+  "status": "verified"
+ },
+ {
+  "file": "inc-third-party-dependency.json",
+  "id": "github-2025-10-codespaces-third-party",
+  "figure": "約 100 個 Copilot Metrics API 下載請求失敗",
+  "status": "verified"
+ },
+ {
+  "file": "inc-time-clock.json",
+  "id": "azure-2012-leap-day-bug",
+  "figure": "4:00 PM PST 2/28（= 00:00 UTC 2/29）bug 被觸發",
+  "status": "verified"
+ },
+ {
+  "file": "inc-time-clock.json",
+  "id": "azure-2012-leap-day-bug",
+  "figure": "三次 25 分鐘 timeout（共 75 分鐘）後才達到 Human Investigate 門檻",
+  "status": "verified"
+ },
+ {
+  "file": "inc-time-clock.json",
+  "id": "azure-2012-leap-day-bug",
+  "figure": "6:38 PM 找到 root cause；6:55 PM 全域停用 service management",
+  "status": "verified"
+ },
+ {
+  "file": "inc-time-clock.json",
+  "id": "azure-2012-leap-day-bug",
+  "figure": "2:47 AM 第二次事故，七個 cluster 斷網",
+  "status": "verified"
+ },
+ {
+  "file": "inc-time-clock.json",
+  "id": "azure-2012-leap-day-bug",
+  "figure": "3/1 2:15 AM 全部服務宣告健康",
+  "status": "verified"
+ },
+ {
+  "file": "inc-time-clock.json",
+  "id": "azure-2012-leap-day-bug",
+  "figure": "客戶獲得 33% 帳單 credit",
+  "status": "verified"
+ },
+ {
+  "file": "inc-time-clock.json",
+  "id": "linux-2012-leap-second-hrtimer-futex",
+  "figure": "fix 新增 4 行於 kernel/time/timekeeping.c",
+  "status": "verified"
+ },
+ {
+  "file": "inc-time-clock.json",
+  "id": "linux-2012-leap-second-hrtimer-futex",
+  "figure": "commit author date 2012-07-05",
+  "status": "verified"
+ },
+ {
+  "file": "inc-time-clock.json",
+  "id": "meta-2022-leave-leap-second",
+  "figure": "自 1972 起已加 27 次閏秒",
+  "status": "verified"
+ },
+ {
+  "file": "inc-time-clock.json",
+  "id": "meta-2022-leave-leap-second",
+  "figure": "Meta smear 窗口 17 小時（quadratic）",
+  "status": "verified"
+ },
+ {
+  "file": "inc-time-clock.json",
+  "id": "meta-2022-leave-leap-second",
+  "figure": "Reddit 2012 約 30–40 分鐘中斷",
+  "status": "verified"
+ },
+ {
+  "file": "inc-time-clock.json",
+  "id": "google-leap-smear",
+  "figure": "2016 做法：20 小時（前後各 10 小時）、速率 0.0014%",
+  "status": "not_found"
+ },
+ {
+  "file": "inc-time-clock.json",
+  "id": "google-leap-smear",
+  "figure": "目前建議：24 小時線性 smear（正午到正午 UTC）、頻率變化約 11.6 ppm",
+  "status": "verified"
+ },
+ {
+  "file": "inc-time-clock.json",
+  "id": "google-leap-smear",
+  "figure": "smear 持續 86,401 秒",
+  "status": "verified"
+ },
+ {
+  "file": "inc-time-clock.json",
+  "id": "google-spanner-truetime",
+  "figure": "ε 在生產環境呈鋸齒狀，約 1 到 7 ms，大多數時間平均約 4 ms",
+  "status": "verified"
+ },
+ {
+  "file": "inc-time-clock.json",
+  "id": "google-spanner-truetime",
+  "figure": "daemon poll 間隔目前 30 秒",
+  "status": "verified"
+ },
+ {
+  "file": "inc-time-clock.json",
+  "id": "google-spanner-truetime",
+  "figure": "套用的 drift 速率設為 200 微秒 / 秒",
+  "status": "verified"
+ },
+ {
+  "file": "inc-time-clock.json",
+  "id": "google-spanner-truetime",
+  "figure": "論文統計：bad CPU 的機率是 bad clock 的 6 倍",
+  "status": "verified"
+ },
+ {
+  "file": "inc-time-clock.json",
+  "id": "cockroach-2022-living-without-atomic-clocks",
+  "figure": "NTP 同步系統的最大延遲可達 250ms",
+  "status": "verified"
+ },
+ {
+  "file": "inc-time-clock.json",
+  "id": "cockroach-2022-living-without-atomic-clocks",
+  "figure": "多數 uncertainty restart 只需重試一次，例如 2ms 的讀變 4ms",
+  "status": "verified"
+ },
+ {
+  "file": "inc-time-clock.json",
+  "id": "cockroach-clock-management-max-offset",
+  "figure": "max-offset 預設 500 ms",
+  "status": "verified"
+ },
+ {
+  "file": "inc-time-clock.json",
+  "id": "cockroach-clock-management-max-offset",
+  "figure": "偵測閾值：80%（預設 400ms）",
+  "status": "verified"
+ },
+ {
+  "file": "inc-time-clock.json",
+  "id": "cockroach-clock-management-max-offset",
+  "figure": "建議可降到 250ms",
+  "status": "verified"
+ },
+ {
+  "file": "inc-time-clock.json",
+  "id": "aws-time-sync-clockbound",
+  "figure": "NTP 連線誤差界通常小於 100 微秒",
+  "status": "verified"
+ },
+ {
+  "file": "inc-time-clock.json",
+  "id": "aws-time-sync-clockbound",
+  "figure": "PHC 連線誤差界通常小於 40 微秒",
+  "status": "verified"
+ },
+ {
+  "file": "inc-time-clock.json",
+  "id": "cloudflare-2017-leap-second",
+  "figure": "影響從 2017-01-01 00:00 UTC 持續到 06:45 UTC",
+  "status": "verified"
+ },
+ {
+  "file": "inc-time-clock.json",
+  "id": "cloudflare-2017-leap-second",
+  "figure": "高峰約 0.2% DNS 查詢受影響，不到 1% HTTP 請求出錯",
+  "status": "verified"
+ },
+ {
+  "file": "inc-time-clock.json",
+  "id": "cloudflare-2017-leap-second",
+  "figure": "遍及 102 個 data center，00:10 升級給工程師，00:34 確認問題",
+  "status": "verified"
+ },
+ {
+  "file": "mech-ads.json",
+  "id": "first-price-bid-shading",
+  "figure": "Yahoo/Verizon Media DSP 論文：離線 surplus lift +9.7%（log-normal）；線上 A/B ROI +2.4%（CPM）、+2.4%（CPC）、+8.6%（CPA）；系統每天處理「hundreds of billions」bid request",
+  "status": "verified"
+ },
+ {
+  "file": "mech-ads.json",
+  "id": "first-price-bid-shading",
+  "figure": "Google：2019 年 9 月起對所有 Ad Manager 合作夥伴 rollout first price",
+  "status": "verified"
+ },
+ {
+  "file": "mech-ads.json",
+  "id": "retrieval-ranking-ecpm",
+  "figure": "Meta Andromeda：retrieval 由『tens of millions』ad 候選篩到『a few thousand』；文中報告 recall +6%、ads quality +8%（特定 segment）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-ads.json",
+  "id": "delayed-conversion-feedback",
+  "figure": "Feedback Shift 論文（Criteo 資料集）：約 30% 的轉換在點擊後 1 小時內發生，約一半在一天後才發生，13% 在兩週後才發生；11.3% 的流量來自新活動",
+  "status": "verified"
+ },
+ {
+  "file": "mech-ads.json",
+  "id": "skadnetwork-postbacks",
+  "figure": "最多 3 個 postback（三個 conversion window，iOS 16.1+ / v4 簽名）",
+  "status": "unreadable"
+ },
+ {
+  "file": "mech-ads.json",
+  "id": "skadnetwork-postbacks",
+  "figure": "最多 5 個非得標廣告網路各收到一次 non-winning postback",
+  "status": "unreadable"
+ },
+ {
+  "file": "mech-audio.json",
+  "id": "shazam-constellation-peaks",
+  "figure": "論文實驗在 8 kHz、mono、16-bit 取樣下進行",
+  "status": "verified"
+ },
+ {
+  "file": "mech-audio.json",
+  "id": "shazam-constellation-peaks",
+  "figure": "1024-bin 頻率軸單一峰值最多只有 10 bits 的頻率資訊（低 entropy，所以才需要 combinatorial hash）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-audio.json",
+  "id": "shazam-combinatorial-hash",
+  "figure": "F=10 時，儲存約多 10 倍，搜尋速度約快 10000 倍",
+  "status": "verified"
+ },
+ {
+  "file": "mech-audio.json",
+  "id": "shazam-combinatorial-hash",
+  "figure": "兩個各 10 bits 的頻率加上 10 bits 的 Δt = 30 bits，比單點多 20 bits，specificity 約高一百萬倍",
+  "status": "verified"
+ },
+ {
+  "file": "mech-audio.json",
+  "id": "shazam-combinatorial-hash",
+  "figure": "每個 hash 可打包成 32-bit unsigned integer；加上 offset 與 track ID 為 64-bit struct",
+  "status": "verified"
+ },
+ {
+  "file": "mech-audio.json",
+  "id": "shazam-offset-histogram",
+  "figure": "嚴重損壞的 15 秒樣本，只要約 1–2% 的 hash 存活並落在 offset 叢集就能得到統計上顯著的匹配",
+  "status": "verified"
+ },
+ {
+  "file": "mech-audio.json",
+  "id": "shazam-offset-histogram",
+  "figure": "false positive 門檻可依應用設定，論文舉例 0.1% 或 0.01%",
+  "status": "verified"
+ },
+ {
+  "file": "mech-audio.json",
+  "id": "fingerprint-robustness-tradeoff",
+  "figure": "僅加噪音：辨識率掉到 50% 時，15/10/5 秒樣本約在 -9/-6/-3 dB SNR",
+  "status": "verified"
+ },
+ {
+  "file": "mech-audio.json",
+  "id": "fingerprint-robustness-tradeoff",
+  "figure": "加噪音再經 GSM 壓縮：15/10/5 秒約在 -3/0/+4 dB SNR",
+  "status": "verified"
+ },
+ {
+  "file": "mech-audio.json",
+  "id": "fingerprint-robustness-tradeoff",
+  "figure": "測試為 250 次辨識、10000 首流行音樂資料庫",
+  "status": "verified"
+ },
+ {
+  "file": "mech-audio.json",
+  "id": "dejavu-hash-truncation",
+  "figure": "截斷後減少 75% 空間（40 字元 → 20 字元 → binary(10)）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-audio.json",
+  "id": "dejavu-hash-truncation",
+  "figure": "作者估算可能指紋空間約 2^112",
+  "status": "verified"
+ },
+ {
+  "file": "mech-audio.json",
+  "id": "dejavu-hash-truncation",
+  "figure": "5 秒以上音訊辨識率 100%、2 秒 95.6%、1 秒 60%",
+  "status": "verified"
+ },
+ {
+  "file": "mech-audio.json",
+  "id": "dejavu-hash-truncation",
+  "figure": "45 首歌共 540 萬筆指紋佔 377 MB，約為 WAV 檔大小的 20%",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-audio.json",
+  "id": "chromaprint-chroma-fingerprint",
+  "figure": "重取樣 11025 Hz；frame 4096 樣本、2/3 overlap",
+  "status": "verified"
+ },
+ {
+  "file": "mech-audio.json",
+  "id": "chromaprint-chroma-fingerprint",
+  "figure": "12 個 chroma bins；16×12 視窗；16 個濾波器 × 2 bits = 32 bits",
+  "status": "verified"
+ },
+ {
+  "file": "mech-audio.json",
+  "id": "acoustid-inverted-index",
+  "figure": "Lookup API 免費使用限制：不可超過每秒 3 次請求",
+  "status": "verified"
+ },
+ {
+  "file": "mech-audio.json",
+  "id": "acoustid-inverted-index",
+  "figure": "memory segment 預設 flush 門檻：100,000 筆或 60 秒",
+  "status": "verified"
+ },
+ {
+  "file": "mech-audio.json",
+  "id": "content-id-reference-claims",
+  "figure": "政策變更：2024 年 10 月 15 日起，1–3 分鐘直式影片被視為 Shorts，有有效 claim 時一律被 block，不看 policy（官方說明頁所述）",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-audio.json",
+  "id": "hum-to-search-embedding",
+  "figure": "比對的曲庫超過 500,000 首歌，且持續更新（部落格所述）",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-audio.json",
+  "id": "spotify-loudness-normalization",
+  "figure": "Loud −11 LUFS、Normal −14 LUFS、Quiet −19 LUFS",
+  "status": "verified"
+ },
+ {
+  "file": "mech-audio.json",
+  "id": "spotify-loudness-normalization",
+  "figure": "建議母帶 −14 dB integrated LUFS、True Peak 低於 −1 dB",
+  "status": "verified"
+ },
+ {
+  "file": "mech-audio.json",
+  "id": "spotify-ingest-and-quality-ladder",
+  "figure": "Free App：Low 約 24 kbps、Normal 約 96 kbps、High 約 160 kbps",
+  "status": "verified"
+ },
+ {
+  "file": "mech-audio.json",
+  "id": "spotify-ingest-and-quality-ladder",
+  "figure": "Very high 約 320 kbit/s；lossless 最高 24-bit/44.1 kHz FLAC",
+  "status": "verified"
+ },
+ {
+  "file": "mech-audio.json",
+  "id": "spotify-ingest-and-quality-ladder",
+  "figure": "網頁播放器：Free AAC 128 kbit/s，Premium AAC 256 kbit/s",
+  "status": "verified"
+ },
+ {
+  "file": "mech-audio.json",
+  "id": "audio-cnn-cold-start-recsys",
+  "figure": "訓練資料為 100 萬首 Spotify 熱門歌曲的 30 秒片段，約 500,000 訓練、約 5,000 驗證",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-audio.json",
+  "id": "audio-cnn-cold-start-recsys",
+  "figure": "單張 NVIDIA GTX 780Ti 上訓練 18–36 小時，約 750000 次梯度更新",
+  "status": "verified"
+ },
+ {
+  "file": "mech-classic.json",
+  "id": "short-url-keygen",
+  "figure": "62^7 ≈ 3.5 兆",
+  "status": "unreadable"
+ },
+ {
+  "file": "mech-classic.json",
+  "id": "short-url-keygen",
+  "figure": "讀寫比約 100:1，cache 是主角",
+  "status": "unreadable"
+ },
+ {
+  "file": "mech-classic.json",
+  "id": "snowflake-id",
+  "figure": "41 bit 時間戳（自訂 epoch 約 69 年）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-classic.json",
+  "id": "snowflake-id",
+  "figure": "10 bit 機器 ID（最多 1,024 台）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-classic.json",
+  "id": "snowflake-id",
+  "figure": "12 bit 序號（每 ms 4,096 個）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-classic.json",
+  "id": "snowflake-id",
+  "figure": "設計目標：至少 10k ID/秒",
+  "status": "verified"
+ },
+ {
+  "file": "mech-classic.json",
+  "id": "hll-count-min-sketch",
+  "figure": "Redis HLL 最多 12 KB，標準誤差 0.81%",
+  "status": "verified"
+ },
+ {
+  "file": "mech-classic.json",
+  "id": "hll-count-min-sketch",
+  "figure": "PFADD / PFCOUNT 為 O(1)",
+  "status": "verified"
+ },
+ {
+  "file": "mech-classic.json",
+  "id": "geo-index-evolution",
+  "figure": "geohash 5 碼 ≈ 4.9×4.9km、6 碼 ≈ 1.2×0.6km、7 碼 ≈ 153×153m",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-classic.json",
+  "id": "geo-index-evolution",
+  "figure": "S2 level 12 cell 約 3.31–6.38 km²（Uber）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-classic.json",
+  "id": "redis-geo",
+  "figure": "score 為 52-bit geohash",
+  "status": "verified"
+ },
+ {
+  "file": "mech-classic.json",
+  "id": "location-write-read-inversion",
+  "figure": "司機每 4 秒回報一次位置（Uber）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-classic.json",
+  "id": "content-defined-chunking",
+  "figure": "Dropbox 區塊最大 4 MB（Magic Pocket 文章）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-classic.json",
+  "id": "chunk-dedup-instant-upload",
+  "figure": "block 最大 4 MB",
+  "status": "verified"
+ },
+ {
+  "file": "mech-classic.json",
+  "id": "chunk-dedup-instant-upload",
+  "figure": "block key 為 SHA-256",
+  "status": "verified"
+ },
+ {
+  "file": "mech-classic.json",
+  "id": "chunk-dedup-instant-upload",
+  "figure": "bucket 為 1GB 邏輯容器",
+  "status": "verified"
+ },
+ {
+  "file": "mech-classic.json",
+  "id": "per-conversation-ordering",
+  "figure": "Discord 從 177 個 Cassandra 節點降到 72 個 ScyllaDB 節點",
+  "status": "verified"
+ },
+ {
+  "file": "mech-classic.json",
+  "id": "per-conversation-ordering",
+  "figure": "p99 insert 由 5–70ms 降到穩定 5ms",
+  "status": "verified"
+ },
+ {
+  "file": "mech-classic.json",
+  "id": "fanout-hybrid",
+  "figure": "閾值約 1 萬 follower（原文整理）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-classic.json",
+  "id": "typeahead-trie-topk",
+  "figure": "超過 100ms 就會「卡頓」（Facebook typeahead 文章）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-classic.json",
+  "id": "inverted-index-nrt",
+  "figure": "預設每 1 秒 refresh（僅針對近 30 秒內有被搜尋過的 index）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-classic.json",
+  "id": "psp-webhook-reconciliation",
+  "figure": "手動 resend：Dashboard 15 天、CLI 30 天",
+  "status": "verified"
+ },
+ {
+  "file": "mech-classic.json",
+  "id": "rate-limiter-token-bucket",
+  "figure": "concurrent limiter 例：20 個並行請求",
+  "status": "verified"
+ },
+ {
+  "file": "mech-classic.json",
+  "id": "rate-limiter-token-bucket",
+  "figure": "fleet load shedder：非關鍵流量上限 80%、保留 20% 給關鍵請求",
+  "status": "verified"
+ },
+ {
+  "file": "mech-classic.json",
+  "id": "crawler-politeness-frontier",
+  "figure": "back queues 約為 crawl threads 的 3 倍（Mercator 經驗法則）",
+  "status": "unreadable"
+ },
+ {
+  "file": "mech-collab.json",
+  "id": "presence-ephemeral-awareness",
+  "figure": "Yjs awareness：超過 30 秒沒收到遠端更新即標記 offline",
+  "status": "verified"
+ },
+ {
+  "file": "mech-collab.json",
+  "id": "presence-ephemeral-awareness",
+  "figure": "Liveblocks：斷線後預設 5 秒才觸發 lost-connection（可設 1000–30000ms）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-collab.json",
+  "id": "presence-throttle-and-caps",
+  "figure": "Liveblocks throttle 預設 100ms，範圍 16–1000ms",
+  "status": "verified"
+ },
+ {
+  "file": "mech-collab.json",
+  "id": "presence-throttle-and-caps",
+  "figure": "Figma：200 個游標 / 200 人編輯 / 500 總參與者；滿 500 時仍可再讓最多 20 位編輯者加入",
+  "status": "verified"
+ },
+ {
+  "file": "mech-collab.json",
+  "id": "doc-per-process-routing",
+  "figure": "Cloudflare DO：每個 object 的儲存最大 10 GB",
+  "status": "verified"
+ },
+ {
+  "file": "mech-collab.json",
+  "id": "websocket-hibernation",
+  "figure": "serializeAttachment 最大序列化大小 16,384 bytes",
+  "status": "verified"
+ },
+ {
+  "file": "mech-collab.json",
+  "id": "journal-checkpoint-durability",
+  "figure": "舊 checkpoint 每 30–60 秒一次",
+  "status": "verified"
+ },
+ {
+  "file": "mech-collab.json",
+  "id": "journal-checkpoint-durability",
+  "figure": "95% 的編輯在 600ms 內被儲存",
+  "status": "verified"
+ },
+ {
+  "file": "mech-collab.json",
+  "id": "journal-checkpoint-durability",
+  "figure": "journal 目前處理超過 22 億筆/天",
+  "status": "verified"
+ },
+ {
+  "file": "mech-collab.json",
+  "id": "journal-checkpoint-durability",
+  "figure": "約 40 萬次連續驗證成功後推到 100%",
+  "status": "verified"
+ },
+ {
+  "file": "mech-collab.json",
+  "id": "journal-checkpoint-durability",
+  "figure": "journal 變更須在 30 分鐘內被 checkpoint",
+  "status": "verified"
+ },
+ {
+  "file": "mech-collab.json",
+  "id": "multiplayer-undo-semantics",
+  "figure": "Yjs UndoManager captureTimeout 預設 500ms",
+  "status": "verified"
+ },
+ {
+  "file": "mech-collab.json",
+  "id": "dynamic-page-loading",
+  "figure": "最慢載入加速 33%（同期檔案大小年增 18%）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-collab.json",
+  "id": "dynamic-page-loading",
+  "figure": "初始載入的 client 節點減少 70%",
+  "status": "verified"
+ },
+ {
+  "file": "mech-collab.json",
+  "id": "dynamic-page-loading",
+  "figure": "out-of-memory 錯誤減少 33%",
+  "status": "verified"
+ },
+ {
+  "file": "mech-collab.json",
+  "id": "tombstone-growth-and-gc",
+  "figure": "Yjs B4 benchmark：182k inserts、77k deleted characters，snapshot 的 delete set 僅 4.5Kb",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-collab.json",
+  "id": "version-history-snapshots",
+  "figure": "checkpoint 每 30 分鐘",
+  "status": "verified"
+ },
+ {
+  "file": "mech-collab.json",
+  "id": "version-history-snapshots",
+  "figure": "命名版本標題上限 25 字元",
+  "status": "verified"
+ },
+ {
+  "file": "mech-collab.json",
+  "id": "version-history-snapshots",
+  "figure": "免費方案/草稿保留 30 天",
+  "status": "verified"
+ },
+ {
+  "file": "mech-connections.json",
+  "id": "http1-keepalive-hol",
+  "figure": "瀏覽器預設每 domain 6 條平行連線（MDN）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-connections.json",
+  "id": "quic-connection-migration",
+  "figure": "QUIC 約佔 Internet 流量 7%（Google 論文發表時）",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-connections.json",
+  "id": "tls-resumption-0rtt",
+  "figure": "Cloudflare：0-RTT resumption 為 2 RTT + DNS，無 0-RTT 為 3 RTT + DNS",
+  "status": "verified"
+ },
+ {
+  "file": "mech-connections.json",
+  "id": "tls-resumption-0rtt",
+  "figure": "遠距使用者約省 250ms（Cloudflare 文中數字）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-connections.json",
+  "id": "tls-resumption-0rtt",
+  "figure": "QUIC handshake 1 RTT vs TCP+TLS 1.3 的 2 RTT",
+  "status": "verified"
+ },
+ {
+  "file": "mech-connections.json",
+  "id": "pgbouncer-transaction-pooling",
+  "figure": "PgBouncer 預設每條連線約 2 kB 記憶體（官方文件）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-connections.json",
+  "id": "whatsapp-erlang-millions-connections",
+  "figure": "單機 2,277,845 TCP connections",
+  "status": "unreadable"
+ },
+ {
+  "file": "mech-connections.json",
+  "id": "whatsapp-erlang-millions-connections",
+  "figure": "24 cores、103GB RAM",
+  "status": "unreadable"
+ },
+ {
+  "file": "mech-connections.json",
+  "id": "whatsapp-erlang-millions-connections",
+  "figure": "kern.ipc.maxsockets=2400000",
+  "status": "unreadable"
+ },
+ {
+  "file": "mech-connections.json",
+  "id": "discord-gateway-fanout",
+  "figure": "5M 同時在線用戶",
+  "status": "verified"
+ },
+ {
+  "file": "mech-connections.json",
+  "id": "discord-gateway-fanout",
+  "figure": "每個 Erlang VM 約 500,000 live sessions",
+  "status": "verified"
+ },
+ {
+  "file": "mech-connections.json",
+  "id": "discord-gateway-fanout",
+  "figure": "大型 guild 單次 send 30-70μs，fanout 尖峰 900ms-2.1s",
+  "status": "verified"
+ },
+ {
+  "file": "mech-connections.json",
+  "id": "discord-gateway-fanout",
+  "figure": "平均每用戶 5 個 guild",
+  "status": "verified"
+ },
+ {
+  "file": "mech-connections.json",
+  "id": "reconnect-storm-jitter",
+  "figure": "Flannel 啟動 payload：1,500 人團隊縮小 7 倍、32,000 人團隊縮小 44 倍",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-connections.json",
+  "id": "reconnect-storm-jitter",
+  "figure": "Flannel 尖峰 4M 同時連線、600K client queries/sec",
+  "status": "verified"
+ },
+ {
+  "file": "mech-connections.json",
+  "id": "slack-edge-consistent-hash-routing",
+  "figure": "Flannel 尖峰 4M 同時連線",
+  "status": "verified"
+ },
+ {
+  "file": "mech-connections.json",
+  "id": "slack-edge-consistent-hash-routing",
+  "figure": "600K client queries/sec",
+  "status": "verified"
+ },
+ {
+  "file": "mech-data-pipeline.json",
+  "id": "hudi-incremental-upsert",
+  "figure": "Dimensional Driver Table runtime 220 → 39 分鐘（-82%），成本 -78%",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-data-pipeline.json",
+  "id": "hudi-incremental-upsert",
+  "figure": "Driver Status Fact Table runtime -48%、成本 -25%",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-data-pipeline.json",
+  "id": "kappa-backfill-uber-hive-source",
+  "figure": "Uber 在同樣的 75-core production cluster 設定下 backfill 10 TB、9 天的資料",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-data-pipeline.json",
+  "id": "netflix-ads-bounded-join-state",
+  "figure": "60 分鐘 matching window 涵蓋約 99.999% 事件",
+  "status": "verified"
+ },
+ {
+  "file": "mech-data-pipeline.json",
+  "id": "netflix-ads-bounded-join-state",
+  "figure": "落單約 0.001% 由每小時 Spark job 補配",
+  "status": "verified"
+ },
+ {
+  "file": "mech-data-pipeline.json",
+  "id": "netflix-ads-bounded-join-state",
+  "figure": "Netflix 營運 25,000+ Flink jobs",
+  "status": "verified"
+ },
+ {
+  "file": "mech-data-pipeline.json",
+  "id": "netflix-ads-bounded-join-state",
+  "figure": "直播賽事超過 1 億 concurrent viewers",
+  "status": "verified"
+ },
+ {
+  "file": "mech-data-pipeline.json",
+  "id": "kafka-transactions-eos",
+  "figure": "idempotent producer 吞吐 -3%（1 KB 訊息）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-data-pipeline.json",
+  "id": "kafka-transactions-eos",
+  "figure": "transactions 吞吐 -15% 至 -30%（100ms commit interval）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-data-pipeline.json",
+  "id": "kafka-transactions-eos",
+  "figure": "新訊息格式使 producer 吞吐最高 +20%、consumer 最高 +50%（小訊息）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-data-pipeline.json",
+  "id": "airbnb-midas-wall-data-quality",
+  "figure": "部分 pipeline 的 Airflow 程式碼減少超過 70%",
+  "status": "verified"
+ },
+ {
+  "file": "mech-data-pipeline.json",
+  "id": "airbnb-midas-wall-data-quality",
+  "figure": "Midas 為 2020 年啟動的認證流程，含 Spec / Data / Code / Minerva 四種 review",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-data-pipeline.json",
+  "id": "spotify-rap-lake-point-query",
+  "figure": "一天收聽事件約落在 1,000 個檔案，90 天窗口 = 90,000 個候選 Parquet 檔",
+  "status": "verified"
+ },
+ {
+  "file": "mech-data-pipeline.json",
+  "id": "spotify-rap-lake-point-query",
+  "figure": "bucket 後 90,000 → 90，再用 Bloom filter → 約 12 個",
+  "status": "verified"
+ },
+ {
+  "file": "mech-delivery.json",
+  "id": "delivery-eta-decomposition",
+  "figure": "Swiggy 論文實驗設定：最長送達時間保證 45 分鐘",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-delivery.json",
+  "id": "delivery-eta-decomposition",
+  "figure": "Uber Eats 文章範例：在餐點預計完成前 10 分鐘派單",
+  "status": "verified"
+ },
+ {
+  "file": "mech-delivery.json",
+  "id": "prep-time-model-label-inference",
+  "figure": "近即時特徵視窗：最近 10 分鐘",
+  "status": "verified"
+ },
+ {
+  "file": "mech-delivery.json",
+  "id": "prep-time-model-label-inference",
+  "figure": "Swiggy 論文：每家餐廳切成 24 個 1 小時時段，各自用高斯分佈建模",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-delivery.json",
+  "id": "accumulation-window-reshuffling",
+  "figure": "論文以 3 分鐘為單位的窗口衡量即時性（assignment 時間超過 3 分鐘的窗口稱為 overflown）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-delivery.json",
+  "id": "accumulation-window-reshuffling",
+  "figure": "超過 30 分鐘未派單即拒絕，Ω = 7200 秒",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-delivery.json",
+  "id": "accumulation-window-reshuffling",
+  "figure": "FoodMatch 相對 Greedy 的 XDT 平均少約 30%、每公里完成訂單數高約 20%",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-delivery.json",
+  "id": "global-matching-vs-hungarian-mip",
+  "figure": "Swiggy 論文：每位騎士最多 3 單（MAXO = 3），每車最多 10 件（MAXI = 10）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-delivery.json",
+  "id": "global-matching-vs-hungarian-mip",
+  "figure": "FoodMatch 的 XDT 平均比 Greedy 少約 30%",
+  "status": "verified"
+ },
+ {
+  "file": "mech-delivery.json",
+  "id": "batching-reliability-vs-latency",
+  "figure": "Uber Eats：每位外送員最多 3 單，multi-restaurant 批次最多 2 家商家",
+  "status": "verified"
+ },
+ {
+  "file": "mech-delivery.json",
+  "id": "batching-reliability-vs-latency",
+  "figure": "Swiggy 論文：MAXO = 3",
+  "status": "verified"
+ },
+ {
+  "file": "mech-delivery.json",
+  "id": "quoted-eta-load-signals",
+  "figure": "近 30 分鐘的城市平均送達時間與商家出餐時間",
+  "status": "verified"
+ },
+ {
+  "file": "mech-delivery.json",
+  "id": "quoted-eta-load-signals",
+  "figure": "商家暫時關閉選項：30 分鐘、1 小時、至下次營業",
+  "status": "verified"
+ },
+ {
+  "file": "mech-delivery.json",
+  "id": "sequential-courier-offer",
+  "figure": "外送員回應 timeout：30–60 秒（依市場）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-delivery.json",
+  "id": "instacart-availability-replacement",
+  "figure": "每 60 分鐘預測超過 5 億筆 listing 的可用性",
+  "status": "verified"
+ },
+ {
+  "file": "mech-delivery.json",
+  "id": "instacart-availability-replacement",
+  "figure": "約 25,000 間實體商店",
+  "status": "verified"
+ },
+ {
+  "file": "mech-delivery.json",
+  "id": "instacart-availability-replacement",
+  "figure": "約 500 萬種獨立商品、約 9.5 億筆 product listing",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-delivery.json",
+  "id": "instacart-availability-replacement",
+  "figure": "顧客自己購物時平均替換 7% 的商品；約一半時間顧客不預選替代品",
+  "status": "verified"
+ },
+ {
+  "file": "mech-delivery.json",
+  "id": "merchant-order-state-sync",
+  "figure": "Uber Eats：接單流程超過 11.5 分鐘未接受則取消",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-delivery.json",
+  "id": "merchant-order-state-sync",
+  "figure": "Wolt：標記出餐超過承諾備餐時間 2.5 分鐘視為遲到",
+  "status": "verified"
+ },
+ {
+  "file": "mech-deploy-migration.json",
+  "id": "expand-contract-schema",
+  "figure": "Prisma 範例拆成 7 步（欄位 name 拆為 first_name / last_name）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-deploy-migration.json",
+  "id": "gh-ost-triggerless",
+  "figure": "gh-ost throttle 範例：Threads_running=30",
+  "status": "verified"
+ },
+ {
+  "file": "mech-deploy-migration.json",
+  "id": "stripe-online-migration-4step",
+  "figure": "每筆 1 秒 = 超過三年",
+  "status": "verified"
+ },
+ {
+  "file": "mech-deploy-migration.json",
+  "id": "discord-cassandra-to-scylla",
+  "figure": "177 Cassandra nodes → 72 ScyllaDB nodes",
+  "status": "verified"
+ },
+ {
+  "file": "mech-deploy-migration.json",
+  "id": "discord-cassandra-to-scylla",
+  "figure": "migrator 最高每秒 320 萬筆；9 天 vs 預估 3 個月",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-deploy-migration.json",
+  "id": "discord-cassandra-to-scylla",
+  "figure": "historical fetch p99 40–125ms → 15ms；insert p99 5–70ms → 5ms",
+  "status": "verified"
+ },
+ {
+  "file": "mech-deploy-migration.json",
+  "id": "shopify-redis-to-mysql-shadow",
+  "figure": "Black Friday 2025 峰值 $5.1 million / 分鐘",
+  "status": "verified"
+ },
+ {
+  "file": "mech-deploy-migration.json",
+  "id": "shopify-redis-to-mysql-shadow",
+  "figure": "每個 item reservation pool 上限 1,000 列",
+  "status": "verified"
+ },
+ {
+  "file": "mech-deploy-migration.json",
+  "id": "kayenta-canary-analysis",
+  "figure": "98% confidence",
+  "status": "verified"
+ },
+ {
+  "file": "mech-deploy-migration.json",
+  "id": "kayenta-canary-analysis",
+  "figure": "容忍帶 ±0.25×estimate",
+  "status": "verified"
+ },
+ {
+  "file": "mech-deploy-migration.json",
+  "id": "kayenta-canary-analysis",
+  "figure": "50% 以上 metric 無資料即失敗",
+  "status": "verified"
+ },
+ {
+  "file": "mech-deploy-migration.json",
+  "id": "feature-flag-kill-switch",
+  "figure": "Cloudflare 2019：13:42 部署、14:07 global terminate、14:09 恢復，共 27 分鐘",
+  "status": "verified"
+ },
+ {
+  "file": "mech-deploy-migration.json",
+  "id": "feature-flag-kill-switch",
+  "figure": "Cloudflare 2025：5.5 小時",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-deploy-migration.json",
+  "id": "stripe-api-versioning",
+  "figure": "自 2011 年起保持對每個版本的相容",
+  "status": "verified"
+ },
+ {
+  "file": "mech-deploy-migration.json",
+  "id": "config-rollout-gradual",
+  "figure": "Cloudflare 2025：功能上限 200、正常約 60 個 features；11:05 變更、11:28 壞檔到達 production、14:30 恢復、17:06 完全恢復",
+  "status": "verified"
+ },
+ {
+  "file": "mech-deploy-migration.json",
+  "id": "config-rollout-gradual",
+  "figure": "Cloudflare 2019：總計 27 分鐘",
+  "status": "verified"
+ },
+ {
+  "file": "mech-deploy-migration.json",
+  "id": "slack-cell-architecture",
+  "figure": "drain 目標 5 分鐘、1% 粒度",
+  "status": "verified"
+ },
+ {
+  "file": "mech-deploy-migration.json",
+  "id": "slack-cell-architecture",
+  "figure": "Route 53：2,048 virtual name servers、每網域 4 個、730 billion 組合",
+  "status": "verified"
+ },
+ {
+  "file": "mech-email.json",
+  "id": "smtp-retry-bounce",
+  "figure": "重試間隔 SHOULD 至少 30 分鐘",
+  "status": "verified"
+ },
+ {
+  "file": "mech-email.json",
+  "id": "smtp-retry-bounce",
+  "figure": "give-up 時間通常至少 4–5 天",
+  "status": "verified"
+ },
+ {
+  "file": "mech-email.json",
+  "id": "smtp-retry-bounce",
+  "figure": "第一小時 2 次嘗試，之後每 2–3 小時 1 次",
+  "status": "verified"
+ },
+ {
+  "file": "mech-email.json",
+  "id": "spf-envelope-limits",
+  "figure": "include/a/mx/ptr/exists/redirect 合計最多 10 次 DNS lookup",
+  "status": "verified"
+ },
+ {
+  "file": "mech-email.json",
+  "id": "spf-envelope-limits",
+  "figure": "每個 MX 記錄最多查 10 個 address record",
+  "status": "verified"
+ },
+ {
+  "file": "mech-email.json",
+  "id": "dkim-signing",
+  "figure": "RFC 6376 規定 From header MUST 被簽",
+  "status": "verified"
+ },
+ {
+  "file": "mech-email.json",
+  "id": "arc-forwarding",
+  "figure": "ARC instance 範圍 1–50",
+  "status": "verified"
+ },
+ {
+  "file": "mech-email.json",
+  "id": "ip-warmup",
+  "figure": "SES 自動 warm-up 的比例在 45 天內逐步提高",
+  "status": "verified"
+ },
+ {
+  "file": "mech-email.json",
+  "id": "ip-warmup",
+  "figure": "不同供應商約 2 週到最多 6 週建立信譽",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-email.json",
+  "id": "ip-warmup",
+  "figure": "warm-up 後對每家信箱供應商每天約寄 1,000 封維持信譽",
+  "status": "verified"
+ },
+ {
+  "file": "mech-email.json",
+  "id": "bulk-sender-rules",
+  "figure": "bulk 定義約 5,000 封/24 小時",
+  "status": "verified"
+ },
+ {
+  "file": "mech-email.json",
+  "id": "bulk-sender-rules",
+  "figure": "spam rate 目標 <0.1%，>=0.3% 加強執法",
+  "status": "verified"
+ },
+ {
+  "file": "mech-email.json",
+  "id": "bulk-sender-rules",
+  "figure": "退訂：Gmail 48 小時 / Yahoo 2 天",
+  "status": "verified"
+ },
+ {
+  "file": "mech-email.json",
+  "id": "bulk-sender-rules",
+  "figure": "Gmail 與 Yahoo 的 spam rate 上限皆為 0.3%",
+  "status": "verified"
+ },
+ {
+  "file": "mech-email.json",
+  "id": "jmap-vs-imap",
+  "figure": "建議能從 30 天內的 state 算出 changes",
+  "status": "verified"
+ },
+ {
+  "file": "mech-email.json",
+  "id": "jmap-vs-imap",
+  "figure": "Session 建議 maxCallsInRequest 16、maxObjectsInGet/Set 500、maxConcurrentRequests 4",
+  "status": "verified"
+ },
+ {
+  "file": "mech-email.json",
+  "id": "tiered-email-search",
+  "figure": "tmpfs 超過 50% 立刻 compact",
+  "status": "verified"
+ },
+ {
+  "file": "mech-email.json",
+  "id": "tiered-email-search",
+  "figure": "範例使用者 >500,000 封信、archive 索引 >3GB、compact 約 4 分 52 秒",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-email.json",
+  "id": "thread-grouping",
+  "figure": "Cyrus conversations_max_thread 預設 100",
+  "status": "verified"
+ },
+ {
+  "file": "mech-email.json",
+  "id": "thread-grouping",
+  "figure": "conversations_expire_after 預設 90d",
+  "status": "verified"
+ },
+ {
+  "file": "mech-gaming.json",
+  "id": "auth-server-prediction-reconciliation",
+  "figure": "Gambetta：50ms RTT 下玩家感到約 0.1 秒（a tenth of a second）無回應",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-gaming.json",
+  "id": "auth-server-prediction-reconciliation",
+  "figure": "Valve：client 50 fps、RTT 100ms 時，client 會有 5 個尚未確認的 user command 需要重放",
+  "status": "verified"
+ },
+ {
+  "file": "mech-gaming.json",
+  "id": "tick-rate-bandwidth",
+  "figure": "VALORANT：128 Hz server tick；35ms ping、60 FPS client 下可縮減約 40ms（28%）peeker's advantage，144 FPS 約 71ms（49%）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-gaming.json",
+  "id": "tick-rate-bandwidth",
+  "figure": "Gaffer：60 pps 約 11.6 Mbit/s、10 pps 約 2 Mbit/s；interpolation buffer：10 pps 需 300ms（+50ms jitter）、30 pps 150ms、60 pps 85ms",
+  "status": "verified"
+ },
+ {
+  "file": "mech-gaming.json",
+  "id": "tick-rate-bandwidth",
+  "figure": "Half-Life 預設 20 updates/s，最高可請求 50 updates/s",
+  "status": "verified"
+ },
+ {
+  "file": "mech-gaming.json",
+  "id": "entity-interpolation",
+  "figure": "Half-Life：預設 20 updates/s，client 以 100ms interpolate；10 updates/s 時 100ms 插值延遲",
+  "status": "verified"
+ },
+ {
+  "file": "mech-gaming.json",
+  "id": "entity-interpolation",
+  "figure": "QuakeWorld 把 extrapolation 限制在 100ms（Valve 論文引述）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-gaming.json",
+  "id": "lag-compensation",
+  "figure": "Valve 論文：極端案例中玩家延遲約 500ms 時，會出現「被繞角擊中」的情形",
+  "status": "verified"
+ },
+ {
+  "file": "mech-gaming.json",
+  "id": "lockstep-vs-snapshot",
+  "figure": "Gaffer：每 frame 輸入 6 bits；60 fps、最差 2 秒 RTT 需緩衝 720 bits（90 bytes）；壓縮後最差 15 bytes",
+  "status": "verified"
+ },
+ {
+  "file": "mech-gaming.json",
+  "id": "lockstep-vs-snapshot",
+  "figure": "Gaffer 示範：2 秒延遲、25% 封包遺失下 UDP lockstep 仍可平順播放",
+  "status": "verified"
+ },
+ {
+  "file": "mech-gaming.json",
+  "id": "udp-custom-reliability",
+  "figure": "Gaffer：125ms ping 下 TCP 掉包停滯至少約 1/5 秒，最壞 0.5 秒以上",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-gaming.json",
+  "id": "udp-custom-reliability",
+  "figure": "Gaffer：ack bitfield 涵蓋前 32 個封包；擁塞控制在 30 / 10 packets/s 間切換",
+  "status": "verified"
+ },
+ {
+  "file": "mech-gaming.json",
+  "id": "riot-direct-anycast",
+  "figure": "SF 到 Portland：約 14ms 理想路徑，實際繞路 70ms（增加 500%）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-gaming.json",
+  "id": "riot-direct-anycast",
+  "figure": "把 game server 移到 Chicago 前：80ms 以下玩家比例九個月內由 31% 提升到 50%；移至 Chicago 後隔夜達 80%",
+  "status": "verified"
+ },
+ {
+  "file": "mech-gaming.json",
+  "id": "riot-direct-anycast",
+  "figure": "VALORANT 目標：35ms ping 涵蓋 70% 玩家",
+  "status": "verified"
+ },
+ {
+  "file": "mech-gaming.json",
+  "id": "riot-direct-anycast",
+  "figure": "網路曾承受 500Gb/s DDoS（Riot 網路文章）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-gaming.json",
+  "id": "riot-direct-anycast",
+  "figure": "League 在 9 個集中據點營運（Chicago、Amsterdam、Tokyo、Seoul、São Paulo、Santiago、Istanbul、Miami、Sydney）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-gaming.json",
+  "id": "fog-of-war-anticheat",
+  "figure": "初版約 50% server frame time、每 frame 350+ 次 relevancy 計算；最終版少於 2% server frame time（改用 PVS）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-gaming.json",
+  "id": "kernel-anticheat-tradeoff",
+  "figure": "Riot 公開：四年封鎖 360 萬個作弊帳號、約每 37 秒一次封鎖、4% 的封鎖因帳號遭盜用而撤銷",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-gaming.json",
+  "id": "replication-graph-interest-management",
+  "figure": "Fortnite Battle Royale：開局 100 個連線、約 50,000 個 replicated actor",
+  "status": "verified"
+ },
+ {
+  "file": "mech-iot.json",
+  "id": "mqtt-qos-tradeoff",
+  "figure": "AWS IoT Core：QoS 1 未確認 inbound publish 每 client 最多 100、outbound 同為 100",
+  "status": "verified"
+ },
+ {
+  "file": "mech-iot.json",
+  "id": "mqtt-qos-tradeoff",
+  "figure": "AWS IoT Core：每個 connection 最多 100 publish/sec",
+  "status": "verified"
+ },
+ {
+  "file": "mech-iot.json",
+  "id": "mqtt-presence-session",
+  "figure": "AWS IoT Core：persistent session 預設過期 3,600 秒（可調）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-iot.json",
+  "id": "mqtt-presence-session",
+  "figure": "AWS IoT Core：重連後 stored message 補送限速 10 則/秒",
+  "status": "verified"
+ },
+ {
+  "file": "mech-iot.json",
+  "id": "mqtt-presence-session",
+  "figure": "AWS IoT Core：每個 retained topic inbound publish 1/sec；每帳號 retained message 上限 500,000",
+  "status": "verified"
+ },
+ {
+  "file": "mech-iot.json",
+  "id": "mqtt-presence-session",
+  "figure": "AWS IoT Core：keep-alive 範圍 30–1,200 秒，預設 1,200 秒",
+  "status": "verified"
+ },
+ {
+  "file": "mech-iot.json",
+  "id": "mqtt-presence-session",
+  "figure": "MQTT 3.1.1：server 超過 keep-alive 1.5 倍沒收到封包即斷線",
+  "status": "verified"
+ },
+ {
+  "file": "mech-iot.json",
+  "id": "mqtt-topic-design",
+  "figure": "AWS IoT Core：topic 最多 7 個斜線、256 bytes",
+  "status": "verified"
+ },
+ {
+  "file": "mech-iot.json",
+  "id": "mqtt-topic-design",
+  "figure": "AWS IoT Core：每連線訂閱 50、每帳號訂閱 500,000、每次 subscribe 最多 8 個 filter",
+  "status": "verified"
+ },
+ {
+  "file": "mech-iot.json",
+  "id": "mqtt-topic-design",
+  "figure": "AWS IoT Core：每連線吞吐 512 KB/sec",
+  "status": "verified"
+ },
+ {
+  "file": "mech-iot.json",
+  "id": "mqtt-topic-design",
+  "figure": "Azure IoT Hub：device 一次最多訂 5 個 topic；max message 256 KB（Event Grid 為 512 KB）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-iot.json",
+  "id": "device-shadow-twin",
+  "figure": "AWS IoT Core：state document 上限 8 KB、JSON 深度 8、每個 shadow 20 requests/sec",
+  "status": "verified"
+ },
+ {
+  "file": "mech-iot.json",
+  "id": "device-shadow-twin",
+  "figure": "Azure IoT Hub：tags 上限 8 KB，desired 與 reported 各 32 KB，JSON 深度 10",
+  "status": "verified"
+ },
+ {
+  "file": "mech-iot.json",
+  "id": "command-delivery-idempotency",
+  "figure": "Azure direct method：預設逾時 30 秒（5–300 秒）、connectTimeout 最大 300 秒、payload 128 KB、MQTT 下發為 QoS 0",
+  "status": "verified"
+ },
+ {
+  "file": "mech-iot.json",
+  "id": "command-delivery-idempotency",
+  "figure": "Azure C2D：每裝置佇列 50 則、訊息 64 KB、預設 TTL 1 小時（最長 2 天）、鎖定逾時 1 分鐘、maxDeliveryCount 1–100 預設 10",
+  "status": "verified"
+ },
+ {
+  "file": "mech-iot.json",
+  "id": "command-delivery-idempotency",
+  "figure": "Azure desired properties 上限 32 KB",
+  "status": "verified"
+ },
+ {
+  "file": "mech-iot.json",
+  "id": "device-provisioning-certs",
+  "figure": "AWS fleet provisioning：trusted user 的暫時 claim certificate 5 分鐘到期",
+  "status": "verified"
+ },
+ {
+  "file": "mech-iot.json",
+  "id": "device-provisioning-certs",
+  "figure": "AWS fleet provisioning：certificateOwnershipToken 1 小時到期，逾時未啟用的憑證會被刪除",
+  "status": "verified"
+ },
+ {
+  "file": "mech-iot.json",
+  "id": "device-provisioning-certs",
+  "figure": "Azure DPS：個別 enrollment 上限 1,000,000、device registrations 1,000/min/service、X.509 enrollment group 100",
+  "status": "verified"
+ },
+ {
+  "file": "mech-iot.json",
+  "id": "ota-staged-rollout",
+  "figure": "AWS IoT Jobs：範例 base rate 50/min、increment factor 2，依序 50 → 100 → 200 → 400，所需通知或成功數 1,000 → 2,000 → 3,000 → 4,000",
+  "status": "verified"
+ },
+ {
+  "file": "mech-iot.json",
+  "id": "ota-staged-rollout",
+  "figure": "AWS IoT Jobs：in-progress timer 1 分鐘到 7 天",
+  "status": "verified"
+ },
+ {
+  "file": "mech-iot.json",
+  "id": "ota-staged-rollout",
+  "figure": "AWS IoT Jobs：單一裝置 FAILED 與 TIMED_OUT 合計最多 10 次 retry",
+  "status": "verified"
+ },
+ {
+  "file": "mech-iot.json",
+  "id": "ota-staged-rollout",
+  "figure": "AWS IoT Jobs：concurrent job 上限 500；ListNotification 最多列 15 個 pending execution",
+  "status": "verified"
+ },
+ {
+  "file": "mech-iot.json",
+  "id": "iot-fleet-reconnect-storm",
+  "figure": "AWS IoT Core：connect requests 3,000/sec/account（部分 region 100/sec）、同 client ID 1/sec",
+  "status": "verified"
+ },
+ {
+  "file": "mech-iot.json",
+  "id": "iot-fleet-reconnect-storm",
+  "figure": "AWS IoT Core：persistent session 補送限速 10 則/秒",
+  "status": "verified"
+ },
+ {
+  "file": "mech-iot.json",
+  "id": "iot-fleet-reconnect-storm",
+  "figure": "AWS Architecture Blog：N 個 client 競爭下，無 jitter 的總工作量隨 N 平方成長；100 個 client 時 jitter 讓呼叫數減少超過一半",
+  "status": "verified"
+ },
+ {
+  "file": "mech-iot.json",
+  "id": "edge-local-autonomy",
+  "figure": "Greengrass stream manager：至少 70 MB RAM（不含 Greengrass Core 本身）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-iot.json",
+  "id": "coap-low-power",
+  "figure": "CoAP：ACK_TIMEOUT 2 秒、ACK_RANDOM_FACTOR 1.5、MAX_RETRANSMIT 4",
+  "status": "verified"
+ },
+ {
+  "file": "mech-iot.json",
+  "id": "coap-low-power",
+  "figure": "CoAP：固定 4 byte header，token 0–8 bytes",
+  "status": "verified"
+ },
+ {
+  "file": "mech-iot.json",
+  "id": "coap-low-power",
+  "figure": "AWS IoT Core：MQTT keep-alive 30–1,200 秒，預設 1,200 秒",
+  "status": "verified"
+ },
+ {
+  "file": "mech-iot.json",
+  "id": "telemetry-downsampling",
+  "figure": "50,000 metrics/sec、約 43 億筆/天（100,000 台 server × 5 metrics / 10 秒）",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-iot.json",
+  "id": "telemetry-downsampling",
+  "figure": "保留策略：24 小時 10 秒、7 天 1 分鐘、30 天 5 分鐘、1 年 1 小時",
+  "status": "verified"
+ },
+ {
+  "file": "mech-iot.json",
+  "id": "telemetry-downsampling",
+  "figure": "5 分鐘 rollup 比 10 秒原始資料少 288 倍",
+  "status": "verified"
+ },
+ {
+  "file": "mech-iot.json",
+  "id": "telemetry-downsampling",
+  "figure": "高基數範例：10 million 唯一 user_id 加在 1,000 hosts × 50 metrics 上，約 5000 億潛在 series",
+  "status": "verified"
+ },
+ {
+  "file": "mech-maps.json",
+  "id": "contraction-hierarchies",
+  "figure": "Geisberger 論文（靜態情境）：預處理 7.5 分鐘、算路徑長度 0.21 ms、完整路徑 0.56 ms、每節點 23 bytes",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-maps.json",
+  "id": "ch-vs-crp-traffic",
+  "figure": "CRP 論文：新 metric 可在數秒內併入（後續工作 <1 秒），支援 real-time traffic 與個人化成本函數",
+  "status": "verified"
+ },
+ {
+  "file": "mech-maps.json",
+  "id": "gnn-eta",
+  "figure": "ETA 改善幅度 16%（London、Copenhagen）至 51%（Taichung）",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-maps.json",
+  "id": "gnn-eta",
+  "figure": "原本預測對 >97% 行程已相當準確",
+  "status": "verified"
+ },
+ {
+  "file": "mech-maps.json",
+  "id": "gnn-eta",
+  "figure": "服務超過 10 億 Google Maps 使用者",
+  "status": "verified"
+ },
+ {
+  "file": "mech-maps.json",
+  "id": "deepeta-residual",
+  "figure": "低延遲三招：linear transformer 複雜度 O(Kd²) 而非 O(K²d)；每次預測只存取約 0.25% 模型參數；離散化讓 geo 查表為 O(1)",
+  "status": "unreadable"
+ },
+ {
+  "file": "mech-maps.json",
+  "id": "hmm-map-matching",
+  "figure": "Microsoft 論文的實驗資料：1 Hz 取樣、約 2 小時，並測試降低取樣率與增加雜訊的影響",
+  "status": "verified"
+ },
+ {
+  "file": "mech-maps.json",
+  "id": "vector-tiles",
+  "figure": "zoom 0 = 1 張涵蓋全球，zoom n = 2^n × 2^n 張",
+  "status": "verified"
+ },
+ {
+  "file": "mech-maps.json",
+  "id": "vector-tiles",
+  "figure": "raster tile 為 256×256 PNG；MVT 標準 extent 4096",
+  "status": "verified"
+ },
+ {
+  "file": "mech-maps.json",
+  "id": "vector-tiles",
+  "figure": "zoom 0 赤道約 156,543 公尺/像素，每升一級減半",
+  "status": "verified"
+ },
+ {
+  "file": "mech-maps.json",
+  "id": "batched-dispatch",
+  "figure": "Uber 官方頁面稱此技術每天『節省 10 年的人們時間』",
+  "status": "verified"
+ },
+ {
+  "file": "mech-maps.json",
+  "id": "doordash-mip-dispatch",
+  "figure": "OR Society 案例稱使用 FICO Xpress 後求解速度快 10–100x",
+  "status": "unreadable"
+ },
+ {
+  "file": "mech-maps.json",
+  "id": "doordash-mip-dispatch",
+  "figure": "公司於 25+ 國營運（同頁所述）",
+  "status": "unreadable"
+ },
+ {
+  "file": "mech-maps.json",
+  "id": "h3-surge",
+  "figure": "122 個 base cells、12 個 pentagon、16 個解析度、64-bit 整數編碼",
+  "status": "unreadable"
+ },
+ {
+  "file": "mech-maps.json",
+  "id": "driver-location-rate",
+  "figure": "Android：HIGH_ACCURACY 約數呎、BALANCED 約 100 公尺、LOW_POWER 約 10 公里（官方文件）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-matching-engine.json",
+  "id": "fifo-vs-prorata",
+  "figure": "Pro-rata 最小配額 2 lots（Databento 對 Allocation 的描述）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-matching-engine.json",
+  "id": "single-threaded-bl-processor",
+  "figure": "單 thread 6 million orders/sec（Fowler，Nehalem 3GHz 雙路四核，32GB RAM）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-matching-engine.json",
+  "id": "single-threaded-bl-processor",
+  "figure": "同一計數器累加 500M 次：1 thread 300ms；2 threads + lock 118,000ms（Thompson 部落格）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-matching-engine.json",
+  "id": "event-sourcing-journal-failover",
+  "figure": "Input ring buffer 20 million slots、output 各 4 million slots（Fowler）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-matching-engine.json",
+  "id": "event-sourcing-journal-failover",
+  "figure": "主資料中心 2 個 BLP + 1 個 DR（Fowler）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-matching-engine.json",
+  "id": "event-sourcing-journal-failover",
+  "figure": "完整重啟含 JVM、載入 snapshot、重播：小於 1 分鐘（Fowler）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-matching-engine.json",
+  "id": "sequencer-total-order",
+  "figure": "quorum = (n / 2) + 1（Aeron Cluster 教學）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-matching-engine.json",
+  "id": "market-data-incremental-snapshot",
+  "figure": "ITCH FPGA feed 要求 10 Gb 或 40 Gb 連線到 Carteret 資料中心（ITCH spec）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-matching-engine.json",
+  "id": "market-data-incremental-snapshot",
+  "figure": "MoldUDP64 單一訊息理論上可到 64KB（MoldUDP64 spec）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-matching-engine.json",
+  "id": "mechanical-sympathy-ring-buffer",
+  "figure": "三階段 pipeline 平均每 hop 延遲：Disruptor 52 ns vs ArrayBlockingQueue 32,757 ns（Disruptor 文件）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-matching-engine.json",
+  "id": "mechanical-sympathy-ring-buffer",
+  "figure": "Cache line 一般為 64 bytes（Disruptor 文件）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-matching-engine.json",
+  "id": "kernel-bypass-fpga",
+  "figure": "FPGA feed 需要 10 Gb 或 40 Gb 連線（ITCH spec）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-matching-engine.json",
+  "id": "price-bands-circuit-breakers",
+  "figure": "LULD：Tier 1 高於 $3.00 為 5%，$0.75–$3.00 為 20%（LULD Plan）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-matching-engine.json",
+  "id": "price-bands-circuit-breakers",
+  "figure": "Limit State 15 秒窗口、5 分鐘暫停（LULD Plan）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-matching-engine.json",
+  "id": "price-bands-circuit-breakers",
+  "figure": "MWCB：7% / 13% / 20%（NYSE）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-matching-engine.json",
+  "id": "crypto-hot-cold-wallet",
+  "figure": "熱錢包上限約 2% 託管資產；約 98% 離線（SEC 回覆）",
+  "status": "unreadable"
+ },
+ {
+  "file": "mech-moderation.json",
+  "id": "perceptual-hash-matching",
+  "figure": "PDQ：256-bit hash，paper 測得 Hamming distance 30 以內是有信心的匹配",
+  "status": "verified"
+ },
+ {
+  "file": "mech-moderation.json",
+  "id": "perceptual-hash-matching",
+  "figure": "PDQ 格式轉換下 99.96% 成功（threshold 30），浮水印約 50%",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-moderation.json",
+  "id": "perceptual-hash-matching",
+  "figure": "TMK+PDQF hash 約 258KB，兩階段 cosine similarity 門檻 0.7",
+  "status": "verified"
+ },
+ {
+  "file": "mech-moderation.json",
+  "id": "perceptual-hash-matching",
+  "figure": "PhotoDNA 雲端版比前一代快 1,000 倍；只適用於已知圖片",
+  "status": "verified"
+ },
+ {
+  "file": "mech-moderation.json",
+  "id": "near-duplicate-label-propagation",
+  "figure": "2020 年 3 月到美國大選日，對美國用戶看過、被第三方查核為不實的內容套用警告超過 1.8 億則",
+  "status": "unreadable"
+ },
+ {
+  "file": "mech-moderation.json",
+  "id": "sigma-rule-engine",
+  "figure": "Sigma 服務超過每秒 100 萬 requests",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-moderation.json",
+  "id": "sigma-rule-engine",
+  "figure": "Haskell 版相較前代 FXL 吞吐提升 20–30%，部分請求類型快 3 倍",
+  "status": "verified"
+ },
+ {
+  "file": "mech-moderation.json",
+  "id": "few-shot-policy-adaptation",
+  "figure": "政策描述加最多 50 個範例即可",
+  "status": "unreadable"
+ },
+ {
+  "file": "mech-moderation.json",
+  "id": "few-shot-policy-adaptation",
+  "figure": "支援 100 多種語言",
+  "status": "unreadable"
+ },
+ {
+  "file": "mech-moderation.json",
+  "id": "few-shot-policy-adaptation",
+  "figure": "在某些任務上比 SOTA few-shot 方法最多高 55%（平均 12%）",
+  "status": "unreadable"
+ },
+ {
+  "file": "mech-moderation.json",
+  "id": "image-text-ocr",
+  "figure": "每天從超過 10 億張公開 Facebook／Instagram 圖片與影片幀抽取文字",
+  "status": "verified"
+ },
+ {
+  "file": "mech-moderation.json",
+  "id": "image-text-ocr",
+  "figure": "8-bit quantization 讓記憶體頻寬需求降為 1/4",
+  "status": "verified"
+ },
+ {
+  "file": "mech-moderation.json",
+  "id": "discord-automod",
+  "figure": "自訂關鍵字過濾最多 3 個、每個最多 1,000 個關鍵字",
+  "status": "verified"
+ },
+ {
+  "file": "mech-moderation.json",
+  "id": "discord-automod",
+  "figure": "mention spam 閾值最高可設 50 個不重複 mention",
+  "status": "verified"
+ },
+ {
+  "file": "mech-moderation.json",
+  "id": "adversarial-text-normalization",
+  "figure": "TR39 列出三類 confusable：single-script、mixed-script、whole-script",
+  "status": "verified"
+ },
+ {
+  "file": "mech-moderation.json",
+  "id": "community-notes-bridging",
+  "figure": "Helpful 閾值：note intercept ≥ 0.40；Not Helpful ≤ −0.08",
+  "status": "unreadable"
+ },
+ {
+  "file": "mech-moderation.json",
+  "id": "community-notes-bridging",
+  "figure": "regularization：intercept λ=0.15、factor λ=0.03",
+  "status": "unreadable"
+ },
+ {
+  "file": "mech-moderation.json",
+  "id": "shadowban-vs-suspension",
+  "figure": "Reddit 停權通常 3–5 天，也可永久",
+  "status": "verified"
+ },
+ {
+  "file": "mech-moderation.json",
+  "id": "bot-score-gating",
+  "figure": "Cloudflare bot score 1–99；1 為自動化，2–29 為 likely automated，30–99 為 likely human",
+  "status": "verified"
+ },
+ {
+  "file": "mech-moderation.json",
+  "id": "bot-score-gating",
+  "figure": "reCAPTCHA v3 分數 0.0–1.0，建議起始門檻 0.5，token 兩分鐘過期",
+  "status": "verified"
+ },
+ {
+  "file": "mech-moderation.json",
+  "id": "appeals-flow",
+  "figure": "strike 申訴期限 6 個月；內容移除申訴期限 1 年；每個 strike 僅可申訴一次",
+  "status": "verified"
+ },
+ {
+  "file": "mech-observability.json",
+  "id": "multiwindow-burn-rate",
+  "figure": "99.9% SLO 的建議值：1h/5m 視窗 burn rate 14.4（消耗 2% 預算，page）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-observability.json",
+  "id": "multiwindow-burn-rate",
+  "figure": "6h/30m 視窗 burn rate 6（消耗 5%，page）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-observability.json",
+  "id": "multiwindow-burn-rate",
+  "figure": "3d/6h 視窗 burn rate 1（消耗 10%，ticket）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-observability.json",
+  "id": "error-budget-release-gate",
+  "figure": "例：99.999% 季度 SLO 容許 0.001% 失敗；事故讓 0.0002% 請求失敗即消耗該季 20% 預算",
+  "status": "verified"
+ },
+ {
+  "file": "mech-observability.json",
+  "id": "error-budget-release-gate",
+  "figure": "SRE 手冊：約 70% 的 outage 來自線上系統變更",
+  "status": "verified"
+ },
+ {
+  "file": "mech-observability.json",
+  "id": "gorilla-tsdb-compression",
+  "figure": "12 million data points / 秒",
+  "status": "verified"
+ },
+ {
+  "file": "mech-observability.json",
+  "id": "gorilla-tsdb-compression",
+  "figure": "超過 1 trillion points / 天",
+  "status": "verified"
+ },
+ {
+  "file": "mech-observability.json",
+  "id": "gorilla-tsdb-compression",
+  "figure": "16 bytes -> 平均 1.37 bytes，約 12x",
+  "status": "verified"
+ },
+ {
+  "file": "mech-observability.json",
+  "id": "gorilla-tsdb-compression",
+  "figure": "26 小時資料約 1.3TB RAM（分散在 20 台）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-observability.json",
+  "id": "m3-downsample-at-ingest",
+  "figure": "6.6 billion time series（2018）",
+  "status": "unreadable"
+ },
+ {
+  "file": "mech-observability.json",
+  "id": "m3-downsample-at-ingest",
+  "figure": "彙總 500 million metrics / 秒，持久化 20 million metrics / 秒",
+  "status": "unreadable"
+ },
+ {
+  "file": "mech-observability.json",
+  "id": "m3-downsample-at-ingest",
+  "figure": "retention 從 2 天到 5 年、解析度從 1 秒到 1 小時",
+  "status": "unreadable"
+ },
+ {
+  "file": "mech-observability.json",
+  "id": "mergeable-percentile-sketch",
+  "figure": "DDSketch：2% 相對誤差下 275 buckets 可涵蓋 1ms 到 1 分鐘",
+  "status": "verified"
+ },
+ {
+  "file": "mech-observability.json",
+  "id": "mergeable-percentile-sketch",
+  "figure": "802 buckets 涵蓋 1ns 到 1 天",
+  "status": "verified"
+ },
+ {
+  "file": "mech-observability.json",
+  "id": "mergeable-percentile-sketch",
+  "figure": "約 2KB 記憶體",
+  "status": "verified"
+ },
+ {
+  "file": "mech-observability.json",
+  "id": "mergeable-percentile-sketch",
+  "figure": "ingest 比 Greenwald-Khanna 快 10 倍",
+  "status": "verified"
+ },
+ {
+  "file": "mech-observability.json",
+  "id": "atlas-in-memory-tiering",
+  "figure": "時間序列從約 2M 成長到數十億",
+  "status": "verified"
+ },
+ {
+  "file": "mech-observability.json",
+  "id": "atlas-in-memory-tiering",
+  "figure": "分層：<6h、<4d、<16d、更舊封存到 S3",
+  "status": "verified"
+ },
+ {
+  "file": "mech-observability.json",
+  "id": "blameless-postmortem",
+  "figure": "SRE 書：把最佳作法預先寫成 playbook 約使 MTTR 改善 3 倍",
+  "status": "verified"
+ },
+ {
+  "file": "mech-payments.json",
+  "id": "auth-capture-split",
+  "figure": "Stripe 線上（card-not-present）Visa CIT 有效期 7 天、Visa MIT 5 天（實際 4 天 18 小時，預留 clearing 時間）；Mastercard / Amex / Discover 為 7 天",
+  "status": "verified"
+ },
+ {
+  "file": "mech-payments.json",
+  "id": "auth-capture-split",
+  "figure": "Stripe 實體刷卡（card-present）Visa 5 天；Mastercard / Amex / Discover 2 天",
+  "status": "verified"
+ },
+ {
+  "file": "mech-payments.json",
+  "id": "auth-capture-split",
+  "figure": "Stripe 上 PayPal hold 10 天，Stripe 會嘗試再延 10 天，共 20 天；Klarna 須在 28 個日曆日後的午夜前 capture",
+  "status": "verified"
+ },
+ {
+  "file": "mech-payments.json",
+  "id": "auth-capture-split",
+  "figure": "Square 線上（card not present）預設 7 天、實體刷卡 36 小時，到期預設 CANCEL",
+  "status": "verified"
+ },
+ {
+  "file": "mech-payments.json",
+  "id": "sales-day-settlement-batch",
+  "figure": "範例：週一 capture、settlement delay 2 個營業日，週三結算",
+  "status": "verified"
+ },
+ {
+  "file": "mech-payments.json",
+  "id": "sales-day-settlement-batch",
+  "figure": "若資金在 capture 後 30 天內未從 scheme 收到，會從當期 settlement batch 中扣回（settlement reversal）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-payments.json",
+  "id": "sca-3ds2-exemptions",
+  "figure": "SCA 自 2019-09-14 起適用（PSD2）",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-payments.json",
+  "id": "sca-3ds2-exemptions",
+  "figure": "低額豁免：交易 <30 EUR（25 GBP）；累計超過 100 EUR（85 GBP）或自上次 SCA 起已有 5 筆交易時，發卡行仍可要求 SCA",
+  "status": "verified"
+ },
+ {
+  "file": "mech-payments.json",
+  "id": "sca-3ds2-exemptions",
+  "figure": "TRA 豁免門檻：PSP 詐欺率低於 0.13% 可豁免至 100 EUR、0.06% 至 250 EUR、0.01% 至 500 EUR",
+  "status": "verified"
+ },
+ {
+  "file": "mech-payments.json",
+  "id": "sca-3ds2-exemptions",
+  "figure": "Stripe 目前 EEA 商家 TRA 最高到 250 EUR；UK / 瑞士最高 220 GBP",
+  "status": "verified"
+ },
+ {
+  "file": "mech-payments.json",
+  "id": "pci-scope-reduction-iframe",
+  "figure": "直接處理未 token 化 PAN 可能需要滿足超過 300 項 PCI DSS 控制",
+  "status": "verified"
+ },
+ {
+  "file": "mech-payments.json",
+  "id": "pci-scope-reduction-iframe",
+  "figure": "Stripe 對應：Checkout / Elements / 行動 SDK 為 SAQ A，Stripe.js v2 自架表單為 SAQ A-EP，直接送卡號到 API 為 SAQ D",
+  "status": "verified"
+ },
+ {
+  "file": "mech-payments.json",
+  "id": "chargeback-dispute-lifecycle",
+  "figure": "卡組織通常允許持卡人在原交易後 120 天內發起 dispute；未來活動 / 服務則從事件日起算",
+  "status": "verified"
+ },
+ {
+  "file": "mech-payments.json",
+  "id": "chargeback-dispute-lifecycle",
+  "figure": "商家回應期限通常 7–21 天；發卡行審理通常 60–75 天；整個流程約 2–3 個月",
+  "status": "verified"
+ },
+ {
+  "file": "mech-payments.json",
+  "id": "chargeback-dispute-lifecycle",
+  "figure": "inquiry 若 120 天未升級為 chargeback，Stripe 會標為 warning_closed",
+  "status": "verified"
+ },
+ {
+  "file": "mech-payments.json",
+  "id": "chargeback-dispute-lifecycle",
+  "figure": "未退款的 Visa / Mastercard EFW 約 40% 會變成 fraud dispute",
+  "status": "verified"
+ },
+ {
+  "file": "mech-payments.json",
+  "id": "chargeback-dispute-lifecycle",
+  "figure": "Stripe 建議金額約小於等於 dispute fee 的 EFW 才值得退款，高出 35% 以上不建議",
+  "status": "verified"
+ },
+ {
+  "file": "mech-payments.json",
+  "id": "chargeback-dispute-lifecycle",
+  "figure": "reversal 方式的退款通常在 capture 後 2 小時內才能阻止 fraud report",
+  "status": "verified"
+ },
+ {
+  "file": "mech-payments.json",
+  "id": "radar-risk-score-rules",
+  "figure": "風險分數範圍 0–99；預設 65 以上為 elevated、75 以上為 highest",
+  "status": "verified"
+ },
+ {
+  "file": "mech-payments.json",
+  "id": "multicurrency-fx-lock",
+  "figure": "可用超過 135 種幣別收款",
+  "status": "verified"
+ },
+ {
+  "file": "mech-payments.json",
+  "id": "multicurrency-fx-lock",
+  "figure": "Adaptive Pricing 對呈現給客人的匯率加 2–4% 轉換費",
+  "status": "verified"
+ },
+ {
+  "file": "mech-payments.json",
+  "id": "multicurrency-fx-lock",
+  "figure": "FX Quotes 鎖定期 5 分鐘 / 1 小時 / 24 小時；匯率變動超過 3.5% 則 quote 失效",
+  "status": "verified"
+ },
+ {
+  "file": "mech-payments.json",
+  "id": "multicurrency-fx-lock",
+  "figure": "範例：60 USD 以 0.88 EUR/USD 收款得 52.80 EUR，退款時匯率 0.86 則商家被扣 51.60 EUR",
+  "status": "verified"
+ },
+ {
+  "file": "mech-payments.json",
+  "id": "refund-reversal-partial",
+  "figure": "客人通常在退款後約 5–10 個營業日看到入帳（依銀行）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-payments.json",
+  "id": "refund-reversal-partial",
+  "figure": "refund 失敗後退回 Stripe 餘額最久可到 30 天",
+  "status": "verified"
+ },
+ {
+  "file": "mech-payments.json",
+  "id": "refund-reversal-partial",
+  "figure": "ARN 最多需 7 個營業日才會取得",
+  "status": "verified"
+ },
+ {
+  "file": "mech-payments.json",
+  "id": "payout-schedule-t-plus-n",
+  "figure": "美國標準 T+2 營業日；歐盟多數國家預設 T+3 營業日、首次 payout 為 7 個日曆日",
+  "status": "verified"
+ },
+ {
+  "file": "mech-payments.json",
+  "id": "payout-schedule-t-plus-n",
+  "figure": "日本預設 T+4 營業日、首次 7 個日曆日；巴西初始 30 個日曆日",
+  "status": "verified"
+ },
+ {
+  "file": "mech-payments.json",
+  "id": "payout-schedule-t-plus-n",
+  "figure": "ACH Debit 4 個營業日、SEPA Direct Debit 6 個營業日",
+  "status": "verified"
+ },
+ {
+  "file": "mech-payments.json",
+  "id": "payout-schedule-t-plus-n",
+  "figure": "同日 manual payout（美國）：每日最多 10 筆、每筆最高 100 萬美元，美東下午 5 點前",
+  "status": "verified"
+ },
+ {
+  "file": "mech-payments.json",
+  "id": "payout-schedule-t-plus-n",
+  "figure": "Instant payout 資金通常 30 分鐘內到帳",
+  "status": "verified"
+ },
+ {
+  "file": "mech-payments.json",
+  "id": "stripe-webhook-ordering",
+  "figure": "live mode 最多重送 3 天，sandbox 重送 3 次、數小時內",
+  "status": "verified"
+ },
+ {
+  "file": "mech-payments.json",
+  "id": "stripe-webhook-ordering",
+  "figure": "Dashboard Resend 在事件建立後 15 天內有效；CLI 為 30 天內",
+  "status": "verified"
+ },
+ {
+  "file": "mech-payments.json",
+  "id": "stripe-webhook-ordering",
+  "figure": "簽章時間戳預設容忍 5 分鐘；最多可註冊 16 個 event destination",
+  "status": "verified"
+ },
+ {
+  "file": "mech-recsys.json",
+  "id": "feature-store-skew",
+  "figure": "Feature Store 約 10,000 個特徵",
+  "status": "unreadable"
+ },
+ {
+  "file": "mech-recsys.json",
+  "id": "feature-store-skew",
+  "figure": "P95 延遲：無 Cassandra 查詢 <5ms，有 feature store 查詢 <10ms",
+  "status": "unreadable"
+ },
+ {
+  "file": "mech-recsys.json",
+  "id": "feature-store-skew",
+  "figure": "每秒超過 250,000 次預測",
+  "status": "unreadable"
+ },
+ {
+  "file": "mech-recsys.json",
+  "id": "pinsage-graph-embedding",
+  "figure": "3 billion nodes（pins 與 boards）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-recsys.json",
+  "id": "pinsage-graph-embedding",
+  "figure": "18 billion edges",
+  "status": "verified"
+ },
+ {
+  "file": "mech-recsys.json",
+  "id": "pinsage-graph-embedding",
+  "figure": "7.5 billion 訓練樣本",
+  "status": "verified"
+ },
+ {
+  "file": "mech-recsys.json",
+  "id": "cold-start-content-embedding",
+  "figure": "CLIP embedding 768 維",
+  "status": "unreadable"
+ },
+ {
+  "file": "mech-recsys.json",
+  "id": "cold-start-content-embedding",
+  "figure": "MediaFM 在 8000 萬個 shot 上訓練",
+  "status": "unreadable"
+ },
+ {
+  "file": "mech-recsys.json",
+  "id": "cold-start-content-embedding",
+  "figure": "線上 A/B 至少 4 週，僅合併版本 V3 顯著",
+  "status": "unreadable"
+ },
+ {
+  "file": "mech-recsys.json",
+  "id": "bandit-exploration",
+  "figure": "Yahoo 資料集超過 3,300 萬事件，相對 context-free bandit 點擊率提升 12.5%",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-recsys.json",
+  "id": "interleaving-vs-ab",
+  "figure": "Interleaving 比 A/B 少 10 到 100 倍使用者即可偵測相同效應（Spotify 引述已發表研究）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-recsys.json",
+  "id": "interleaving-vs-ab",
+  "figure": "GenRec：約 10% 流量、約 4 週 A/B（repo 筆記）",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-recsys.json",
+  "id": "llm-native-ranker",
+  "figure": "用少 10-40 倍 Phase-2 標註資料，MRR 約 +1.6%",
+  "status": "unreadable"
+ },
+ {
+  "file": "mech-recsys.json",
+  "id": "llm-native-ranker",
+  "figure": "context token 降到約 1/3，serving 成本約同比下降",
+  "status": "unreadable"
+ },
+ {
+  "file": "mech-recsys.json",
+  "id": "llm-native-ranker",
+  "figure": "約 1B 與 10B backbone 皆隨資料成長",
+  "status": "unreadable"
+ },
+ {
+  "file": "mech-recsys.json",
+  "id": "llm-native-ranker",
+  "figure": "線上 A/B 約 10% 流量、約 4 週",
+  "status": "unreadable"
+ },
+ {
+  "file": "mech-video.json",
+  "id": "popularity-tiered-codec",
+  "figure": "Facebook：約 1/3 的影片貢獻大部分 watch time",
+  "status": "verified"
+ },
+ {
+  "file": "mech-video.json",
+  "id": "popularity-tiered-codec",
+  "figure": "MVHQ 範例：VP9 每 GB 200 分鐘 vs H.264 153 分鐘（約 30% 提升）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-video.json",
+  "id": "av1-device-gating",
+  "figure": "Netflix：Android 由 VP9 換 AV1 壓縮效率提升 20%",
+  "status": "verified"
+ },
+ {
+  "file": "mech-video.json",
+  "id": "av1-device-gating",
+  "figure": "Meta Reels iPhone：平均 bitrate 降 12%；AV1 約為 VP9 / HEVC 的 30% 更高編碼效率",
+  "status": "verified"
+ },
+ {
+  "file": "mech-video.json",
+  "id": "av1-device-gating",
+  "figure": "Meta：dav1d 軟解在多數 Android 可 720p30，部分中高階機可 1080p30",
+  "status": "verified"
+ },
+ {
+  "file": "mech-video.json",
+  "id": "per-title-encoding",
+  "figure": "Netflix 原文範例：同畫質下比固定 ladder 的 5800 kbps 省約 20% bitrate",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-video.json",
+  "id": "per-shot-dynamic-optimizer",
+  "figure": "Netflix 原文：dynamic optimizer 對三種 codec（H.264、HEVC、VP9）約改善 28–38%",
+  "status": "unreadable"
+ },
+ {
+  "file": "mech-video.json",
+  "id": "chunked-parallel-mot-transcoding",
+  "figure": "VCU 專用晶片相對先前最佳化軟體系統 20–33 倍效率",
+  "status": "verified"
+ },
+ {
+  "file": "mech-video.json",
+  "id": "chunked-parallel-mot-transcoding",
+  "figure": "不同工作負載延遲需求：直播約 100 ms 到影片上傳數分鐘至數小時",
+  "status": "verified"
+ },
+ {
+  "file": "mech-video.json",
+  "id": "buffer-based-abr",
+  "figure": "相較當時 Netflix 預設演算法 rebuffer 減少約 20%（保持相近 video rate）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-video.json",
+  "id": "buffer-based-abr",
+  "figure": "BBA-0 固定 90 秒 reservoir",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-video.json",
+  "id": "buffer-based-abr",
+  "figure": "測試期 2013 年 5–9 月，數百萬使用者",
+  "status": "verified"
+ },
+ {
+  "file": "mech-video.json",
+  "id": "cmaf-codec-container-drm",
+  "figure": "報導：約 84% 端點能播 CMAF 後 CDN 成本才開始下降",
+  "status": "verified"
+ },
+ {
+  "file": "mech-video.json",
+  "id": "cmaf-codec-container-drm",
+  "figure": "HLS 目前版本 RFC 8216 version 7，支援 TS、fMP4、AES-128 / SAMPLE-AES",
+  "status": "verified"
+ },
+ {
+  "file": "mech-video.json",
+  "id": "ll-hls-partial-segments",
+  "figure": "標準 HLS 約 18 秒（6 秒 target duration x 3 hold-back）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-video.json",
+  "id": "ll-hls-partial-segments",
+  "figure": "LL-HLS 約 2–5 秒",
+  "status": "verified"
+ },
+ {
+  "file": "mech-video.json",
+  "id": "ll-hls-partial-segments",
+  "figure": "IVS low latency channel 低於 5 秒；傳統 OTT 可高達 30 秒",
+  "status": "verified"
+ },
+ {
+  "file": "mech-video.json",
+  "id": "webrtc-sfu-hybrid-live",
+  "figure": "WebRTC 約 200–500 ms；IVS real-time stage 低於 300 ms",
+  "status": "verified"
+ },
+ {
+  "file": "mech-video.json",
+  "id": "webrtc-sfu-hybrid-live",
+  "figure": "P2P mesh 4–6 人上限",
+  "status": "verified"
+ },
+ {
+  "file": "mech-video.json",
+  "id": "webrtc-sfu-hybrid-live",
+  "figure": "broadcaster encoder buffer 約增加 1–2 秒延遲",
+  "status": "verified"
+ },
+ {
+  "file": "mech-video.json",
+  "id": "open-connect-proactive-fill",
+  "figure": "Storage appliance 最高 120 TB、約 200 Gbps；Global appliance 最高 60 TB、約 80 Gbps",
+  "status": "verified"
+ },
+ {
+  "file": "mech-video.json",
+  "id": "open-connect-proactive-fill",
+  "figure": "新設備預填約 1–2 週（依 catalog 大小）",
+  "status": "verified"
+ },
+ {
+  "file": "mech-video.json",
+  "id": "storyboard-sprite-previews",
+  "figure": "Mux：tile 256x160；<15 分鐘 50 tiles、>15 分鐘 100 tiles",
+  "status": "verified"
+ },
+ {
+  "file": "mech-video.json",
+  "id": "multi-drm-license-proxy",
+  "figure": "Widevine 支援 cenc、cens、cbc1、cbcs 四種加密模式",
+  "status": "verified"
+ },
+ {
+  "file": "mech-video.json",
+  "id": "multi-drm-license-proxy",
+  "figure": "HLS AES-128 為 CBC 搭配 PKCS7 padding",
+  "status": "verified"
+ },
+ {
+  "file": "mech-web-search.json",
+  "id": "pagerank-iterative",
+  "figure": "d 通常設 0.85",
+  "status": "verified"
+ },
+ {
+  "file": "mech-web-search.json",
+  "id": "pagerank-iterative",
+  "figure": "論文稱 2,600 萬頁的 PageRank 可在中型工作站上於數小時內算完",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-web-search.json",
+  "id": "pagerank-iterative",
+  "figure": "原型的完整資料庫至少 2,400 萬頁",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-web-search.json",
+  "id": "postings-compression",
+  "figure": "Google 簡報：block-based 格式縮小索引約 30%",
+  "status": "verified"
+ },
+ {
+  "file": "mech-web-search.json",
+  "id": "postings-compression",
+  "figure": "Google 簡報：7-bit varint 約 1.8 億 numbers/秒、30-bit varint 約 2.4 億、group varint 約 4 億",
+  "status": "not_found"
+ },
+ {
+  "file": "mech-web-search.json",
+  "id": "postings-compression",
+  "figure": "group varint：4 個值用 5–17 bytes",
+  "status": "verified"
+ },
+ {
+  "file": "mech-web-search.json",
+  "id": "postings-compression",
+  "figure": "Lucene：每塊 256 個 docID",
+  "status": "verified"
+ },
+ {
+  "file": "mech-web-search.json",
+  "id": "postings-compression",
+  "figure": "Lucene roaring bitmap：每塊 65,536 值，少於 4,096 值用 2-byte array，否則用 bitmap",
+  "status": "verified"
+ },
+ {
+  "file": "mech-web-search.json",
+  "id": "postings-compression",
+  "figure": "Lemire & Boytsov：SIMD-BP128 解碼速度接近先前最快方案的兩倍",
+  "status": "verified"
+ },
+ {
+  "file": "mech-web-search.json",
+  "id": "tiering-and-early-termination",
+  "figure": "Elastic：block-max WAND 使 term query 快 3x 到 7x",
+  "status": "verified"
+ },
+ {
+  "file": "mech-web-search.json",
+  "id": "tiering-and-early-termination",
+  "figure": "Elastic：disjunction 最多快 15x，少數情況有約 8% 退步",
+  "status": "verified"
+ },
+ {
+  "file": "mech-web-search.json",
+  "id": "bm25-lexical-scoring",
+  "figure": "Elasticsearch 預設 k1 = 1.2",
+  "status": "verified"
+ },
+ {
+  "file": "mech-web-search.json",
+  "id": "bm25-lexical-scoring",
+  "figure": "Elasticsearch 預設 b = 0.75",
+  "status": "verified"
+ },
+ {
+  "file": "mech-web-search.json",
+  "id": "two-stage-ranking",
+  "figure": "Nogueira & Cho：MS MARCO 上 MRR@10 相對先前 state of the art 提升 27%",
+  "status": "verified"
+ },
+ {
+  "file": "mech-web-search.json",
+  "id": "simhash-near-duplicate",
+  "figure": "Google 專利：64-bit 指紋、k = 3 為範例",
+  "status": "verified"
+ },
+ {
+  "file": "mech-web-search.json",
+  "id": "simhash-near-duplicate",
+  "figure": "專利：64 bit 切成 6 塊，選 3 塊共 20 種排列",
+  "status": "verified"
+ },
+ {
+  "file": "mech-web-search.json",
+  "id": "caffeine-percolator-incremental",
+  "figure": "平均文件處理延遲降低 100 倍",
+  "status": "verified"
+ },
+ {
+  "file": "mech-web-search.json",
+  "id": "caffeine-percolator-incremental",
+  "figure": "搜尋結果中文件平均年齡下降約 50%",
+  "status": "verified"
+ },
+ {
+  "file": "mech-web-search.json",
+  "id": "caffeine-percolator-incremental",
+  "figure": "舊系統約 100 個 MapReduce，每份文件需 2–3 天",
+  "status": "verified"
+ },
+ {
+  "file": "mech-web-search.json",
+  "id": "caffeine-percolator-incremental",
+  "figure": "Caffeine 文件集合比舊系統大 3 倍",
+  "status": "verified"
+ },
+ {
+  "file": "mech-web-search.json",
+  "id": "caffeine-percolator-incremental",
+  "figure": "相同爬取速率下約多用 2 倍資源",
+  "status": "verified"
+ },
+ {
+  "file": "mech-web-search.json",
+  "id": "search-result-caching",
+  "figure": "Dean：cache hit rate 通常 30–60%",
+  "status": "verified"
+ },
+ {
+  "file": "mech-web-search.json",
+  "id": "search-result-caching",
+  "figure": "Dean：10s 台機器做 100s 或 1000s 台的工作",
+  "status": "verified"
+ },
+ {
+  "file": "mech-web-search.json",
+  "id": "trustrank-link-spam",
+  "figure": "論文摘要：只需不到 200 個站的好種子集合，即可過濾大部分網路的 spam",
+  "status": "verified"
+ },
+ {
+  "file": "mech-web-search.json",
+  "id": "trustrank-link-spam",
+  "figure": "範例演算法使用 decay αB = 0.85",
+  "status": "verified"
+ }
+]

@@ -1,0 +1,460 @@
+{
+ "problem": "change-induced",
+ "incidents": [
+  {
+   "id": "cloudflare-2019-waf-regex",
+   "problem": "change-induced",
+   "company": "Cloudflare",
+   "title": "WAF 規則裡一條 regex 在 27 分鐘內吃光全球 CPU",
+   "date": "2019-07",
+   "kind": "postmortem",
+   "symptom": "全球 HTTP/HTTPS 流量回 502，約 80% 流量消失；所有 PoP 的 CPU 衝到接近 100%。",
+   "rootCause": "WAF Managed Rules 推出一條 XSS 偵測新規則，其中的 regex 會 catastrophic backtracking；Lua WAF 用的 PCRE 沒有複雜度保證，且數週前一次重構又誤移除了限制 regex CPU 的保護。規則經 Quicksilver 在數秒內推到全球。",
+   "whyHard": "WAF 規則的 SOP 明文允許直接全球推送，不走軟體發布的 DOG → PIG → Canary 流程；CI 只測規則是否正確攔截 / 放行，沒有量 CPU，建置時間也沒變長。事故中連 Cloudflare 自己的 Access / 內部控制台都掛了，要靠不常用的 bypass 才能進去執行 global terminate；rollback 計畫還要完整 build 兩次太慢。",
+   "fix": "止血：用 global terminate 關掉整個 WAF（14:07 執行，14:09 流量與 CPU 恢復）。修正：還原被移除的 CPU 保護、人工檢查全部 3,868 條規則、測試加入效能 profiling、改用 re2 / Rust regex 這類有 run-time 保證的引擎、SOP 改成 WAF 規則也要分階段發布（保留真實攻擊時的緊急全球通道）。",
+   "tradeoff": "WAF 的價值就是對新漏洞的反應速度，分階段發布會拖慢防護上線；所以保留緊急通道但要明確區分 emergency 與 routine。re2 這類引擎不支援部分 PCRE 功能（backreference 等），規則表達力會被限縮。",
+   "lessons": [
+    "把規則 / 設定當成程式碼來發布：只要能影響 data plane，就該走 canary / 分階段，不能因為它叫 config 就走快速通道。",
+    "測試要涵蓋資源消耗（CPU、延遲），不只是功能正確；『功能對、效能炸』是 config 類變更最常見的盲點。",
+    "緊急開關（global terminate / kill switch）本身要能在主系統掛掉時使用：不能依賴被你自己搞壞的 edge。"
+   ],
+   "numbers": [
+    "服務中斷約 27 分鐘（13:42 部署，14:09 恢復）",
+    "第一個 PagerDuty page 在部署後 3 分鐘",
+    "過去 60 天 WAF Managed Rules 處理 476 個 change request，約每 3 小時一個",
+    "Quicksilver 平均每秒分發約 350 個變更，p99 為 2.29 秒送達全球每台機器",
+    "共 3,868 條 WAF 規則需人工檢查"
+   ],
+   "interviewUse": "支撐『設定 / 規則的推送速度越快，blast radius 越大，必須有 staged rollout 與資源面測試』。",
+   "sources": [
+    {
+     "title": "Details of the Cloudflare outage on July 2, 2019",
+     "url": "https://blog.cloudflare.com/details-of-the-cloudflare-outage-on-july-2-2019/"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "api-networking"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "cloudflare-2025-11-bot-feature-file",
+   "problem": "change-induced",
+   "company": "Cloudflare",
+   "title": "資料庫權限變更讓 Bot Management feature file 翻倍，撞到 200 上限",
+   "date": "2025-11",
+   "kind": "postmortem",
+   "symptom": "核心 CDN / 安全服務回 HTTP 5xx，Workers KV、Access、Turnstile、Dashboard 連帶受影響；錯誤率會自行恢復又再惡化，一度被誤判為 DDoS。",
+   "rootCause": "ClickHouse 叢集逐步套用一個資料庫權限變更，讓 system.columns 查詢開始同時回傳 r0 底層表的欄位；產生 Bot Management feature file 的查詢沒有過濾 database 名稱，結果欄位重複、檔案大小翻倍。Proxy 對 feature 數量預先配置記憶體並設上限 200（正常約 60），超過後 unwrap 失敗 panic。",
+   "whyHard": "feature file 每 5 分鐘由 ClickHouse 叢集重新產生並推到全網路，而權限變更是逐節點套用，所以只有查到已更新節點時才產出壞檔，錯誤時好時壞，看起來像攻擊；同時 Cloudflare 的 status page（託管在外部）剛好也掛，更強化了 DDoS 假說。壞檔推送是『設計上要快』的路徑，沒有對自家產生的設定做輸入驗證。",
+   "fix": "止血：停止產生 / 推送新的 feature file，手動把已知良好版本塞進分發佇列並重啟 core proxy（14:24 停止、14:30 主要恢復）；先前用 bypass 讓 Workers KV / Access 退回舊版 proxy 降低影響。長期：把 Cloudflare 自己產生的設定檔當成使用者輸入來強化驗證、增加全域 kill switch、避免 core dump / 錯誤回報耗盡資源、檢視所有 core proxy 模組的錯誤處理（改為 fail-open）。",
+   "tradeoff": "fail-open 代表錯誤設定下會放行未評分的流量（例如 bot 規則失效），對安全產品是取捨；部分服務可能讓客戶選擇 fail-open 或 fail-closed。",
+   "lessons": [
+    "『內部產生的設定檔』和使用者輸入一樣需要 schema / 大小 / 筆數驗證，變更的上游（資料庫權限）可能與下游（檔案產生）距離很遠。",
+    "快速傳播的設定通道需要和程式發布同等級的 health validation 與快速 rollback；兩週後 2025-12-05 的事故又是同一類問題：透過沒有漸進發布的 global configuration system 套用 killswitch，觸發 FL1 proxy 的 nil 錯誤，約 28% HTTP 流量受影響、約 25 分鐘。",
+    "漸進套用的變更 + 週期性重新產生的產物，會造成 flapping，診斷時先問『這次變更是否正在逐步擴散』。"
+   ],
+   "numbers": [
+    "11:05 部署權限變更，11:28 開始影響客戶流量，14:30 主要問題解決，17:06 全部恢復",
+    "feature 數量上限 200，正常使用約 60",
+    "feature file 每 5 分鐘產生一次",
+    "第一個自動化測試在 11:31 偵測到問題，13:05 起用 bypass 降低 Workers KV / Access 影響",
+    "2025-12-05 事故：08:47 開始、09:12 回復，約 25 分鐘，約 28% HTTP 流量受影響"
+   ],
+   "interviewUse": "說明為何設定下發管線要有 canary、輸入驗證與 fail-open 預設，以及為何診斷時要先檢查最近的變更。",
+   "sources": [
+    {
+     "title": "Cloudflare outage on November 18, 2025",
+     "url": "https://blog.cloudflare.com/18-november-2025-outage/"
+    },
+    {
+     "title": "Cloudflare outage on December 5, 2025",
+     "url": "https://blog.cloudflare.com/5-december-2025-outage/"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "api-networking"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "cloudflare-2022-06-bgp-policy-reorder",
+   "problem": "change-induced",
+   "company": "Cloudflare",
+   "title": "BGP policy term 重新排序，19 個最忙 data center 撤回 prefix",
+   "date": "2022-06",
+   "kind": "postmortem",
+   "symptom": "19 個 data center 離線，雖只佔網路 4%，卻影響約 50% 的全球請求。",
+   "rootCause": "為了替 site-local prefix 加 BGP community 的標準化變更，在 spine router 的 AGGREGATES-OUT policy 裡造成 term 重新排序，原本在前面的 ADV-SITE-LOCALS 被排到 REJECT-THE-REST 之後，於是 site-local prefix 全部被撤回。",
+   "whyHard": "變更有 dry-run、同儕審查與分階段 rollout，但分階段順序裡 Multi-Colo PoP (MCP) 被排在最後一步，前面的站點都用舊架構所以完全看不出問題；diff 裡 term 重新排序只用 ! 標示，肉眼看起來像單純加 community。事故當下 prefix 被撤回連工程師都難以連到路由器，回復時又因為多位 network engineer 互相覆蓋、把彼此的 revert 又還原，讓問題反覆出現。",
+   "fix": "止血：透過備援管道取得控制並逐站 revert（06:51 在 router 上驗證根因、06:58 根因確認、07:42 最後一個 revert 完成）。長期：MCP 專屬的測試與部署程序、重新設計容易因排序出錯的 policy、強化 stagger 政策，並引入自動化 commit-confirm 式 rollback。",
+   "tradeoff": "較細的 stagger 與 commit-confirm 讓網路變更更慢，且要為不同架構的站點維護不同的 rollout 順序；commit-confirm 需要設備與自動化平台支援。",
+   "lessons": [
+    "Canary 要能代表高風險群體：如果『最重要的站點』被排在最後才受影響，前面的階段就沒有驗證價值。",
+    "自動 rollback（commit-confirm）縮短的是 time-to-resolve，stagger 縮小的是 blast radius，兩者要同時有。",
+    "多人同時手動 revert 本身也是風險，事故中需要單一指揮與變更鎖。"
+   ],
+   "numbers": [
+    "19 個 data center、約佔網路 4%、影響約 50% 請求",
+    "06:27 事故開始，06:58 第一個站點恢復，07:42 全部恢復",
+    "變更在 03:56 開始推到第一個站點，約 2.5 小時後才到 MCP 站點"
+   ],
+   "interviewUse": "討論網路 / 路由設定變更為何需要依風險排序的 canary 與 commit-confirm 自動回滾。",
+   "sources": [
+    {
+     "title": "Cloudflare outage on June 21, 2022",
+     "url": "https://blog.cloudflare.com/cloudflare-outage-on-june-21-2022/"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "api-networking",
+    "geo"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "meta-2021-10-backbone-bgp",
+   "problem": "change-induced",
+   "company": "Meta (Facebook)",
+   "title": "維護指令切斷整個 backbone，DNS 自動撤回 BGP 而無法被找到",
+   "date": "2021-10",
+   "kind": "postmortem",
+   "symptom": "Facebook、Instagram、WhatsApp 全球無法使用，連內部工具與 DNS 也失效。",
+   "rootCause": "例行 backbone 維護中，一個原本用來評估全球 backbone 容量的指令意外中斷了所有 backbone 連線；本應攔截此類指令的 audit 工具因為 bug 沒擋下。接著 DNS 伺服器偵測到無法連到資料中心就自動撤回 BGP advertisement，使 DNS 名稱伺服器雖然仍在運作卻從網際網路上消失。",
+   "whyHard": "兩個保護機制互相放大：健康檢查式的 BGP 撤回在單點故障時合理，但在整個 backbone 消失時讓全部 DNS 同時下線。正常與 out-of-band 管理網路也都下線，內部工具因 DNS 失效而壞掉，工程師得實體到資料中心；而機房安全設計（難進入、難修改設備）又拖慢了復原。",
+   "fix": "止血：派工程師到現場，啟動安全存取程序後恢復 backbone 連線。復原時逐步恢復負載，避免數十 MW 的用電驟升造成新一輪故障（先前的 storm 演練讓團隊有經驗）。長期：加強測試與演練，並考慮模擬 backbone 全部離線的情境。",
+   "tradeoff": "文章自己指出的取捨：強化安全防護讓日常更安全，但在罕見的自我造成事故時復原更慢；他們認為這個取捨值得。",
+   "lessons": [
+    "變更前的 audit / 驗證工具是最後一道防線，本身需要被測試與 fail-safe 設計。",
+    "管理平面（遠端存取、DNS、內部工具）不應依賴被管理的資料平面，否則故障時會失去修復能力。",
+    "自動健康檢查若在全域故障時全員一起撤回，會把部分故障變成全部消失；需要『全部都不健康時不要撤回』的下限。",
+    "健康檢查的自動反應本身也可能放大故障",
+    "out-of-band 管理通道不能與被管理的網路共用命運",
+    "復原時要控制負載爬升速度"
+   ],
+   "numbers": [
+    "復原時個別資料中心用電降幅達數十 MW，需逐步恢復負載以避免電力與 cache 風險"
+   ],
+   "interviewUse": "支撐『管理平面與資料平面分離、變更驗證要 fail-safe、自動撤回要有全域保險』。",
+   "sources": [
+    {
+     "title": "More details about the October 4 outage",
+     "url": "https://engineering.fb.com/2021/10/05/networking-traffic/outage-details/"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "api-networking"
+   ],
+   "byAgents": true,
+   "alsoIn": [
+    "cascading-failure"
+   ]
+  },
+  {
+   "id": "gcp-2025-06-service-control",
+   "problem": "change-induced",
+   "company": "Google Cloud",
+   "title": "Service Control 收到空白欄位的 quota policy，全球 crash loop",
+   "date": "2025-06",
+   "kind": "postmortem",
+   "symptom": "Google Cloud、Workspace 等多個產品的外部 API 請求回 503；Cloud Service Health 自身也受影響。",
+   "rootCause": "5/29 釋出的新 quota 檢查程式碼經過 region-by-region 發布，但失敗路徑需要特定 policy 才會被觸發，發布期間從未執行到；且該程式沒有錯誤處理、沒有被 feature flag 保護。6/12 一筆含空白欄位的 policy 寫入 Spanner，數秒內全球複寫，各 region 的 Service Control 讀到後 null pointer crash loop。",
+   "whyHard": "程式發布本身是漸進的，但資料（policy metadata）的複寫是近乎即時全球的，兩條路徑的安全等級不一致；潛伏數週的 bug 只在特定資料出現才被觸發。恢復時 Service Control 大量重啟形成 herd effect 壓垮 Spanner（沒有 randomized exponential backoff），us-central1 又多花約 2h40m。",
+   "fix": "止血：SRE 2 分鐘內開始 triage、10 分鐘找到根因、約 25 分鐘準備好 red-button（關閉該 policy 服務路徑）、40 分鐘內全部推出；大 region 則限制 task 建立並導向 multi-regional 資料庫。長期：模組化並 fail open、全面審視全球複寫的資料要增量傳播並留驗證時間、重要 binary 的變更一律以預設關閉的 feature flag 保護、強化靜態分析與錯誤處理測試、補上 randomized exponential backoff、確保狀態頁與監控不依賴出事的平台。",
+   "tradeoff": "fail open 在 quota / policy 檢查上等於暫時放行，可能有濫用或超額風險；資料增量傳播則讓 quota 設定生效變慢。",
+   "lessons": [
+    "『程式』和『資料』是兩條獨立的變更路徑，漸進發布程式不代表資料變更也安全，全球複寫的設定資料也需要 canary。",
+    "新增程式路徑要有 feature flag 與預設關閉，並測試『資料異常』的情況；沒被觸發過的路徑等於沒被測過。",
+    "大規模重啟需要 jittered backoff，否則恢復本身會造成第二次 outage。",
+    "全球複製的設定資料是爆炸半徑",
+    "重啟本身也要有退避（thundering herd）",
+    "新功能必須有 feature flag 與優雅錯誤處理",
+    "全球複寫的設定 / policy 資料是跨 region 的共同失效點；變更要漸進 rollout，而不是同步到所有 region。",
+    "Control plane 元件對錯誤輸入要 fail-open 或隔離，不能 crash loop。",
+    "Recovery 要有 jitter 和節流，否則重啟本身就是第二次事故。"
+   ],
+   "numbers": [
+    "5/29 部署程式碼，6/12 約 10:45 PDT 寫入 policy",
+    "約 2 分鐘開始 triage、10 分鐘找到根因、約 25 分鐘 red-button 就緒、40 分鐘內推出完成",
+    "us-central1 完全復原最久約 2h40m",
+    "第一份事故公告約在崩潰後 1 小時，因為 Cloud Service Health 本身也掛了"
+   ],
+   "interviewUse": "討論控制平面元件為何要 fail open、資料與程式要分別漸進發布，以及重啟風暴需要 backoff。",
+   "sources": [
+    {
+     "title": "Google Cloud incident report: Multiple GCP products are experiencing Service issues (2025-06-12)",
+     "url": "https://status.cloud.google.com/incidents/ow5i3PPK96RduMcb1SsW"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "consistency",
+    "api-networking"
+   ],
+   "byAgents": true,
+   "alsoIn": [
+    "cascading-failure",
+    "multi-region-dr"
+   ]
+  },
+  {
+   "id": "crowdstrike-2024-channel-file-291",
+   "problem": "change-induced",
+   "company": "CrowdStrike",
+   "title": "Channel File 291 內容更新：21 個輸入欄位對 20 個實際輸入",
+   "date": "2024-07",
+   "kind": "postmortem",
+   "symptom": "收到新版 Channel File 291 的 Windows 主機在 IPC 通知時系統崩潰（藍屏）。",
+   "rootCause": "新的 IPC Template Type 定義了 21 個輸入欄位，但 sensor 整合程式碼只提供 20 個值；Content Interpreter 沒有 runtime bounds check，7/19 部署的新 Template Instance 首次對第 21 個欄位使用非萬用字元比對，造成 out-of-bounds read 而崩潰。Content Validator 也以 21 個輸入為前提驗證，沒有發現。",
+   "whyHard": "前面所有測試都剛好沒踩到：測試用的 12 個靜態案例、以及先前的 Template Instance 在第 21 欄都用 wildcard，所以潛伏缺陷在編譯、驗證、壓力測試與先前幾次實際部署都沒暴露。Rapid Response Content 被視為設定而非程式，卻在 kernel driver 內被解譯，錯誤的代價是整台機器在 kernel 層崩潰。",
+   "fix": "修正：sensor 編譯時驗證 Template Type 欄位數、Content Interpreter 補上 bounds check 與輸入數量檢查、更正 Template Type 提供 21 個輸入、對所有欄位增加非萬用字元的自動測試與 fuzz、Content Validator 增加檢查。RCA 並把 staged deployment（canary 後逐環提升、每環 bake-in、有問題回滾）列為新增的緩解，並讓客戶控制 Rapid Response Content 何時何處部署。",
+   "tradeoff": "分環與客戶可控的部署讓新威脅防護的上線速度變慢，這正是 Rapid Response Content 設計要避免的；客戶若延後更新就有短暫防護空窗。",
+   "lessons": [
+    "把內容 / 設定檔視為會執行的程式：需要與程式相同的測試、fuzz 與分環發布，尤其當解譯器在 kernel 層。",
+    "驗證器（validator）與 runtime 的假設必須一致，並由編譯期檢查綁在一起；兩邊各自相信不同的欄位數就是缺陷。",
+    "測試資料若全用萬用字元，等於沒有測到該欄位。"
+   ],
+   "numbers": [
+    "Template Type 定義 21 個輸入，sensor 實際提供 20 個",
+    "自動化測試使用 12 個靜態案例",
+    "2024-07-19 部署兩個新 Template Instance",
+    "RCA 發佈時約 99% 的 Windows sensor 已恢復在線（與更新前相比）"
+   ],
+   "interviewUse": "支撐『內容更新通道也需要 canary 與逐環發布，且 validator / runtime 假設要一致』。",
+   "sources": [
+    {
+     "title": "External Technical Root Cause Analysis — Channel File 291 (CrowdStrike, 2024-08-06)",
+     "url": "https://www.crowdstrike.com/wp-content/uploads/2024/08/Channel-File-291-Incident-Root-Cause-Analysis-08.06.2024.pdf"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "api-networking"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "fastly-2021-06-config-trigger",
+   "problem": "change-induced",
+   "company": "Fastly",
+   "title": "一個合法的客戶設定觸發潛伏 bug，85% 網路回錯誤",
+   "date": "2021-06",
+   "kind": "postmortem",
+   "symptom": "全球 CDN 在 6/8 09:47 UTC 起大規模回錯誤，約 85% 的網路受影響，許多大型網站同時無法存取。",
+   "rootCause": "5/12 開始部署的軟體引入一個 bug，只有在特定客戶設定與特定條件下才會觸發；6/8 有客戶推送了包含該條件的合法設定，導致全球節點出錯。",
+   "whyHard": "bug 潛伏近 4 週，沒被 QA 與測試抓到；觸發它的是客戶（而非 Fastly）下發的設定，且該設定在全球快速生效，所以沒有『先影響少數節點』的機會。偵測不是問題（約 1 分鐘發現），難的是定位是哪一個設定造成。",
+   "fix": "止血：09:48 監控發現、10:27 工程團隊找出該客戶設定並停用，10:36 開始恢復，49 分鐘內 95% 網路恢復正常；17:25 開始部署永久 bug 修正。長期：檢討為何 QA 未發現、縮短修復時間，並運用 WebAssembly / Compute@Edge 的隔離能力提升韌性。",
+   "tradeoff": "Fastly 未公開具體的新發布機制；隔離（WebAssembly）能限制客戶設定的影響範圍，但可能增加執行成本，且需要平台遷移。",
+   "lessons": [
+    "多租戶平台的客戶設定本身就是『變更』：要假設任何合法設定都可能觸發潛伏 bug，並考慮租戶隔離與設定的漸進生效。",
+    "偵測快（1 分鐘）不等於恢復快（49 分鐘 95%、約 2h48m 才標示緩解），要縮短『找出誘因設定』的診斷時間。"
+   ],
+   "numbers": [
+    "約 85% 的網路回傳錯誤",
+    "09:47 開始，09:48 被監控發現，約 1 分鐘",
+    "49 分鐘內 95% 網路恢復",
+    "5/12 開始部署，6/8 才被觸發"
+   ],
+   "interviewUse": "說明多租戶 CDN 的客戶設定也是全域變更來源，以及偵測時間與診斷時間的差異。",
+   "sources": [
+    {
+     "title": "Summary of June 8 outage (Fastly)",
+     "url": "https://www.fastly.com/blog/summary-of-june-8-outage"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "api-networking"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "datadog-2023-03-systemd-networkd",
+   "problem": "change-induced",
+   "company": "Datadog",
+   "title": "安全 patch 重啟 systemd-networkd，清掉 IP rules，跨雲同時斷網",
+   "date": "2023-03",
+   "kind": "postmortem",
+   "symptom": "多個 region、跨 AWS / Azure / Google Cloud 的 Kubernetes 節點同時失去網路，超過 60% 的 instances 斷線。",
+   "rootCause": "Ubuntu 22.04 的 systemd v249 在 systemd-networkd 啟動時會清除它不認識的 IP rules（預設會管理 foreign routing policy rules）。3/7 發佈修補 CVE 的 systemd 更新，Ubuntu 預設的 unattended-upgrades 在 06:00–07:00 UTC 套用並重啟 systemd-networkd，把 Cilium 設定的 routing rules 全部刪除，節點與 pod 都斷網。",
+   "whyHard": "Datadog 有嚴謹的逐 region / cluster 漸進發布流程（每階段 bake 一週到一個月），但 unattended-upgrades 沒被停用，是一條繞過流程的旁路更新通道，在所有 22.04 節點同時生效；他們也從來沒遇過需要重啟 networkd 的安全更新。事故中 AWS 偵測到 instance 失去網路就自動終止並替換，雖然快速恢復了無狀態服務，卻抹掉本機磁碟上的資料（資料庫與 cache 大量依賴 local disk），反而更難復原；Google Cloud / Azure 的 instance 還活著，重啟即可。",
+   "fix": "止血：Google Cloud / Azure 透過 cloud API 重啟數千台 instance；AWS 的資料則靠重新處理資料、備份還原等方式重建。本篇聚焦根因分析，未列出完整的後續防護清單（作者指出另有文章說明復原）。",
+   "tradeoff": "自動治癒（health check 自動替換 instance）能快速恢復無狀態工作負載，但對依賴 local disk 的有狀態系統會放大損害；關閉 unattended-upgrades 則讓安全 patch 完全依賴自己的汰換流程。",
+   "lessons": [
+    "任何會繞過漸進發布流程的自動更新通道（OS auto-upgrade）都是潛在的全域變更來源，要明確停用或納入同一個 rollout 管線。",
+    "不同雲對『網路斷了但 instance 還活著』的反應不同（替換 vs 不處理），自動修復對有狀態系統可能是雙面刃。"
+   ],
+   "numbers": [
+    "超過 60% 的 instances 失去網路連線",
+    "事件發生在 2023-03-08 06:00–07:00 UTC；22.04 約佔機隊 90% 以上",
+    "AWS 每 10 分鐘終止超過 8% 的 instances，到 08:00 US1 約 60% 被替換，達數萬台",
+    "正常發布流程每階段 bake 一週到一個月"
+   ],
+   "interviewUse": "說明『漸進發布做得再好，旁路更新通道仍會讓變更一次影響全部』，以及自動修復與有狀態資料的取捨。",
+   "sources": [
+    {
+     "title": "2023-03-08 incident: A deep dive into the platform-level impact (Datadog)",
+     "url": "https://www.datadoghq.com/blog/engineering/2023-03-08-deep-dive-into-platform-level-impact/"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "storage-choice"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "aws-2017-s3-playbook-command",
+   "problem": "change-induced",
+   "company": "AWS",
+   "title": "S3 playbook 指令輸入錯誤，移除過多伺服器導致 us-east-1 停擺",
+   "date": "2017-02",
+   "kind": "postmortem",
+   "symptom": "US-EAST-1 的 S3 無法服務請求；依賴 S3 的 EC2 啟動、EBS snapshot 還原、Lambda 以及 S3 console 也受影響。",
+   "rootCause": "S3 團隊用既定 playbook 執行指令，要移除少量 billing 子系統伺服器，但輸入參數有誤，移除了更大量的伺服器，包含 index subsystem 與 placement subsystem 的容量。兩個子系統都需要完整重啟。",
+   "whyHard": "移除容量是日常營運動作，工具沒有最低容量下限保護；而 index / placement 子系統已經多年沒有在大型 region 完整重啟過，S3 成長之後重啟與完整性驗證花的時間遠超預期。AWS Service Health Dashboard 的管理介面也依賴 S3，導致一開始無法更新狀態，改用 Twitter 與 banner。",
+   "fix": "止血：重啟 index 與 placement 子系統（12:26 PST index 開始服務 GET / LIST / DELETE，13:18 完全恢復，13:54 placement 恢復後 S3 全面正常）。修正：工具改為更慢地移除容量並加入安全下限（不得讓任何子系統低於最小所需容量）、稽核其他營運工具、優先把 index subsystem 進一步拆成更小的 cell、讓狀態頁管理介面跨多個 region。",
+   "tradeoff": "工具加上下限與限速，會讓正當的大規模容量調整或緊急下架變慢，需要有受控的覆寫流程；cell 化則增加管理複雜度。",
+   "lessons": [
+    "破壞性的營運指令需要 blast radius 限制（速率、最低容量、二次確認），不能只靠操作者輸入正確。",
+    "很少執行的復原路徑（完整重啟）會隨規模成長而退化，要定期演練；cell 化能縮短恢復時間並降低 blast radius。",
+    "狀態頁與告警通道不能依賴出事的系統。",
+    "監控 / 狀態頁 / 事故溝通工具不能依賴出事的那個 region 或服務，否則故障時最需要的工具先失效。",
+    "很久沒冷啟動過的子系統，recovery time 是未知數；RTO 要靠定期演練才有可信度。",
+    "單一 region 內的管理動作（capacity removal）也要有 blast-radius 防護，不只防硬體故障。"
+   ],
+   "numbers": [
+    "9:37 AM PST 執行指令",
+    "12:26 PM PST index 開始服務部分請求，1:18 PM 完全恢復，1:54 PM placement 恢復、S3 正常",
+    "狀態頁到 11:37 AM 之前都無法更新"
+   ],
+   "interviewUse": "支撐『營運工具要有安全下限與限速、冷啟動 / 完整重啟路徑要演練、控制平面不可依賴自己』。",
+   "sources": [
+    {
+     "title": "Summary of the Amazon S3 Service Disruption in the Northern Virginia (US-EAST-1) Region",
+     "url": "https://aws.amazon.com/message/41926/"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "blobs"
+   ],
+   "byAgents": true,
+   "alsoIn": [
+    "multi-region-dr"
+   ]
+  },
+  {
+   "id": "azure-2026-09-gateway-update-resume",
+   "problem": "change-induced",
+   "company": "Microsoft Azure",
+   "title": "暫停的 gateway OS 更新到期後一次恢復，疊加先前效能退化的變更",
+   "date": "2026-09",
+   "kind": "postmortem",
+   "symptom": "多個 Azure 網路服務（ExpressRoute Gateway、Application Gateway、Firewall、Bastion、Virtual WAN、VPN Gateway）的管理操作間歇失敗，部分 ExpressRoute gateway 暫時失去連線，影響橫跨三十多個 region。",
+   "rootCause": "先前因部署限制而暫停的 gateway OS 更新在限制到期後，大量更新在短時間內一起恢復，造成 gateway 重啟與 configuration-retrieval 請求暴增；同時先前部署的一個變更已拉長區域 control plane 服務處理設定操作的時間，兩者疊加壓垮 control plane。ExpressRoute gateway 又在設定與路由狀態尚未恢復時就被標為 healthy，讓更新繼續進行到另一個冗餘實例。",
+   "whyHard": "兩個單獨看都不致命的變更（更新恢復、效能退化）在時間上疊加；本該逐階段漸進的更新，因為『暫停後一次放行』而失去節奏。暫停更新與 traffic shifting、加資源只能暫時緩解，直到 23:55 才把原因連結到先前的效能變更；且 control plane 擴容受相依平台服務限制。節流與負載保護也不足以保護關鍵處理。",
+   "fix": "止血：21:45 暫停更新，01:15 開始 rollback 先前拉長處理時間的變更，先在首個 region 驗證再推廣，02:15 影響結束；ExpressRoute gateway 約 30 分鐘後自動套用本地 last-known-good 設定而恢復連線。長期：暫停的更新恢復時要遵守分階段、強化 ExpressRoute gateway 的健康檢查（冗餘實例要等前一個完全恢復設定與路由）、解決 control plane 無法擴容問題、改善節流與 load shedding。",
+   "tradeoff": "更嚴格的健康檢查（等設定與路由完全恢復）讓更新更慢；load shedding 會在高壓時拒絕部分管理操作。Last-known-good 設定能自癒，但可能是過期的設定。",
+   "lessons": [
+    "『暫停後恢復』是隱藏的 thundering herd：任何被擱置的變更佇列，恢復時都要限速並分批。",
+    "健康檢查要確認『可服務』而不只是『程序在跑』，否則冗餘機制會被變更流程一起拖垮。",
+    "設備保留 last-known-good 設定能在 control plane 故障時自癒。"
+   ],
+   "numbers": [
+    "2026-09-30 20:30 UTC 影響開始，20:43 ExpressRoute 監控偵測到，2026-10-01 02:15 UTC 結束",
+    "21:45 暫停更新，23:55 找出關聯變更，01:15 開始 rollback",
+    "約 30 分鐘設定取得失敗後 gateway 套用 last-known-good 設定"
+   ],
+   "interviewUse": "說明被暫停的變更恢復時會變成同時發生的全域變更，且 rollout 與健康檢查需要標準化。",
+   "sources": [
+    {
+     "title": "Azure Post Incident Review (PIR) 7Q30-010: Network Connectivity – Gateway service degradation in multiple regions",
+     "url": "https://azure.status.microsoft/en-us/status/history/"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "api-networking"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "mozilla-2019-05-addon-cert-expiry",
+   "problem": "change-induced",
+   "company": "Mozilla",
+   "title": "add-on 簽章用的 intermediate certificate 過期，所有 add-on 同時失效",
+   "date": "2019-05",
+   "kind": "postmortem",
+   "symptom": "Firefox 上絕大多數 add-on 突然被停用，無法驗證簽章。",
+   "rootCause": "用來簽署 add-on 的 intermediate certificate 在 5/4 UTC 凌晨 1 點後到期，而幾乎所有 add-on 共用同一張 intermediate；Firefox 約每 24 小時檢查一次 add-on，每位使用者的檢查時間點不同，因此衝擊陸續浮現。",
+   "whyHard": "憑證到期是確定會發生的事件，卻沒人追蹤這類『時間炸彈』，且全部 add-on 共用同一張憑證，所以是單點。修復困難：簽發新 intermediate 需要由離線 HSM 中的 root 簽署，工程師得開車到存放 HSM 的地點；重新簽 1.5 萬以上 add-on 太慢，簽章服務一度為了避免更糟被關閉而讓測試修復用的 add-on 本身也難簽；而修復要透過 Normandy / Studies 推送，用戶端每 6 小時才檢查一次，且部分用戶（關閉 Telemetry / Studies、Android、舊版、HTTPS MITM proxy）收不到。",
+   "fix": "止血：關閉新 add-on 簽署、推 hotfix 暫停重新驗證；修復：簽發同 subject、同 public key 的新 intermediate，透過 Normandy 的 system add-on 安裝並強制重新驗證，約 6 PM PT 起算不到 9 小時（2:44 AM）開始推送，之後又花 6–12 小時才觸及多數使用者；另發 dot release。後續：盤點所有潛在的時間炸彈，並建立即使其他機制都失效仍能推送更新的管道。",
+   "tradeoff": "root 離線存放提升安全性，卻拉長緊急簽發時間；用 Studies 推修補會涉及使用者不想參與的實驗系統，需要分離出只含更新的 opt-in 通道。",
+   "lessons": [
+    "憑證 / 金鑰到期是可預測的故障，需要有庫存與到期監控，並提前輪替；共用單一憑證的設計把到期變成全域事件。",
+    "要保有一條『在其他東西都壞時仍能推送修復』的更新通道，且它本身不能依賴被打壞的簽章。"
+   ],
+   "numbers": [
+    "1.5 萬以上的 Firefox add-on 受影響",
+    "5/4 UTC 凌晨 1 點後 intermediate certificate 到期",
+    "約 6 PM PT（5/3）起到 2:44 AM 開始推送修復，不到 9 小時；之後再 6–12 小時多數使用者才收到",
+    "Normandy 用戶端每 6 小時檢查一次更新"
+   ],
+   "interviewUse": "說明憑證到期是『可預測的全域變更』，需要庫存、監控與可緊急推送的更新通道。",
+   "sources": [
+    {
+     "title": "Technical Details on the Recent Firefox Add-on Outage (Mozilla Hacks)",
+     "url": "https://hacks.mozilla.org/2019/05/technical-details-on-the-recent-firefox-add-on-outage/"
+    }
+   ],
+   "topics": [
+    "auth",
+    "reliability"
+   ],
+   "byAgents": true
+  }
+ ],
+ "quiz": [
+  {
+   "q": "Cloudflare 2019-07 的 WAF regex 事故中，同一個團隊平常發布軟體會走 DOG → PIG → Canary → 全球，為什麼這次一條規則會在數秒內打到全球？這個設計取捨是什麼？",
+   "a": "因為 WAF 規則的 SOP 明文允許直接全球推送（透過 Quicksilver 分散式 KV），目的是對新漏洞快速反應。取捨是反應速度 vs blast radius；事後改成規則也要分階段發布，只保留真正攻擊時的緊急通道，並在 CI 加入 CPU 效能測試、換成有 run-time 保證的 regex 引擎。",
+   "topic": "change-induced",
+   "kind": "取捨"
+  },
+  {
+   "q": "Google Cloud 2025-06 的 Service Control 事故中，程式碼已經做過 region-by-region 發布，為什麼仍然全球同時 crash？",
+   "a": "因為失敗的程式路徑需要特定 policy 資料才會被執行，發布期間從沒被觸發；6/12 一筆含空白欄位的 policy 寫進 Spanner 後數秒內全球複寫，所有 region 同時踩到。教訓：程式與資料是兩條獨立變更路徑，全球複寫的資料也需要增量傳播與驗證，新程式路徑要有預設關閉的 feature flag 與錯誤處理。",
+   "topic": "change-induced",
+   "kind": "情境"
+  },
+  {
+   "q": "Datadog 2023-03 事故中，他們的 OS 更新其實是逐 region 漸進、每階段 bake 一週到一個月，為什麼仍有超過 60% instance 同時斷網？",
+   "a": "因為 Ubuntu 預設的 unattended-upgrades 沒被停用，是一條繞過漸進發布流程的旁路：3/7 發佈的 systemd 安全 patch 在 06:00–07:00 UTC 被所有 22.04 節點自動套用並重啟 systemd-networkd，清掉 Cilium 設定的 IP rules。重點是要找出並關閉或納入同一管線的所有旁路更新通道。",
+   "topic": "change-induced",
+   "kind": "情境"
+  },
+  {
+   "q": "設計一個每幾分鐘就自動產生並推送到全網路的設定檔（例如 bot 分數的 feature file），參考 Cloudflare 2025-11 事故，你會加哪些防護？每個的代價？",
+   "a": "(1) 把自家產生的檔案當不可信輸入，驗證 schema、筆數與大小，不合格就保留上一版；代價是要維護驗證規則與可能的 false reject。(2) 漸進發布加 health validation 與自動 rollback，代價是設定生效變慢。(3) Data plane 對壞設定 fail-open / 退回 last-known-good，而非 panic；代價是安全產品會暫時放行或降低精度。(4) 全域 kill switch 與 bypass；代價是需維護且要演練。",
+   "topic": "change-induced",
+   "kind": "取捨"
+  },
+  {
+   "q": "Meta 2021-10 的事故中，為什麼 DNS 伺服器『自動撤回 BGP advertisement』讓情況更糟？該健康檢查什麼情況下合理、什麼情況下有害？",
+   "a": "單一站點與資料中心斷線時，撤回 BGP 能把流量導到健康站點，是合理的。但當整個 backbone 都被切斷，所有站點同時判定自己不健康並全部撤回，DNS 就整個從網際網路上消失，內部工具也跟著壞。改進方向是對『全部不健康』設保險（不要全部撤回）、管理平面與資料平面分離，並演練全域故障。",
+   "topic": "change-induced",
+   "kind": "取捨"
+  },
+  {
+   "q": "Cloudflare 2022-06 的 BGP policy 事故，變更本身有 dry-run、同儕審查和分階段 rollout，卻仍影響 50% 請求。分階段 rollout 的設計缺陷在哪？",
+   "a": "階段順序沒有依風險排序：新架構的 MCP data center（佔網路 4% 卻承載約一半流量）被排在最後一步，前面站點都用舊架構所以看不出 policy term 重新排序的問題，到最後一步才一次打到最重要的站點。改進：MCP 專屬測試與部署程序、更細的 stagger，以及自動 commit-confirm rollback 縮短復原時間。",
+   "topic": "change-induced",
+   "kind": "情境"
+  }
+ ]
+}

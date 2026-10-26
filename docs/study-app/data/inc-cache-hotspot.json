@@ -1,0 +1,411 @@
+{
+ "problem": "cache-hotspot",
+ "incidents": [
+  {
+   "id": "meta-2013-memcache-lease-gutter",
+   "company": "Meta (Facebook)",
+   "title": "Scaling Memcache：lease 擋 thundering herd 與 stale set，Gutter 擋 server 故障",
+   "date": "2013-04",
+   "kind": "design-writeup",
+   "symptom": "熱 key 同時被大量寫入失效與讀取 miss，大量請求同時回源 DB；cache server 掛掉時 miss 全灌到 DB，還可能連鎖壓垮接手的 server。",
+   "rootCause": "cache miss 後每個 client 都各自回源並 set 回 cache（thundering herd）；並發更新被重排時舊值會覆蓋新值（stale set）；server 故障時若用 rehash 把 key 重新分配，熱 key 可能把接手的 server 也壓垮。",
+   "whyHard": "單純加 cache server 解不了：問題在 miss 當下的並發，而不是容量；rehash 看似合理，但 key 存取頻率極不均（單一 key 可佔某 server 20% 請求），把熱 key 搬到別台只是搬走過載。",
+   "fix": "Lease：miss 時 memcached 發一個綁定該 key 的 64-bit token，set 時必須帶 token，期間被 delete 則 token 作廢（防 stale set）；每個 key 預設 10 秒只發一次 token，其他請求被告知稍等再讀（防 herd）。Gutter：約 1% 的小型 pool 接手故障 server 的請求，miss 時查 DB 後放入 Gutter 並快速過期。另有 cold cluster warmup（從 warm cluster 取值，delete 帶 2 秒 hold-off 防不一致）。",
+   "tradeoff": "Lease 讓等待的請求多一次短暫延遲，且可選擇回傳稍舊資料換延遲；Gutter 以「資料略舊」換保護 DB，過期要夠短才不必另做 invalidation；cold warmup 有極小機率留下不一致，論文認為值得。",
+   "lessons": [
+    "對單一熱 key，要在「miss 當下」做並發仲裁（lease / single-flight），而不是只靠 TTL。",
+    "故障轉移不要把負載 rehash 到其他正常 cache server，用獨立的小 pool 吸收，才不會連鎖過載。",
+    "cache 冷啟動（新 cluster / 重啟）是獨立的風險來源，要有 warmup 機制。"
+   ],
+   "numbers": [
+    "lease token 預設每個 key 10 秒發一次",
+    "易受 thundering herd 的 key 組：無 lease 時 DB 峰值 17K queries/s，有 lease 時 1.3K/s",
+    "Gutter 約佔 cluster 內 memcached server 的 1%",
+    "Gutter 使 client 可見失敗率下降 99%，每天將 10%–25% 的失敗轉為 hit",
+    "單一 key 可佔某 server 20% 的請求",
+    "cold cluster 回到滿載由數天縮短到數小時",
+    "cold cluster 的 delete 預設 2 秒 hold-off"
+   ],
+   "interviewUse": "被問「熱 key 過期時大量請求打爆 DB 怎麼辦」：講 lease（單一回填者，其餘等待）並引用 17K→1.3K，再補 Gutter 說明為什麼故障時不 rehash。",
+   "sources": [
+    {
+     "title": "Scaling Memcache at Facebook (NSDI '13)",
+     "url": "https://www.usenix.org/system/files/conference/nsdi13/nsdi13-final170_update.pdf"
+    }
+   ],
+   "topics": [
+    "caching",
+    "scaling-reads",
+    "reliability"
+   ],
+   "problem": "cache-hotspot",
+   "byAgents": true
+  },
+  {
+   "id": "meta-2010-config-cache-feedback-loop",
+   "company": "Meta (Facebook)",
+   "title": "2010 年 2.5 小時停機：cache 自動修復造成 DB 回饋迴圈",
+   "date": "2010-09",
+   "kind": "postmortem",
+   "symptom": "Facebook 對許多使用者不可用或無法連線約 2.5 小時，為四年多來最嚴重的一次。",
+   "rootCause": "一個自動驗證 cache 中 config 值的系統，發現值無效就從 persistent store 重新讀取修復；但這次是 persistent store 本身的值被判定無效，導致每個 client 都看到無效值並去查 DB 修復，DB cluster 被每秒數十萬 queries 壓垮。",
+   "whyHard": "client 查 DB 失敗時，會把這個錯誤也當成「值無效」並刪掉對應 cache key，使得即使原始問題修好，請求流量仍持續，形成 DB 無法恢復的回饋迴圈。",
+   "fix": "止血：停掉對該 DB cluster 的所有流量（等於關站），DB 恢復並修好根因後再慢慢放人回來。長期：關閉自動修正 config 的系統，改用其他系統處理回饋迴圈與瞬間尖峰的設計模式。",
+   "tradeoff": "為了讓 DB 脫離迴圈只能完全切斷流量，代價是全站下線；「錯誤即刪 cache」的修復邏輯在瞬時 cache 問題時有效，但在 source of truth 有問題時會放大傷害。",
+   "lessons": [
+    "自動修復路徑要有 rate limit 與 circuit breaker，否則在系統性錯誤時會變成放大器。",
+    "DB 錯誤不可以被當成「cache 值無效」去刪 key，錯誤與資料無效必須區分。",
+    "回源路徑沒有 single-flight 時，所有 client 同時「修復」等同大規模 stampede。"
+   ],
+   "numbers": [
+    "停機約 2.5 小時",
+    "DB cluster 每秒數十萬 queries（hundreds of thousands of queries a second）"
+   ],
+   "interviewUse": "說明 cache 回源的保護不能只靠 hit rate：repair / refill 路徑本身需要節流，否則故障時會放大成自我 DDoS。",
+   "sources": [
+    {
+     "title": "More Details on Today's Outage (Robert Johnson, 2010)",
+     "url": "https://engineering.fb.com/2010/09/23/uncategorized/more-details-on-today-s-outage/"
+    }
+   ],
+   "topics": [
+    "caching",
+    "reliability"
+   ],
+   "problem": "cache-hotspot",
+   "byAgents": true
+  },
+  {
+   "id": "meta-2022-cache-consistency-polaris",
+   "company": "Meta (Facebook)",
+   "title": "Cache made consistent：用 Polaris 監測 cache invalidation 的正確性",
+   "date": "2022-06",
+   "kind": "design-writeup",
+   "symptom": "cache 內留下永遠不會自己修復的 stale 值，使用者讀到舊資料，且很難重現與除錯。",
+   "rootCause": "資料在讀（cache fill）與寫（invalidation）兩條路徑都會被修改，兩者順序可能錯亂；一次罕見的暫時性錯誤觸發 error handling，呼叫 drop_cache(key, version)（版本小於指定值才丟棄），但 stale 項目恰好已是最新版本，結果沒被丟棄，metadata 永久不一致。",
+   "whyHard": "錯誤很罕見、與 service 內部邏輯耦合，TTL 太長時無法自癒；直接以 DB 驗證每筆寫入太貴，所以需要不依賴 service 內部細節的外部檢查。",
+   "fix": "Polaris 以「client 可觀察的 invariant」為準：收到 invalidation 事件後去查各 cache replica 是否最終一致，並用 1 / 5 / 10 分鐘多個時間尺度回報，不一致持續跨過時間尺度才做昂貴的 bypass-cache DB 查詢，以避免誤報。同時修正 error handler 的邏輯漏洞。",
+   "tradeoff": "監測只能「發現」不一致，不能阻止；不同時間尺度的延遲換來較少誤報與較低 DB 查詢成本，但偵測不會即時。",
+   "lessons": [
+    "Cache 一致性不能只靠設計正確，要有獨立於實作的線上驗證（invariant monitoring）。",
+    "invalidation 路徑上的 error handling 是最容易留下永久 stale 的地方，用 version 比較時要處理「已是最新版本」的情況。"
+   ],
+   "numbers": [
+    "一致性從 99.9999% 提升到 99.99999999%",
+    "五分鐘後不一致的 cache 寫入少於 100 億分之 1",
+    "加上 Polaris 與 consistency tracing 後，除錯時間少於 30 分鐘"
+   ],
+   "interviewUse": "被問「cache invalidation 怎麼確保正確」時：除了 CDC / invalidation 設計，補一句『我們會有獨立 monitor 以多時間尺度檢查最終一致性』。",
+   "sources": [
+    {
+     "title": "Cache made consistent (Engineering at Meta)",
+     "url": "https://engineering.fb.com/2022/06/08/core-infra/cache-made-consistent/"
+    }
+   ],
+   "topics": [
+    "caching",
+    "consistency",
+    "reliability"
+   ],
+   "problem": "cache-hotspot",
+   "byAgents": true
+  },
+  {
+   "id": "discord-2023-hot-partition-coalescing",
+   "company": "Discord",
+   "title": "熱門 channel 造成 Cassandra hot partition：data service 做 request coalescing",
+   "date": "2023-03",
+   "kind": "design-writeup",
+   "symptom": "某個 channel + bucket 的大量並發讀取讓單一節點越追越落後，因為讀寫使用 quorum，所有打到該節點的查詢延遲上升，影響整個 cluster 與終端使用者。",
+   "rootCause": "Cassandra 讀比寫貴（要查 memtable 加多個 SSTable），大型 server 的 channel 流量遠高於小型 server，大量並發讀把單一 partition 打成熱點，且並發沒有上限，延遲層層放大。",
+   "whyHard": "熱點來自資料分佈與使用者行為（例如 @everyone 公告讓所有人同時開啟並讀同一則訊息）；單純換資料庫也不保證解決，ScyllaDB 一樣可能有 hot partition，必須在 DB 上游控制併發。",
+   "fix": "在 API 與 DB 之間加 Rust 寫的 data service：同一時間對同一 row 的請求只查 DB 一次（第一個請求建立 worker task，後續請求訂閱該 task）；上游依 channel ID 做 consistent hash routing，讓同 channel 的請求落到同一個 service instance，提高 coalescing 命中率。之後再搬到 ScyllaDB。",
+   "tradeoff": "coalescing 只能壓住「同一 row 的重複讀取」，不能解決資料分佈本身不均；routing 綁 channel 使單一 instance 可能成為熱點；文中也承認 Cassandra 上仍有 hot partition，只是減少。",
+   "lessons": [
+    "熱 key 的第一道防線是把相同請求合併成一個回源（single-flight / coalescing），讓 DB 看到的併發有界。",
+    "配合 consistent hash 把相同 key 導到同一台，coalescing 才有效。",
+    "在 DB 前面做 coalescing 可把 hot key 的並發壓成一次查詢，直接切斷延遲連鎖放大。",
+    "無 GC 的儲存引擎能換來可預期的 P99，但仍要處理 hot partition 這個資料分佈問題。"
+   ],
+   "numbers": [
+    "Cassandra 從 177 節點降到 72 個 ScyllaDB 節點",
+    "歷史訊息讀取 p99 由 40-125ms 降到 15ms",
+    "訊息寫入 p99 由 5-70ms 降到穩定 5ms",
+    "每個 ScyllaDB 節點 9 TB 磁碟，Cassandra 平均 4 TB"
+   ],
+   "interviewUse": "被問「某個熱門房間 / 熱門貼文的讀取把 DB 壓垮」：先講 request coalescing 加依 key 的 consistent hash routing，再談 DB 分片或複製。",
+   "sources": [
+    {
+     "title": "How Discord Stores Trillions of Messages",
+     "url": "https://discord.com/blog/how-discord-stores-trillions-of-messages"
+    }
+   ],
+   "topics": [
+    "scaling-reads",
+    "sharding",
+    "caching"
+   ],
+   "problem": "cache-hotspot",
+   "byAgents": true,
+   "alsoIn": [
+    "tail-latency"
+   ]
+  },
+  {
+   "id": "slack-2022-memcached-flush-scatter-query",
+   "company": "Slack",
+   "title": "2-22-22 事故：Memcached 節點被換成空 cache，scatter query 把 Vitess 打爆",
+   "date": "2022-02",
+   "kind": "postmortem",
+   "symptom": "2022 年 2 月 22 日清晨約 6 點起，許多使用者無法連上 Slack；以 client boot 請求最受影響，channel 成員資料所在的 Vitess keyspace 嚴重過載。",
+   "rootCause": "Consul agent 升級進行到 25% 的 fleet 並逐台重啟，導致 memcached 節點被移出 service catalog，控制面 Mcrib 以空的 spare 取代，cache hit rate 下降。列出 Group DM 成員的查詢在 sharded-by-user 表上屬 scatter query（需打每個 shard），cache 一缺就要查所有 shard，讀取負載隨 miss 比例超線性成長。",
+   "whyHard": "進入 cascading failure 後系統不會自己回到穩定狀態：查詢逾時使 cache 填不起來，hit rate 更低，DB 更忙，client retry 又加壓；而之前兩次各 25% 的升級都沒事，只有撞上當天尖峰才越過臨界點。",
+   "fix": "止血：對 client boot 做嚴格 throttle，之後以小步幅放寬（第一次放太多又被打回）。修正：查詢改成只讀 memcached 缺的資料、因 GDM 成員不可變而可讀 replica、再改查 sharded-by-channel 的表，並盤點其他 scatter query。",
+   "tradeoff": "throttle 的代價是尚未 boot 的使用者基本上連不上；讀 replica 只適用不可變或可容忍舊資料的資料；Mcrib 越有效率地補位反而讓 cache churn 更大。",
+   "lessons": [
+    "warm cache 是隱性依賴：計算 DB 容量時要問『cache 全空時 DB 撐得住嗎』，尤其是放大倍數很大的 scatter query。",
+    "變更（rollout）與 cache 控制面的互動可能製造大量冷節點，rollout 要考慮 cache 影響。",
+    "進入 metastable 狀態後需要外部干預（降載）才能恢復。",
+    "對依賴 cache 的路徑，要把『cache 冷掉』當成過載情境來設計，因為 cache 命中率與 DB 負載有可能形成正回饋。",
+    "進入 metastable 的 cascading failure 後，必須用 throttle 等手段顯著降低負載或增加容量；解除觸發原因通常不夠。",
+    "恢復時要漸進放寬限流，過快會再度過載。"
+   ],
+   "numbers": [
+    "Consul 升級進行到 25% 的 fleet 時達到臨界點",
+    "前兩次各 25% 的步驟在前一週都沒出事"
+   ],
+   "interviewUse": "說明『cache hit rate 掉了 DB 會超線性爆量』，並用 scatter query 與 sharding key 選擇的關聯佐證 DB 要能在 cache 冷時存活。",
+   "sources": [
+    {
+     "title": "Slack's Incident on 2-22-22",
+     "url": "https://slack.engineering/slacks-incident-on-2-22-22/"
+    }
+   ],
+   "topics": [
+    "caching",
+    "sharding",
+    "reliability"
+   ],
+   "problem": "cache-hotspot",
+   "byAgents": true,
+   "alsoIn": [
+    "overload"
+   ]
+  },
+  {
+   "id": "uber-2025-cachefront-consistency",
+   "company": "Uber",
+   "title": "CacheFront：把 TTL + CDC 的最終一致 cache 升級成同步 invalidation",
+   "date": "2025-08",
+   "kind": "design-writeup",
+   "symptom": "想靠拉長 TTL 提高 hit rate，卻讓 stale 資料風險升高；TTL 加 CDC 的最終一致在部分場景成為採用的阻礙，stale 的持續時間理論上沒有上限。",
+   "rootCause": "staleness 的來源包含：並發讀寫造成的 racing cache fill、CDC invalidation 的延遲、Redis 節點無回應導致 invalidation 失敗、從落後的 follower 讀取後回填 cache。",
+   "whyHard": "一筆一年前寫入的 row，若讀改寫時 invalidation 剛好失敗，就會在整個 TTL 期間回傳一年前的資料；而這類錯誤很難量測。",
+   "fix": "用 Flux 讀 MySQL binlog 寫入 invalidation marker，並透過 Lua script 用 row timestamp 去重 cache fill；後來修改 storage engine 讓交易提交前即可得知被修改的 row key 與 session timestamp，由 query engine 同步 invalidate。另建 Cache Inspector（同一個 CDC 流水線加 1 分鐘延遲）比對 cache 與 binlog，量測 stale 數量以決定 TTL。",
+   "tradeoff": "同步 invalidation 增加寫入延遲換取 read-your-writes 較強的保證；整套方案適用讀多寫少（文中 20 或 100 倍的讀寫比），寫多的場景 invalidation 成本會明顯上升。",
+   "lessons": [
+    "提高 hit rate 與一致性互相拉扯，要先能量測 stale 比例再放寬 TTL。",
+    "用 timestamp / version 讓 cache fill 與 invalidation 可去重，是處理 race 的核心手段。"
+   ],
+   "numbers": [
+    "尖峰每秒服務超過 1.5 億筆 row 讀取",
+    "部分表的 TTL 延長到 24 小時",
+    "讀寫比通常為 20 或 100",
+    "Cache Inspector 的 CDC 刻意延遲 1 分鐘"
+   ],
+   "interviewUse": "被問「cache 與 DB 一致性怎麼做」：講 TTL + CDC 的最終一致，何時需要升級成同步 invalidation，並提 timestamp 去重與 stale 量測。",
+   "sources": [
+    {
+     "title": "How Uber Serves over 150 Million Reads per Second from Integrated Cache with Stronger Consistency Guarantees",
+     "url": "https://www.uber.com/blog/how-uber-serves-over-150-million-reads/"
+    }
+   ],
+   "topics": [
+    "caching",
+    "consistency",
+    "scaling-reads"
+   ],
+   "problem": "cache-hotspot",
+   "byAgents": true
+  },
+  {
+   "id": "netflix-2016-evcache-global-replication",
+   "company": "Netflix",
+   "title": "EVCache 跨區複寫：避免流量切區時的 cold cache thundering herd",
+   "date": "2016-03",
+   "kind": "design-writeup",
+   "symptom": "會員流量因故障或 Chaos Kong 演練在 region 間移動時，新 region 的 cache 對這些會員是冷的，大量 miss 會拉長回應時間並壓垮後端。",
+   "rootCause": "stateless 架構讓任何 region 都能服務任何請求，但 cache 內容是各 region 本地的；流量切換等於整批 key 冷啟動。",
+   "whyHard": "跨區同步若放在寫入路徑會拖慢本地操作；而 DB 容量通常是按 cache 命中時的負載來規劃的。",
+   "fix": "非同步跨區複寫：client 寫本地 cache 時，只把 key 與 metadata 送進 Kafka，Replication Relay 讀本地 cache 取值，再送到遠端 Replication Proxy 寫入；有些 cache 只送 DELETE（invalidate）而不送資料。每個目標 region 有獨立的 Relay cluster 以隔離延遲。",
+   "tradeoff": "接受最終一致（可容忍各 region 短暫不同）；Kafka 隊列滿時會丟舊訊息，所以服務必須容忍偶爾遺失複寫；只送 invalidate 時，首次讀取仍是 miss，只在跨區讀取少時划算。",
+   "lessons": [
+    "預防 cold cache herd 的方式之一，是讓備援 region 的 cache 預先是熱的。",
+    "複寫路徑與本地 cache 讀寫要解耦，複寫變慢不該影響本地請求。"
+   ],
+   "numbers": [
+    "尖峰每秒超過 3000 萬請求，數百億個物件，數萬個 memcached instance",
+    "全球每天約 2 兆次請求",
+    "多數 cache 的端到端複寫延遲 p99 低於 1 秒，最高流量的 cache 約 400ms",
+    "尖峰複寫超過每秒 150 萬則訊息"
+   ],
+   "interviewUse": "講 multi-region 容災時：cache 也要預熱，跨區用 key-only 的非同步複寫避免切區後的 cold-cache herd。",
+   "sources": [
+    {
+     "title": "Caching for a Global Netflix",
+     "url": "https://netflixtechblog.com/caching-for-a-global-netflix-7bcc457012f1"
+    }
+   ],
+   "topics": [
+    "caching",
+    "reliability",
+    "scaling-reads"
+   ],
+   "problem": "cache-hotspot",
+   "byAgents": true
+  },
+  {
+   "id": "instagram-2019-promise-cache",
+   "company": "Instagram",
+   "title": "Thundering Herds & Promises：cache 裡存 Promise 而不是值",
+   "date": "2019-04",
+   "kind": "design-writeup",
+   "symptom": "開新 cluster 或服務重啟時 cache 是空的，100 個並發請求會全部 miss 並產生 100 次後端請求，後端容量不足時就被打爆。",
+   "rootCause": "cache 冷啟動或遇到從未出現過的新請求時，cache 命中率的假設不成立，且每個並發請求各自回源。",
+   "whyHard": "全新請求本來就不在 cache 中也無法預測；預熱、放慢發佈、共享外部 cache 等做法都增加複雜度與失效模式。",
+   "fix": "cache 存放「Promise（未來會產生的值）」：miss 時原子性地建立 Promise 並放入 cache，由它去查後端；其他並發請求會找到這個 Promise 並一起等待，最終只有一次後端請求。Instagram 的 C++ 服務用 folly::Future 的 SharedPromise 實作。",
+   "tradeoff": "所有等待者共用同一個後端請求，若該請求失敗或變慢，會一起受影響（需處理失敗不被快取）；僅適用單一程序內的合併，跨機器仍需 lease 或 routing。",
+   "lessons": [
+    "single-flight 是 cache stampede 最小成本的解法，並能維持原本的命中率假設。",
+    "新 cluster 上線時最容易遇到 herd，要在設計時而不是事後處理。"
+   ],
+   "numbers": [
+    "文中範例：假設 90% 的請求可被 cache，用 cache 可將資源需求降為 1/10",
+    "範例：100 個並發 miss 會變成 100 次後端請求"
+   ],
+   "interviewUse": "被問「cache 過期瞬間如何避免大量請求同時回源」：講 single-flight（cache 存 promise）+ 跨機器用 lease 或同 key 路由到同台。",
+   "sources": [
+    {
+     "title": "Thundering Herds & Promises (Instagram Engineering)",
+     "url": "https://instagram-engineering.com/thundering-herds-promises-82191c8af57d"
+    }
+   ],
+   "topics": [
+    "caching",
+    "scaling-reads"
+   ],
+   "problem": "cache-hotspot",
+   "byAgents": true
+  },
+  {
+   "id": "nodejs-2023-cache-purge-404",
+   "company": "Node.js (OpenJS)",
+   "title": "nodejs.org 事故：每 5 分鐘 purge 整個 Cloudflare cache，origin 過載並被快取 404",
+   "date": "2023-03",
+   "kind": "postmortem",
+   "symptom": "3/15 到 3/17 之間使用者下載 Node.js 或存取網站部分頁面時會間歇性收到 404。",
+   "rootCause": "三個問題疊加：Cloudflare Page Rules 的 Cache Everything 加 Edge TTL 使 origin 的 404 也被快取；origin 過載且新的 NGINX try_files 設定在過載時錯誤回 404（過去是 5xx、不會被快取）；Next.js 遷移後 build script 找不到 en/index.html（變成 en.html），導致每 5 分鐘重 build 並 purge 整個 Cloudflare cache。",
+   "whyHard": "症狀（404）離根因（cache 被反覆 purge 造成 origin 過載）很遠；明確設 no-store 也無效，因為 Page Rule 的 Edge Cache TTL 優先於 origin 的 no-store。",
+   "fix": "修正 build script 停止 purge；NGINX 加預設 cache header 並對 404 設 no-store，移除 Cloudflare 的 TTL Page Rules；開啟 open_file_cache、移除 gzip_static、Cloudflare health check 改打回傳 204 的專用路由；封鎖行為異常的 Artifactory 請求。",
+   "tradeoff": "開 open_file_cache 以長 timeout 減少磁碟讀取，是因為檔案幾乎不變，檔案常變的站台不適用；部分 Page Rule 的 4 小時 TTL 使影響拖到午夜才完全消失。",
+   "lessons": [
+    "cache purge 是回源洪水的來源之一，要監控 purge 頻率與 origin QPS。",
+    "不要讓錯誤回應（404、5xx）被快取；cache 層設定的優先序要清楚。",
+    "需要與 production 相同的 staging（Cloudflare 加 NGINX）來驗證這類變更。"
+   ],
+   "numbers": [
+    "cache 每 5 分鐘被 purge 一次",
+    "部分被快取的 404 有 4 小時 TTL",
+    "完整修復約在 3/16 20:00 UTC，殘留影響到午夜 UTC"
+   ],
+   "interviewUse": "說明 CDN 層的 cache 失效（purge / 錯誤被快取）如何放大成 origin 過載，以及 negative caching 的風險。",
+   "sources": [
+    {
+     "title": "Node.js March 17th Infrastructure Incident Post-mortem",
+     "url": "https://nodejs.org/en/blog/announcements/node-js-march-17-incident"
+    }
+   ],
+   "topics": [
+    "caching",
+    "reliability",
+    "api-networking"
+   ],
+   "problem": "cache-hotspot",
+   "byAgents": true
+  },
+  {
+   "id": "twitter-2020-cache-workload-analysis",
+   "company": "Twitter",
+   "title": "153 個 in-memory cache cluster 的分析：熱 key 不是唯一的尖峰原因，TTL 與 jitter",
+   "date": "2020-11",
+   "kind": "design-writeup",
+   "symptom": "常見假設是 request rate 尖峰都由熱 key 造成，並且 cache 都是讀多寫少。",
+   "rootCause": "實測發現 request rate 尖峰有時伴隨「被存取的物件數量」同步上升，代表來源是 client retry、外部流量激增、scan 型存取、週期性任務，而非熱 key。",
+   "whyHard": "若把所有尖峰都當成熱 key 處理（例如只做 hot key 偵測與複製），會忽略 retry storm 與同時過期等其他原因。",
+   "fix": "該研究的建議與觀察：cache 要能吸收工作負載變化；TTL 會限制有效 working set，應優先清除過期物件；部分 client 會刻意把 TTL 打散在一個範圍內（TTL jitter）避免物件同時過期，也有 client 反過來刻意讓一批物件同時過期。",
+   "tradeoff": "miss ratio 極低的 cache 較不穩健：維護與故障變成主要干擾，後端必須保留更多餘裕；TTL jitter 要付出資料過期時間不一致的代價。",
+   "lessons": [
+    "診斷 cache 尖峰時先分辨：是少數 key 變熱，還是整體請求量或存取物件數一起上升。",
+    "用 TTL jitter 避免大量 key 同時過期，這是便宜的 stampede 防護。",
+    "後端容量不能假設 cache hit rate 永遠維持極高。"
+   ],
+   "numbers": [
+    "分析 153 個 cache cluster，超過 80 TB 的 trace",
+    "超過 35% 的 cluster 屬寫入比例 > 30% 的 write-heavy",
+    "超過 25% 的 workload 平均 TTL 短於 20 分鐘",
+    "只有 20% 的 Twemcache workload 使用單一 TTL"
+   ],
+   "interviewUse": "被問「cache 熱 key 怎麼處理」時，先講要先判斷尖峰成因（熱 key vs retry / scan），並補 TTL jitter 作為預防同時過期的作法。",
+   "sources": [
+    {
+     "title": "A large scale analysis of hundreds of in-memory cache clusters at Twitter (OSDI '20)",
+     "url": "https://www.usenix.org/system/files/osdi20-yang.pdf"
+    }
+   ],
+   "topics": [
+    "caching",
+    "scaling-reads"
+   ],
+   "problem": "cache-hotspot",
+   "byAgents": true
+  }
+ ],
+ "quiz": [
+  {
+   "q": "熱 key 剛過期，同一秒有上千請求同時 miss，DB 瞬間被打爆。Meta 的 lease 怎麼解？為什麼不用單純的分散式鎖？",
+   "a": "miss 時 memcached 只發給一個 client 一個綁定該 key 的 token（預設每 key 10 秒一次），其他請求被告知稍等再讀，通常幾毫秒後資料已回填。token 同時能在 key 被 delete 後作廢，防止 stale set；分散式鎖沒有這個與 cache 內建的版本仲裁，且鎖持有者掛掉要另外處理。Meta 數據：DB 峰值從 17K/s 降到 1.3K/s。",
+   "topic": "cache-hotspot",
+   "kind": "取捨"
+  },
+  {
+   "q": "某 cache server 掛了，要把它的 key rehash 到其他 server，還是用獨立的小 pool 接手？Meta 為何選後者？",
+   "a": "Meta 用約佔 1% 的 Gutter pool 接手，因為 key 存取頻率不均（單一 key 可佔 server 20% 的請求），rehash 會把熱 key 搬去別台並連鎖過載。代價是 Gutter 的資料會略舊，所以讓它快速過期以省掉 invalidation。",
+   "topic": "cache-hotspot",
+   "kind": "取捨"
+  },
+  {
+   "q": "Slack 的 cache hit rate 下降時，為什麼 DB 負載是『超線性』成長而不是線性？之後怎麼修？",
+   "a": "因為 Group DM 成員查詢是 sharded-by-user 表上的 scatter query，一個 channel 缺 cache 就要查所有 shard，miss 比例上升時幾乎每個使用者都要掃全部 shard。修法：對 client boot 做 throttle、只查 cache 缺的資料、讀 replica（因資料不可變）、改查 sharded-by-channel 的表。",
+   "topic": "cache-hotspot",
+   "kind": "情境"
+  },
+  {
+   "q": "一個服務的 DB 容量是照 99% hit rate 規劃的。為什麼這是風險？面試中該怎麼補強？",
+   "a": "cache 冷（重啟、cache 節點被換成空的、新 cluster）時 DB 會瞬間承受全量流量，且逾時使 cache 無法回填，形成 metastable 的 cascading failure（Slack 2-22-22）。補強：cache 預熱（Meta cold cluster warmup）、single-flight / coalescing、throttle 與 load shedding、rollout 時限制同時失效的 cache 節點比例。",
+   "topic": "cache-hotspot",
+   "kind": "情境"
+  },
+  {
+   "q": "Discord 的熱門 channel 造成 Cassandra hot partition。為什麼 request coalescing 要搭配 consistent hash routing？",
+   "a": "coalescing 只能合併落在『同一個 service instance』的重複請求；用 channel ID 做 routing key，同 channel 的請求都到同一個 instance，才能被合併成一次 DB 查詢。代價是單一 instance 可能變熱，且它不解決資料分佈不均本身（文中說仍有 hot partition，只是減少）。",
+   "topic": "cache-hotspot",
+   "kind": "取捨"
+  },
+  {
+   "q": "Facebook 2010 年停機：cache 的自動修復機制為什麼會讓 DB 無法恢復？該怎麼設計？",
+   "a": "每個 client 看到無效 config 都去查 DB 修復，DB 被壓垮；而 DB 查詢失敗又被當成『值無效』去刪 cache key，即使根因修好請求仍持續，形成回饋迴圈。設計上：修復路徑要有 rate limit、single-flight 與 circuit breaker，且 DB 錯誤不應等同 cache 值無效。",
+   "topic": "cache-hotspot",
+   "kind": "情境"
+  }
+ ]
+}

@@ -123,6 +123,40 @@ decisions 3–5 個。topics 只用上面的主題 ID。
 ## Schema E 補充規則（第二批起適用）
 - numbers：只放你**實際打開的頁面**裡出現的數字。只在 WebSearch 結果摘要、或二手轉述文章裡看到的數字，一律不放（不要放進來再標「二手」）。
 - apps：只掛來源證實「這家公司真的這樣做」的產品名稱；通用做法就寫技術或標準名稱（例如 "FIX protocol"、"MQTT"），不要掛示意性公司名。
-- 403 / 擋爬的網站：可試 `https://web.archive.org/web/2024/<原網址>`；若仍讀不到，就換另一個可讀的一手來源，不要用內容農場或 vendor 行銷文當主要來源。
+- 403 / 擋自動抓取的網站：**不要繞過**（不用 Wayback 或其他鏡像去讀被擋的頁面）。直接跳過，換另一個可讀的一手來源；不要用內容農場或 vendor 行銷文當主要來源。
 - 每條 sources 優先順序：官方 eng blog / 論文 / RFC / 官方文件 > 知名技術媒體（InfoQ、ACM Queue）> 其他。
 - 每條都要有清楚的取捨：cost 至少點出一個「什麼情況下這招不划算」。
+
+## Schema F — incidents（真實事故與解法：從公司技術部落格學）
+檔案格式：`{"problem": "<type id>", "incidents": [...], "quiz": [...]}`（quiz 用 Schema D，topic 填 type id）。
+```json
+{
+  "id": "roblox-2021-consul-outage",
+  "problem": "cascading-failure",
+  "company": "Roblox",
+  "title": "73 小時停機：Consul streaming 與 BoltDB 效能退化",
+  "date": "2021-10",
+  "kind": "postmortem | design-writeup",
+  "symptom": "使用者 / 指標看到什麼（例：全站無法登入、P99 從 X 升到 Y）",
+  "rootCause": "根本原因（技術細節，1–3 句）",
+  "whyHard": "為什麼難：直覺解法為何無效、問題怎麼擴大或為什麼難診斷",
+  "fix": "止血做法 + 長期修正",
+  "tradeoff": "修正方案的代價 / 什麼情況下不適用",
+  "lessons": ["可遷移到其他系統的教訓，1–3 條"],
+  "numbers": ["只放實際打開的頁面裡的數字"],
+  "interviewUse": "面試中可以拿來支撐什麼論點（一句話）",
+  "sources": [{"title": "...", "url": "..."}],
+  "topics": ["reliability"],
+  "byAgents": true
+}
+```
+問題類型 id：tail-latency, cascading-failure, overload, cache-hotspot, db-scaling-migration, change-induced, multi-region-dr, capacity-peaks
+（審查 agent 可能再提議新增類型）
+
+規則（與 Schema E 補充規則相同）：
+- 每條至少 1 個**實際打開讀過**的來源 URL；只看過搜尋摘要不算。
+- 網站擋自動抓取（Medium 系 403、Uber 406 等）時，**不要繞過**（不用 Wayback / 鏡像），直接換其他可讀的一手來源，或不收這篇。
+- 數字只寫實際讀到的頁面中出現的；不放搜尋摘要或二手轉述的數字。
+- company 必須是事故 / 文章的主角；不要把通用做法掛在示意性公司名下。
+- 同一個事件只寫一次（若跨類型，放最主要的類型，lessons 裡提另一類）。
+- topics 用 22 個主題 ID 中相關的 1–3 個。

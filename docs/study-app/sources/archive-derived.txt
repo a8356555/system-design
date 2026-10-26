@@ -1,0 +1,8 @@
+# 經 Wayback 讀取的內容（待使用者決定保留或改標）
+study-app mech-video: per-title-encoding, per-shot-dynamic-optimizer（主 session curl Wayback 核對 Netflix 原文）
+threads tech-blog: netflix-realtime-graph-query, netflix-flink-autoscaler, netflix-genrec-llm-recommendation, netflix-cold-start-multimodal, netflix-hystrix-circuit-breaker（主 session curl Wayback 核對）
+inc-cache-hotspot: Netflix EVCache, Discord request coalescing, Instagram thundering herds（agent 走 archive.org）
+review.json: 2 個 OpenAI 範例頁（審查 agent 走 Wayback）
+inc-capacity-peaks: Disney+ Hotstar 2024（agent 走 archive.org）
+inc-overload: Netflix Zuul 優先級降載、Uber QALM（agent 走 archive.org）
+inc-tail-latency: Netflix noisy neighbor（讀 getoto.net 轉載，非原站）；Tail at Scale（UCSD 課程網站 PDF 副本）

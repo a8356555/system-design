@@ -1,0 +1,1302 @@
+[
+ {
+  "company": "Google SRE",
+  "category": "大型平台",
+  "blogUrl": "https://sre.google/sre-book/table-of-contents/",
+  "postmortemUrl": "https://sre.google/sre-book/postmortem-culture/",
+  "strengths": "SRE book/workbook 是級聯故障、過載、重試預算、無責 postmortem 的權威出處",
+  "notableExamples": [
+   "Addressing Cascading Failures",
+   "Handling Overload",
+   "Postmortem Culture: Learning from Failure"
+  ],
+  "priority": "A",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Google Research & Cloud",
+  "category": "大型平台",
+  "blogUrl": "https://research.google/blog/",
+  "postmortemUrl": "https://status.cloud.google.com/summary",
+  "strengths": "Research 有 Spanner/Borg/Dapper 等論文導讀；Cloud status 有公開 incident report",
+  "notableExamples": [
+   "Spanner: Google's globally distributed database",
+   "Google Cloud Incident Report (June 2025 Service Control outage)"
+  ],
+  "priority": "A",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Meta Engineering",
+  "category": "大型平台",
+  "blogUrl": "https://engineering.fb.com/",
+  "postmortemUrl": "",
+  "strengths": "大規模基礎設施、資料庫、cache(TAO/Memcache)、網路與 2021 outage 檢討",
+  "notableExamples": [
+   "More details about the October 4 outage",
+   "Scaling Instagram Explore recommendations"
+  ],
+  "priority": "A",
+  "verified": "curl -L HTTP 200; also in repo list (verified there via WebFetch 2026-09); notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": true
+ },
+ {
+  "company": "AWS Builders' Library",
+  "category": "大型平台",
+  "blogUrl": "https://aws.amazon.com/builders-library/",
+  "postmortemUrl": "https://aws.amazon.com/premiumsupport/technology/pes/",
+  "strengths": "Amazon 工程師寫的 timeout/retry/backoff/jitter、load shedding、shuffle sharding 經典",
+  "notableExamples": [
+   "Timeouts, retries and backoff with jitter",
+   "Using load shedding to avoid overload",
+   "Avoiding fallback in distributed systems"
+  ],
+  "priority": "A",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "AWS Architecture Blog",
+  "category": "大型平台",
+  "blogUrl": "https://aws.amazon.com/blogs/architecture/",
+  "postmortemUrl": "",
+  "strengths": "參考架構、re:Invent 深入演講整理與 DR/多區域設計",
+  "notableExamples": [
+   "Exponential Backoff and Jitter",
+   "Disaster Recovery strategies in the cloud"
+  ],
+  "priority": "B",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Werner Vogels (All Things Distributed)",
+  "category": "大型平台",
+  "blogUrl": "https://www.allthingsdistributed.com/",
+  "postmortemUrl": "",
+  "strengths": "AWS CTO 談 DynamoDB、Aurora、一致性與大規模系統哲學",
+  "notableExamples": [
+   "Amazon's Dynamo",
+   "Amazon DynamoDB: a scalable, predictably performant database"
+  ],
+  "priority": "B",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Microsoft Azure Blog / Engineering",
+  "category": "大型平台",
+  "blogUrl": "https://azure.microsoft.com/en-us/blog/",
+  "postmortemUrl": "https://azure.status.microsoft/en-us/status/history/",
+  "strengths": "Azure status history 有公開 PIR；Azure 架構中心有設計模式",
+  "notableExamples": [
+   "Azure Front Door incident PIR",
+   "Cosmos DB consistency levels"
+  ],
+  "priority": "B",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Microsoft Azure Architecture Center",
+  "category": "大型平台",
+  "blogUrl": "https://learn.microsoft.com/en-us/azure/architecture/",
+  "postmortemUrl": "",
+  "strengths": "Cloud design patterns（Circuit Breaker、Bulkhead、Retry、Throttling）整理完整",
+  "notableExamples": [
+   "Circuit Breaker pattern",
+   "Retry Storm antipattern"
+  ],
+  "priority": "A",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Apple ML Research",
+  "category": "大型平台",
+  "blogUrl": "https://machinelearning.apple.com/",
+  "postmortemUrl": "",
+  "strengths": "偏 ML/裝置端 AI，系統設計內容少",
+  "notableExamples": [
+   "Apple Intelligence Foundation Language Models"
+  ],
+  "priority": "C",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Cloudflare",
+  "category": "基礎設施 / CDN / 雲",
+  "blogUrl": "https://blog.cloudflare.com/",
+  "postmortemUrl": "https://blog.cloudflare.com/tag/post-mortem/",
+  "strengths": "Outage postmortem 最透明、網路/邊緣/DNS/Rust 內部細節",
+  "notableExamples": [
+   "Cloudflare outage on November 18, 2025",
+   "Details of the Cloudflare outage on July 2, 2019",
+   "How we built rate limiting capable of scaling to millions of domains"
+  ],
+  "priority": "A",
+  "verified": "curl -L HTTP 200; also in repo list (verified there via WebFetch 2026-09); notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": true
+ },
+ {
+  "company": "Fastly",
+  "category": "基礎設施 / CDN / 雲",
+  "blogUrl": "https://www.fastly.com/blog",
+  "postmortemUrl": "",
+  "strengths": "CDN、邊緣運算(Compute)、2021 全球 outage 說明",
+  "notableExamples": [
+   "Summary of June 8 outage",
+   "Varnish and edge caching"
+  ],
+  "priority": "B",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Akamai",
+  "category": "基礎設施 / CDN / 雲",
+  "blogUrl": "https://www.akamai.com/blog",
+  "postmortemUrl": "",
+  "strengths": "CDN、DDoS、邊緣安全；系統設計深度較少",
+  "notableExamples": [
+   "Akamai CDN architecture overview"
+  ],
+  "priority": "C",
+  "verified": "curl HTTP 403 (bot-block, host alive; URL surfaced by known public site, open in browser to confirm); notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Vercel",
+  "category": "基礎設施 / CDN / 雲",
+  "blogUrl": "https://vercel.com/blog",
+  "postmortemUrl": "",
+  "strengths": "Edge/serverless 運行時、Fluid compute、快取設計",
+  "notableExamples": [
+   "Fluid compute",
+   "How we built the Vercel build system"
+  ],
+  "priority": "B",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Fly.io",
+  "category": "基礎設施 / CDN / 雲",
+  "blogUrl": "https://fly.io/blog/",
+  "postmortemUrl": "",
+  "strengths": "Anycast、微 VM、分散式狀態(LiteFS/corrosion)與坦率的事故文",
+  "notableExamples": [
+   "Corrosion",
+   "Carving the Scheduler Out of Our Orchestrator"
+  ],
+  "priority": "B",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "DigitalOcean",
+  "category": "基礎設施 / CDN / 雲",
+  "blogUrl": "https://www.digitalocean.com/blog",
+  "postmortemUrl": "",
+  "strengths": "雲產品導向，偶有工程內幕",
+  "notableExamples": [
+   "How DigitalOcean scaled Kubernetes"
+  ],
+  "priority": "C",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Backblaze",
+  "category": "基礎設施 / CDN / 雲",
+  "blogUrl": "https://www.backblaze.com/blog/",
+  "postmortemUrl": "",
+  "strengths": "每季硬碟故障率與 Vault 儲存架構、erasure coding",
+  "notableExamples": [
+   "Backblaze Drive Stats",
+   "Reed-Solomon erasure coding in Backblaze Vaults"
+  ],
+  "priority": "B",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Netflix TechBlog",
+  "category": "串流 / 媒體",
+  "blogUrl": "https://netflixtechblog.com/",
+  "postmortemUrl": "",
+  "strengths": "Chaos engineering、Hystrix/resilience、串流架構、推薦",
+  "notableExamples": [
+   "Per-Title Encode Optimization",
+   "Chaos Monkey",
+   "Zuul 2: The Netflix Journey to Asynchronous, Non-Blocking Systems"
+  ],
+  "priority": "A",
+  "verified": "curl 403 bot-block; repo list verified via Wayback snapshots (2026-09); also in repo list (verified there via WebFetch 2026-09); notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": true
+ },
+ {
+  "company": "Spotify Engineering",
+  "category": "串流 / 媒體",
+  "blogUrl": "https://engineering.atspotify.com/",
+  "postmortemUrl": "",
+  "strengths": "Backstage、推薦、ANN 搜尋與資料平台",
+  "notableExamples": [
+   "Introducing Voyager",
+   "Natural Language Search for Podcast Episodes"
+  ],
+  "priority": "B",
+  "verified": "curl -L HTTP 200; also in repo list (verified there via WebFetch 2026-09); notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": true
+ },
+ {
+  "company": "YouTube Engineering",
+  "category": "串流 / 媒體",
+  "blogUrl": "https://blog.youtube/inside-youtube/",
+  "postmortemUrl": "",
+  "strengths": "偶有基礎設施文；主要工程內容在 Vitess 與論文",
+  "notableExamples": [
+   "Vitess: scaling MySQL at YouTube"
+  ],
+  "priority": "C",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Twitch Engineering",
+  "category": "串流 / 媒體",
+  "blogUrl": "https://blog.twitch.tv/en/tags/engineering/",
+  "postmortemUrl": "",
+  "strengths": "直播低延遲、聊天(IRC)、邊緣網路",
+  "notableExamples": [
+   "Low Latency, High Reach: Live Video Streaming at Twitch"
+  ],
+  "priority": "B",
+  "verified": "curl -L HTTP 200; also in repo list (verified there via WebFetch 2026-09); notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": true
+ },
+ {
+  "company": "Hotstar / Disney+ Tech (Medium)",
+  "category": "串流 / 媒體",
+  "blogUrl": "https://blog.hotstar.com/",
+  "postmortemUrl": "",
+  "strengths": "千萬級併發直播（板球）的 autoscaling 與 load test",
+  "notableExamples": [
+   "Scaling Hotstar for 25M concurrent users"
+  ],
+  "priority": "B",
+  "verified": "curl HTTP 403 (bot-block, host alive; URL surfaced by known public site, open in browser to confirm); notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Discord",
+  "category": "社群 / 通訊",
+  "blogUrl": "https://discord.com/blog/category/engineering",
+  "postmortemUrl": "",
+  "strengths": "訊息儲存(Cassandra→Scylla)、hot partition、Elixir 即時",
+  "notableExamples": [
+   "How Discord Stores Trillions of Messages",
+   "How Discord Handles Two and Half Million Concurrent Voice Users using WebRTC"
+  ],
+  "priority": "A",
+  "verified": "curl -L HTTP 200; also in repo list (verified there via WebFetch 2026-09); notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": true
+ },
+ {
+  "company": "Slack Engineering",
+  "category": "社群 / 通訊",
+  "blogUrl": "https://slack.engineering/",
+  "postmortemUrl": "",
+  "strengths": "即時訊息、Vitess 遷移、事故檢討與 cell-based 架構",
+  "notableExamples": [
+   "Slack's Incident on 2-22-22",
+   "Real-time Messaging",
+   "Flannel"
+  ],
+  "priority": "A",
+  "verified": "curl -L HTTP 200; also in repo list (verified there via WebFetch 2026-09); notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": true
+ },
+ {
+  "company": "X / Twitter Engineering",
+  "category": "社群 / 通訊",
+  "blogUrl": "https://blog.x.com/engineering/en_us",
+  "postmortemUrl": "",
+  "strengths": "Snowflake、timeline、推薦演算法開源",
+  "notableExamples": [
+   "Announcing Snowflake",
+   "Twitter's Recommendation Algorithm"
+  ],
+  "priority": "B",
+  "verified": "curl HTTP 403 (bot-block, host alive; URL surfaced by known public site, open in browser to confirm); also in repo list (verified there via WebFetch 2026-09); notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": true
+ },
+ {
+  "company": "LinkedIn Engineering",
+  "category": "社群 / 通訊",
+  "blogUrl": "https://www.linkedin.com/blog/engineering",
+  "postmortemUrl": "",
+  "strengths": "Kafka 起源、Venice、搜尋、長連線",
+  "notableExamples": [
+   "Instant Messaging at LinkedIn",
+   "Unifying the LinkedIn Search Experience"
+  ],
+  "priority": "A",
+  "verified": "curl -L HTTP 200; also in repo list (verified there via WebFetch 2026-09); notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": true
+ },
+ {
+  "company": "Pinterest Engineering",
+  "category": "社群 / 通訊",
+  "blogUrl": "https://medium.com/pinterest-engineering",
+  "postmortemUrl": "",
+  "strengths": "分片 MySQL、HBase、推薦、Kafka",
+  "notableExamples": [
+   "Sharding Pinterest: How we scaled our MySQL fleet",
+   "Unified Context Search"
+  ],
+  "priority": "A",
+  "verified": "curl HTTP 403 (bot-block, host alive; URL surfaced by known public site, open in browser to confirm); notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Reddit Engineering",
+  "category": "社群 / 通訊",
+  "blogUrl": "https://www.reddit.com/r/RedditEng/",
+  "postmortemUrl": "",
+  "strengths": "遷移（Postgres、Kafka、Go 重寫）與 Pi-day outage 檢討",
+  "notableExamples": [
+   "Why Reddit Was Down on Pi Day",
+   "Scaling Reddit's PostgreSQL"
+  ],
+  "priority": "A",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Snap Engineering",
+  "category": "社群 / 通訊",
+  "blogUrl": "https://eng.snap.com/",
+  "postmortemUrl": "",
+  "strengths": "Snap 從 GCP/AWS 遷移、微服務與 ephemeral 資料",
+  "notableExamples": [
+   "Snap's multi-cloud service mesh",
+   "Scaling Snap's architecture"
+  ],
+  "priority": "B",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "WhatsApp Engineering",
+  "category": "社群 / 通訊",
+  "blogUrl": "https://engineering.fb.com/category/web/",
+  "postmortemUrl": "",
+  "strengths": "無獨立部落格；經典為 Erlang 與 Meta 發佈的少量文",
+  "notableExamples": [
+   "WhatsApp: 1 million connections per server (talks)"
+  ],
+  "priority": "C",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Telegram",
+  "category": "社群 / 通訊",
+  "blogUrl": "https://telegram.org/blog",
+  "postmortemUrl": "",
+  "strengths": "產品公告為主，無工程部落格",
+  "notableExamples": [
+   "MTProto protocol docs"
+  ],
+  "priority": "C",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Uber Engineering",
+  "category": "交通 / 外送 / 電商",
+  "blogUrl": "https://www.uber.com/blog/engineering/",
+  "postmortemUrl": "",
+  "strengths": "H3、payments/ledger、Cadence、規模化微服務",
+  "notableExamples": [
+   "H3: Uber's Hexagonal Hierarchical Spatial Index",
+   "Zero-Sum by Design: 10 Years of Uber's Payments Platform",
+   "Building Reliable Reprocessing and Dead Letter Queues with Apache Kafka"
+  ],
+  "priority": "A",
+  "verified": "curl HTTP 406 (bot-block, host alive; URL surfaced by known public site, open in browser to confirm); also in repo list (verified there via WebFetch 2026-09); notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": true
+ },
+ {
+  "company": "Lyft Engineering",
+  "category": "交通 / 外送 / 電商",
+  "blogUrl": "https://eng.lyft.com/",
+  "postmortemUrl": "",
+  "strengths": "Envoy 起源、服務網格、地理與 ETA",
+  "notableExamples": [
+   "Envoy: Lyft's service mesh",
+   "Geohash at Lyft"
+  ],
+  "priority": "B",
+  "verified": "curl HTTP 403 (bot-block, host alive; URL surfaced by known public site, open in browser to confirm); also in repo list (verified there via WebFetch 2026-09); notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": true
+ },
+ {
+  "company": "DoorDash Engineering",
+  "category": "交通 / 外送 / 電商",
+  "blogUrl": "https://careersatdoordash.com/engineering-blog/",
+  "postmortemUrl": "",
+  "strengths": "派單、微服務遷移、Kafka、cascading failure 與 Resilience 實務",
+  "notableExamples": [
+   "Failure-proofing DoorDash with Metastable Failures",
+   "Building a Highly Scalable Data Platform"
+  ],
+  "priority": "A",
+  "verified": "curl HTTP 403 (bot-block, host alive; URL surfaced by known public site, open in browser to confirm); also in repo list (verified there via WebFetch 2026-09); notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": true
+ },
+ {
+  "company": "Instacart Tech",
+  "category": "交通 / 外送 / 電商",
+  "blogUrl": "https://tech.instacart.com/",
+  "postmortemUrl": "",
+  "strengths": "庫存/搜尋/履約與 Postgres 規模化",
+  "notableExamples": [
+   "Scaling Instacart's Postgres",
+   "Real-time item availability"
+  ],
+  "priority": "B",
+  "verified": "curl HTTP 403 (bot-block, host alive; URL surfaced by known public site, open in browser to confirm); notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Airbnb Tech Blog",
+  "category": "交通 / 外送 / 電商",
+  "blogUrl": "https://medium.com/airbnb-engineering",
+  "postmortemUrl": "",
+  "strengths": "搜尋排序、支付、Service-oriented 遷移、Minerva",
+  "notableExamples": [
+   "Building Airbnb's Minerva Metrics Platform",
+   "Scaling Airbnb's payment platform"
+  ],
+  "priority": "A",
+  "verified": "curl HTTP 403 (bot-block, host alive; URL surfaced by known public site, open in browser to confirm); notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Booking.com Tech",
+  "category": "交通 / 外送 / 電商",
+  "blogUrl": "https://medium.com/booking-com-development",
+  "postmortemUrl": "",
+  "strengths": "MySQL/Perl 大規模、實驗平台、搜尋",
+  "notableExamples": [
+   "Booking.com experimentation culture",
+   "MySQL replication at Booking.com"
+  ],
+  "priority": "B",
+  "verified": "curl HTTP 403 (bot-block, host alive; URL surfaced by known public site, open in browser to confirm); notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Shopify Engineering",
+  "category": "交通 / 外送 / 電商",
+  "blogUrl": "https://shopify.engineering/",
+  "postmortemUrl": "",
+  "strengths": "模組化單體、BFCM 備戰、pod 架構、容量規劃",
+  "notableExamples": [
+   "Capacity Planning at Scale",
+   "How we prepare Shopify for BFCM",
+   "Under Deconstruction: The State of Shopify's Monolith"
+  ],
+  "priority": "A",
+  "verified": "curl -L HTTP 200; also in repo list (verified there via WebFetch 2026-09); notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": true
+ },
+ {
+  "company": "Amazon Science",
+  "category": "交通 / 外送 / 電商",
+  "blogUrl": "https://www.amazon.science/blog",
+  "postmortemUrl": "",
+  "strengths": "電商/供應鏈與 AWS 研究；偏研究",
+  "notableExamples": [
+   "Amazon Aurora design considerations"
+  ],
+  "priority": "C",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Grab Engineering",
+  "category": "交通 / 外送 / 電商",
+  "blogUrl": "https://engineering.grab.com/",
+  "postmortemUrl": "",
+  "strengths": "東南亞超級 App：派單、fraud、feature store、資料平台",
+  "notableExamples": [
+   "Grab's data platform",
+   "Designing resilient systems beyond retries"
+  ],
+  "priority": "A",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Swiggy Bytes",
+  "category": "交通 / 外送 / 電商",
+  "blogUrl": "https://bytes.swiggy.com/",
+  "postmortemUrl": "",
+  "strengths": "外送派單、ETA、高峰擴縮",
+  "notableExamples": [
+   "Swiggy dispatch architecture",
+   "Delivery partner assignment"
+  ],
+  "priority": "B",
+  "verified": "000 curl; confirmed via WebSearch result bytes.swiggy.com; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Zomato Engineering",
+  "category": "交通 / 外送 / 電商",
+  "blogUrl": "https://www.zomato.com/blog/category/technology/",
+  "postmortemUrl": "",
+  "strengths": "高峰流量（跨年/板球）處理與微服務",
+  "notableExamples": [
+   "Zomato scaling for New Year's Eve"
+  ],
+  "priority": "B",
+  "verified": "curl -L HTTP 200 (re-checked via curl); notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Stripe",
+  "category": "金融 / 支付",
+  "blogUrl": "https://stripe.com/blog/engineering",
+  "postmortemUrl": "",
+  "strengths": "Idempotency、online migration、限流、DocDB",
+  "notableExamples": [
+   "Designing robust and predictable APIs with idempotency",
+   "Online migrations at scale",
+   "Scaling your API with rate limiters"
+  ],
+  "priority": "A",
+  "verified": "curl -L HTTP 200; also in repo list (verified there via WebFetch 2026-09); notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": true
+ },
+ {
+  "company": "Block (Square) Engineering",
+  "category": "金融 / 支付",
+  "blogUrl": "https://developer.squareup.com/blog/",
+  "postmortemUrl": "",
+  "strengths": "支付、Cash App、資料遷移與 Shard 管理",
+  "notableExamples": [
+   "Scaling Cash App",
+   "Square's Vitess adoption"
+  ],
+  "priority": "B",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "PayPal Engineering",
+  "category": "金融 / 支付",
+  "blogUrl": "https://medium.com/paypal-tech",
+  "postmortemUrl": "",
+  "strengths": "Akka 高併發、Java 微服務、fraud",
+  "notableExamples": [
+   "Squbs: Akka at PayPal",
+   "PayPal handles billions of transactions"
+  ],
+  "priority": "B",
+  "verified": "curl HTTP 403 (bot-block, host alive; URL surfaced by known public site, open in browser to confirm); notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Robinhood Engineering",
+  "category": "金融 / 支付",
+  "blogUrl": "https://robinhood.engineering/",
+  "postmortemUrl": "",
+  "strengths": "交易系統、事故檢討（2020 outage）、Kafka",
+  "notableExamples": [
+   "Robinhood outage lessons"
+  ],
+  "priority": "B",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Coinbase Engineering",
+  "category": "金融 / 支付",
+  "blogUrl": "https://www.coinbase.com/blog/landing/engineering",
+  "postmortemUrl": "",
+  "strengths": "交易所、區塊鏈節點、ledger、Kafka",
+  "notableExamples": [
+   "Scaling Coinbase's ledger",
+   "Rosetta"
+  ],
+  "priority": "B",
+  "verified": "curl HTTP 403 (bot-block, host alive; URL surfaced by known public site, open in browser to confirm); notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Nubank Building (Medium)",
+  "category": "金融 / 支付",
+  "blogUrl": "https://building.nubank.com.br/",
+  "postmortemUrl": "",
+  "strengths": "Clojure/Datomic 銀行核心與事件驅動",
+  "notableExamples": [
+   "Nubank architecture with Datomic"
+  ],
+  "priority": "B",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Monzo Engineering",
+  "category": "金融 / 支付",
+  "blogUrl": "https://monzo.com/blog/technology",
+  "postmortemUrl": "",
+  "strengths": "微服務 1500+、Cassandra、事故檢討公開",
+  "notableExamples": [
+   "Monzo's microservices at scale",
+   "Incident review: Cassandra"
+  ],
+  "priority": "A",
+  "verified": "curl -L HTTP 200 (re-checked via curl); notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Revolut Engineering",
+  "category": "金融 / 支付",
+  "blogUrl": "https://www.revolut.com/en-GB/news/engineering/",
+  "postmortemUrl": "",
+  "strengths": "銀行 App 後端與規模化，內容較少",
+  "notableExamples": [
+   "Revolut tech stack"
+  ],
+  "priority": "C",
+  "verified": "curl HTTP 403 (bot-block, host alive; URL surfaced by known public site, open in browser to confirm); notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "GitHub Engineering",
+  "category": "開發者工具 / SaaS",
+  "blogUrl": "https://github.blog/engineering/",
+  "postmortemUrl": "https://github.blog/news-insights/company-news/",
+  "strengths": "MySQL 規模化(gh-ost)、可用性月報、事故 root cause",
+  "notableExamples": [
+   "Availability report",
+   "Partitioning GitHub's relational databases to handle scale"
+  ],
+  "priority": "A",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "GitLab Engineering",
+  "category": "開發者工具 / SaaS",
+  "blogUrl": "https://about.gitlab.com/blog/",
+  "postmortemUrl": "https://about.gitlab.com/blog/",
+  "strengths": "公開事故 issue 與 2017 資料庫刪除 postmortem",
+  "notableExamples": [
+   "Postmortem of database outage of January 31",
+   "Scaling GitLab Postgres"
+  ],
+  "priority": "A",
+  "verified": "curl -L HTTP 200 (re-checked via curl); notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Atlassian Engineering",
+  "category": "開發者工具 / SaaS",
+  "blogUrl": "https://www.atlassian.com/engineering",
+  "postmortemUrl": "https://www.atlassian.com/blog/atlassian-engineering/post-incident-review-april-2022-outage",
+  "strengths": "2022 長時間 outage 完整檢討、事故管理方法",
+  "notableExamples": [
+   "Post-Incident Review on the Atlassian April 2022 outage",
+   "Atlassian's Jira on Aurora"
+  ],
+  "priority": "A",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Dropbox Tech",
+  "category": "開發者工具 / SaaS",
+  "blogUrl": "https://dropbox.tech/",
+  "postmortemUrl": "",
+  "strengths": "Magic Pocket 儲存、sync engine、infra 遷移",
+  "notableExamples": [
+   "Inside the Magic Pocket",
+   "Rewriting the heart of our sync engine",
+   "Streaming File Synchronization"
+  ],
+  "priority": "A",
+  "verified": "curl -L HTTP 200; also in repo list (verified there via WebFetch 2026-09); notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": true
+ },
+ {
+  "company": "Figma Blog (Engineering)",
+  "category": "開發者工具 / SaaS",
+  "blogUrl": "https://www.figma.com/blog/engineering/",
+  "postmortemUrl": "",
+  "strengths": "多人協作、資料庫水平分片",
+  "notableExamples": [
+   "How Figma's multiplayer technology works",
+   "The growing pains of database architecture"
+  ],
+  "priority": "A",
+  "verified": "curl -L HTTP 200; also in repo list (verified there via WebFetch 2026-09); notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": true
+ },
+ {
+  "company": "Notion Tech Blog",
+  "category": "開發者工具 / SaaS",
+  "blogUrl": "https://www.notion.com/blog/topic/tech",
+  "postmortemUrl": "",
+  "strengths": "Postgres 分片、資料湖、block 模型",
+  "notableExamples": [
+   "Sharding Postgres at Notion",
+   "The Great Re-shard"
+  ],
+  "priority": "A",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Linear Engineering",
+  "category": "開發者工具 / SaaS",
+  "blogUrl": "https://linear.app/blog",
+  "postmortemUrl": "",
+  "strengths": "本地優先 sync engine；工程文章少",
+  "notableExamples": [
+   "Scaling the Linear Sync Engine"
+  ],
+  "priority": "C",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Datadog Engineering",
+  "category": "開發者工具 / SaaS",
+  "blogUrl": "https://www.datadoghq.com/blog/engineering/",
+  "postmortemUrl": "https://www.datadoghq.com/blog/engineering/2023-03-08-deep-dive-into-platform-level-impact/",
+  "strengths": "時序 DB (Husky)、2023 outage 檢討",
+  "notableExamples": [
+   "Husky: Datadog's event store",
+   "2023-03-08 incident postmortem"
+  ],
+  "priority": "A",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Honeycomb",
+  "category": "開發者工具 / SaaS",
+  "blogUrl": "https://www.honeycomb.io/blog",
+  "postmortemUrl": "",
+  "strengths": "可觀測性、事故回顧、Retriever 儲存引擎",
+  "notableExamples": [
+   "Incident Review blogs",
+   "Retriever columnar store"
+  ],
+  "priority": "A",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "PagerDuty Engineering",
+  "category": "開發者工具 / SaaS",
+  "blogUrl": "https://www.pagerduty.com/eng/",
+  "postmortemUrl": "",
+  "strengths": "事故回應、公開 incident response 文件",
+  "notableExamples": [
+   "PagerDuty Incident Response documentation"
+  ],
+  "priority": "B",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Grafana Labs",
+  "category": "開發者工具 / SaaS",
+  "blogUrl": "https://grafana.com/blog/",
+  "postmortemUrl": "",
+  "strengths": "Loki/Mimir/Tempo 設計與 Mimir 規模化",
+  "notableExamples": [
+   "How we scaled Mimir to 1 billion active series"
+  ],
+  "priority": "B",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "HashiCorp",
+  "category": "開發者工具 / SaaS",
+  "blogUrl": "https://www.hashicorp.com/en/blog",
+  "postmortemUrl": "",
+  "strengths": "Consul/Raft/Serf，Vault 設計；一致性協議",
+  "notableExamples": [
+   "Consul architecture (Raft, gossip)"
+  ],
+  "priority": "B",
+  "verified": "curl HTTP 429 (bot-block, host alive; URL surfaced by known public site, open in browser to confirm); notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Elastic",
+  "category": "開發者工具 / SaaS",
+  "blogUrl": "https://www.elastic.co/blog",
+  "postmortemUrl": "",
+  "strengths": "搜尋引擎內部、分片、near-real-time",
+  "notableExamples": [
+   "Elasticsearch from the Bottom Up"
+  ],
+  "priority": "B",
+  "verified": "curl -L HTTP 200; also in repo list (verified there via WebFetch 2026-09); notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": true
+ },
+ {
+  "company": "Confluent",
+  "category": "開發者工具 / SaaS",
+  "blogUrl": "https://www.confluent.io/blog/",
+  "postmortemUrl": "",
+  "strengths": "Kafka 內部、exactly-once、outbox",
+  "notableExamples": [
+   "Solving the Dual-Write Problem",
+   "Exactly-once semantics in Kafka"
+  ],
+  "priority": "A",
+  "verified": "curl -L HTTP 200; also in repo list (verified there via WebFetch 2026-09); notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": true
+ },
+ {
+  "company": "MongoDB Engineering",
+  "category": "開發者工具 / SaaS",
+  "blogUrl": "https://www.mongodb.com/company/blog",
+  "postmortemUrl": "",
+  "strengths": "複寫、交易、儲存引擎",
+  "notableExamples": [
+   "Implementation of cluster-wide logical clock",
+   "Causal consistency"
+  ],
+  "priority": "B",
+  "verified": "curl -L HTTP 200 (re-checked via curl); notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Cockroach Labs",
+  "category": "開發者工具 / SaaS",
+  "blogUrl": "https://www.cockroachlabs.com/blog/",
+  "postmortemUrl": "",
+  "strengths": "分散式 SQL、Raft、時鐘、交易、事故",
+  "notableExamples": [
+   "Living without atomic clocks",
+   "How we built a SQL layer on KV"
+  ],
+  "priority": "A",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "PlanetScale",
+  "category": "開發者工具 / SaaS",
+  "blogUrl": "https://planetscale.com/blog",
+  "postmortemUrl": "",
+  "strengths": "Vitess、MySQL 內部、B-tree 與 schema 變更",
+  "notableExamples": [
+   "Non-blocking schema changes",
+   "B-trees and database indexes"
+  ],
+  "priority": "A",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Supabase",
+  "category": "開發者工具 / SaaS",
+  "blogUrl": "https://supabase.com/blog",
+  "postmortemUrl": "",
+  "strengths": "Postgres 擴展、Realtime、pgvector",
+  "notableExamples": [
+   "Supabase Realtime architecture"
+  ],
+  "priority": "C",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Neon",
+  "category": "開發者工具 / SaaS",
+  "blogUrl": "https://neon.com/blog",
+  "postmortemUrl": "",
+  "strengths": "Serverless Postgres 儲存/計算分離",
+  "notableExamples": [
+   "Architecture decisions in Neon"
+  ],
+  "priority": "B",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Anthropic Engineering",
+  "category": "AI 公司",
+  "blogUrl": "https://www.anthropic.com/engineering",
+  "postmortemUrl": "https://status.claude.com/",
+  "strengths": "Agent/評測工程與 status 頁事故紀錄；曾發布 postmortem",
+  "notableExamples": [
+   "A postmortem of three recent issues",
+   "Building effective agents"
+  ],
+  "priority": "B",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "OpenAI",
+  "category": "AI 公司",
+  "blogUrl": "https://openai.com/news/engineering/",
+  "postmortemUrl": "https://status.openai.com/",
+  "strengths": "Scaling PostgreSQL、Kubernetes 規模化、status 事故紀錄",
+  "notableExamples": [
+   "Scaling Kubernetes to 7,500 nodes",
+   "Scaling PostgreSQL to power 800 million ChatGPT users"
+  ],
+  "priority": "B",
+  "verified": "curl HTTP 403 (bot-block, host alive; URL surfaced by known public site, open in browser to confirm); notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Google DeepMind",
+  "category": "AI 公司",
+  "blogUrl": "https://deepmind.google/discover/blog/",
+  "postmortemUrl": "",
+  "strengths": "研究為主，系統設計內容少",
+  "notableExamples": [
+   "AlphaFold infrastructure"
+  ],
+  "priority": "C",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Hugging Face",
+  "category": "AI 公司",
+  "blogUrl": "https://huggingface.co/blog",
+  "postmortemUrl": "",
+  "strengths": "推論服務、分散式訓練、儲存 (Xet)",
+  "notableExamples": [
+   "Scaling inference endpoints",
+   "Xet deduplication storage"
+  ],
+  "priority": "B",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "LINE Engineering",
+  "category": "亞洲 / 台灣",
+  "blogUrl": "https://engineering.linecorp.com/en/blog",
+  "postmortemUrl": "",
+  "strengths": "大規模訊息、Kafka、HBase、Armeria",
+  "notableExamples": [
+   "LINE messaging platform Kafka",
+   "Armeria"
+  ],
+  "priority": "B",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Mercari Engineering",
+  "category": "亞洲 / 台灣",
+  "blogUrl": "https://engineering.mercari.com/en/blog/",
+  "postmortemUrl": "",
+  "strengths": "微服務遷移、SRE、資料庫 Spanner/TiDB",
+  "notableExamples": [
+   "Mercari microservices migration",
+   "Mercari Spanner"
+  ],
+  "priority": "B",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Rakuten Tech",
+  "category": "亞洲 / 台灣",
+  "blogUrl": "https://tech.rakuten.co.jp/",
+  "postmortemUrl": "",
+  "strengths": "大型電商與日文為主",
+  "notableExamples": [
+   "Rakuten tech overview"
+  ],
+  "priority": "C",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Shopee Engineering",
+  "category": "亞洲 / 台灣",
+  "blogUrl": "https://careers.shopee.sg/blog/",
+  "postmortemUrl": "",
+  "strengths": "大促流量、微服務、資料平台",
+  "notableExamples": [
+   "Shopee 11.11 preparation"
+  ],
+  "priority": "B",
+  "verified": "curl -L HTTP 200 (re-checked via curl); no real engineering blog found, only careers blog -> weak; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Agoda Engineering",
+  "category": "亞洲 / 台灣",
+  "blogUrl": "https://medium.com/agoda-engineering",
+  "postmortemUrl": "",
+  "strengths": "旅遊平台：快取、CQRS、SQL Server 規模化",
+  "notableExamples": [
+   "Agoda cache architecture",
+   "Agoda CQRS"
+  ],
+  "priority": "B",
+  "verified": "curl HTTP 403 (bot-block, host alive; URL surfaced by known public site, open in browser to confirm); notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Dcard Tech",
+  "category": "亞洲 / 台灣",
+  "blogUrl": "https://medium.com/dcardlab",
+  "postmortemUrl": "",
+  "strengths": "台灣社群：Kafka/推薦/微服務",
+  "notableExamples": [
+   "Dcard recommendation system",
+   "Dcard Kafka usage"
+  ],
+  "priority": "B",
+  "verified": "curl HTTP 403 (bot-block, host alive; URL surfaced by known public site, open in browser to confirm); notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "PicCollage Engineering",
+  "category": "亞洲 / 台灣",
+  "blogUrl": "https://medium.com/piccollage-eng",
+  "postmortemUrl": "",
+  "strengths": "台灣 App 公司，內容偏小量",
+  "notableExamples": [
+   "PicCollage engineering notes"
+  ],
+  "priority": "C",
+  "verified": "curl HTTP 403 (bot-block, host alive; URL surfaced by known public site, open in browser to confirm); notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "KKBOX Technology",
+  "category": "亞洲 / 台灣",
+  "blogUrl": "https://medium.com/kkstream",
+  "postmortemUrl": "",
+  "strengths": "音樂串流與 KKStream 技術文，已少更新",
+  "notableExamples": [
+   "KKBOX recommendation"
+  ],
+  "priority": "C",
+  "verified": "curl HTTP 403 (bot-block, host alive; URL surfaced by known public site, open in browser to confirm); notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "danluu/post-mortems",
+  "category": "事故檢討彙整",
+  "blogUrl": "https://github.com/danluu/post-mortems",
+  "postmortemUrl": "https://github.com/danluu/post-mortems",
+  "strengths": "最完整的公開事故檢討連結彙整",
+  "notableExamples": [
+   "Collection of public postmortems"
+  ],
+  "priority": "A",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Cloudflare outage posts",
+  "category": "事故檢討彙整",
+  "blogUrl": "https://blog.cloudflare.com/tag/post-mortem/",
+  "postmortemUrl": "https://blog.cloudflare.com/tag/post-mortem/",
+  "strengths": "每次 outage 都有逐分鐘時間線與根因",
+  "notableExamples": [
+   "Cloudflare outage on November 18, 2025",
+   "Cloudflare outage on June 12, 2025"
+  ],
+  "priority": "A",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "AWS Post-Event Summaries",
+  "category": "事故檢討彙整",
+  "blogUrl": "https://aws.amazon.com/premiumsupport/technology/pes/",
+  "postmortemUrl": "https://aws.amazon.com/premiumsupport/technology/pes/",
+  "strengths": "AWS 重大事故官方 PES（us-east-1 等）",
+  "notableExamples": [
+   "Summary of the Amazon DynamoDB Service Disruption in Northern Virginia (us-east-1) Region"
+  ],
+  "priority": "A",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "GCP Incident Reports",
+  "category": "事故檢討彙整",
+  "blogUrl": "https://status.cloud.google.com/summary",
+  "postmortemUrl": "https://status.cloud.google.com/summary",
+  "strengths": "Google Cloud 公開 incident 報告",
+  "notableExamples": [
+   "Google Cloud Service Control incident June 12, 2025"
+  ],
+  "priority": "A",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Azure Post Incident Reviews",
+  "category": "事故檢討彙整",
+  "blogUrl": "https://azure.status.microsoft/en-us/status/history/",
+  "postmortemUrl": "https://azure.status.microsoft/en-us/status/history/",
+  "strengths": "Azure PIR 歷史紀錄",
+  "notableExamples": [
+   "Azure Front Door outage PIR"
+  ],
+  "priority": "B",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Increment / Pragmatic Engineer",
+  "category": "事故檢討彙整",
+  "blogUrl": "https://newsletter.pragmaticengineer.com/",
+  "postmortemUrl": "",
+  "strengths": "彙整與評論大型事故與工程實務",
+  "notableExamples": [
+   "Inside the Cloudflare outage"
+  ],
+  "priority": "B",
+  "verified": "curl -L HTTP 200; notableExamples from memory/repo list, titles not individually verified unless inExistingList",
+  "inExistingList": false
+ },
+ {
+  "company": "Roblox",
+  "category": "使用者審核後補充",
+  "blogUrl": "https://blog.roblox.com/",
+  "strengths": "2021 年 73 小時停機 postmortem（Consul、級聯故障）",
+  "priority": "B",
+  "verified": "未驗證（主 session 依知識補充）",
+  "inExistingList": false
+ },
+ {
+  "company": "Canva",
+  "category": "使用者審核後補充",
+  "blogUrl": "https://www.canva.dev/blog/engineering/",
+  "strengths": "大規模 SaaS、資料庫與事故",
+  "priority": "B",
+  "verified": "未驗證（主 session 依知識補充）",
+  "inExistingList": false
+ },
+ {
+  "company": "Etsy (Code as Craft)",
+  "category": "使用者審核後補充",
+  "blogUrl": "https://www.etsy.com/codeascraft",
+  "strengths": "持續部署、可觀測性文化",
+  "priority": "B",
+  "verified": "未驗證（主 session 依知識補充）",
+  "inExistingList": false
+ },
+ {
+  "company": "Zalando",
+  "category": "使用者審核後補充",
+  "blogUrl": "https://engineering.zalando.com/",
+  "strengths": "電商大促、微服務、事故",
+  "priority": "B",
+  "verified": "未驗證（主 session 依知識補充）",
+  "inExistingList": false
+ },
+ {
+  "company": "Duolingo",
+  "category": "使用者審核後補充",
+  "blogUrl": "https://blog.duolingo.com/tag/engineering/",
+  "strengths": "成本與擴展、AWS 架構",
+  "priority": "B",
+  "verified": "未驗證（主 session 依知識補充）",
+  "inExistingList": false
+ },
+ {
+  "company": "Yelp",
+  "category": "使用者審核後補充",
+  "blogUrl": "https://engineeringblog.yelp.com/",
+  "strengths": "資料管線、搜尋、服務化",
+  "priority": "B",
+  "verified": "未驗證（主 session 依知識補充）",
+  "inExistingList": false
+ },
+ {
+  "company": "Heroku / Salesforce",
+  "category": "使用者審核後補充",
+  "blogUrl": "https://status.heroku.com/",
+  "strengths": "公開事故紀錄",
+  "priority": "B",
+  "verified": "未驗證（主 session 依知識補充）",
+  "inExistingList": false
+ },
+ {
+  "company": "Twilio / Segment",
+  "category": "使用者審核後補充",
+  "blogUrl": "https://segment.com/blog/",
+  "strengths": "資料管線、事故與成本",
+  "priority": "B",
+  "verified": "未驗證（主 session 依知識補充）",
+  "inExistingList": false
+ },
+ {
+  "company": "Sentry",
+  "category": "使用者審核後補充",
+  "blogUrl": "https://blog.sentry.io/",
+  "strengths": "事故回顧與可觀測性",
+  "priority": "B",
+  "verified": "未驗證（主 session 依知識補充）",
+  "inExistingList": false
+ },
+ {
+  "company": "CircleCI",
+  "category": "使用者審核後補充",
+  "blogUrl": "https://status.circleci.com/",
+  "strengths": "公開事故（2023 安全事件、可用性）",
+  "priority": "B",
+  "verified": "未驗證（主 session 依知識補充）",
+  "inExistingList": false
+ },
+ {
+  "company": "Riot Games",
+  "category": "使用者審核後補充",
+  "blogUrl": "https://technology.riotgames.com/",
+  "strengths": "遊戲大規模服務、網路",
+  "priority": "B",
+  "verified": "未驗證（主 session 依知識補充）",
+  "inExistingList": false
+ },
+ {
+  "company": "Epic Games",
+  "category": "使用者審核後補充",
+  "blogUrl": "https://www.epicgames.com/site/en-US/news",
+  "strengths": "Fortnite 尖峰流量與停機說明",
+  "priority": "B",
+  "verified": "未驗證（主 session 依知識補充）",
+  "inExistingList": false
+ },
+ {
+  "company": "Jane Street",
+  "category": "使用者審核後補充",
+  "blogUrl": "https://blog.janestreet.com/",
+  "strengths": "低延遲系統、OCaml",
+  "priority": "B",
+  "verified": "未驗證（主 session 依知識補充）",
+  "inExistingList": false
+ }
+]

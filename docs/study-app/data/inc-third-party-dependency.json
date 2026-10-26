@@ -1,0 +1,332 @@
+{
+ "problem": "third-party-dependency",
+ "problemName": "外部依賴故障",
+ "incidents": [
+  {
+   "id": "npm-2016-left-pad-unpublish",
+   "problem": "third-party-dependency",
+   "company": "npm",
+   "title": "left-pad 被 unpublish：整個 JavaScript 生態系 build 失敗",
+   "date": "2016-03",
+   "kind": "postmortem",
+   "symptom": "3/22 約 2:30 PM PT 起，每分鐘數百次失敗：大量專案（含間接依賴）在 npm install 時找不到 left-pad，build 全部壞掉。",
+   "rootCause": "作者為了套件名稱 kik 的爭議，在沒有預警下 unpublish 了 273 個套件（kik 加另外 272 個，含 left-pad）；當時 registry 允許任意 unpublish，已被依賴的版本也能被撤掉。",
+   "whyHard": "依賴鏈很深（dependents 的 dependents…）：社群 10 分鐘內補發 left-pad 1.0.0 仍無效，因為 babel、atom 經由 line-numbers 明確鎖 0.0.3；registry 本身也沒有「重新發布同版號」的功能，得靠備份還原。",
+   "fix": "止血：社群補發同功能套件，npm 與接手者協調後從備份重新發布原本的 0.0.3（4:05 PM 宣布、4:55 PM 完成）。長期：unpublish 若會弄壞其他套件就加限制；完全 unpublish 的有依賴者套件改放 placeholder 套件，避免名稱被惡意搶註。",
+   "tradeoff": "限制 unpublish 會犧牲作者撤回自己程式碼的權利；placeholder 方案也讓棄用套件名稱的取得多一道人工流程。",
+   "lessons": [
+    "registry 是你 build 路徑上的同步依賴：不可變 + 不可刪除 的 artifact 是供應鏈可用性的前提",
+    "依賴方自救：lockfile、私有 mirror / vendoring，讓 build 不必每次都連外部 registry",
+    "不可逆的破壞性操作（unpublish、delete）需要針對下游影響的 guardrail，而不只是權限"
+   ],
+   "numbers": [
+    "273 個套件被 unpublish（kik + 272 個）",
+    "約 2:30 PM PT 起每分鐘數百次失敗",
+    "中斷 2.5 小時",
+    "補發 1.0.0 約 10 分鐘內，還原 0.0.3 於 4:55 PM 完成"
+   ],
+   "interviewUse": "被問「你的 build 依賴 npm/PyPI 掛了或套件消失怎麼辦」時，用它說明為什麼要 lockfile + 內部 mirror，並指出第三方 artifact 的「可變性」本身就是風險。",
+   "detection": "npm 在 2:30 PM PT 後觀察到每分鐘數百次失敗；從開始到完全恢復 2.5 小時（原文）。",
+   "sources": [
+    {
+     "title": "npm Blog: kik, left-pad, and npm",
+     "url": "https://blog.npmjs.org/post/141577284765/kik-left-pad-and-npm"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "api-networking"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "atlassian-2021-05-auth-provider-outage",
+   "problem": "third-party-dependency",
+   "company": "Atlassian",
+   "title": "第三方認證供應商資料庫掛掉：Jira / Confluence / Bitbucket 等無法登入",
+   "date": "2021-05",
+   "kind": "postmortem",
+   "symptom": "2021-05-31 05:43–07:05 UTC，Jira、Confluence、Bitbucket、Trello、Opsgenie、Statuspage 客戶無法登入；Atlassian 帳號登入頁失敗率接近 20%，Jira Service Management 客戶入口多數無法登入。",
+   "rootCause": "Atlassian 其中一個第三方認證供應商的資料庫碰到未妥善設定的 scaling 上限而中斷。",
+   "whyHard": "認證在每個產品的關鍵路徑上，一個供應商掛掉就跨產品線同時受影響；Atlassian 自己的 fallback 並未如預期運作，尤其 Bitbucket API 使用者受影響比預期大。",
+   "fix": "止血：與供應商一起關閉有問題的功能，接著由供應商部署修正。長期：改善 fallback 策略與覆蓋範圍，讓登入在同類供應商故障時更有韌性。供應商自己也改善監控與備份 / 設定策略。",
+   "tradeoff": "登入 fallback 通常意味著要放寬部分驗證（例如沿用既有 session 或快取），要權衡資安與可用性；原文未說明具體 fallback 機制。",
+   "lessons": [
+    "把共用的第三方認證視為單點：要有 fallback 並實際演練，不是寫在設計文件上就算",
+    "fallback 要依實際客戶類型驗證覆蓋（API 使用者與瀏覽器使用者行為不同）",
+    "監控要快：4 分鐘發現但仍要 1 小時 22 分才解決，因為修復在別人手上"
+   ],
+   "numbers": [
+    "05:43–07:05 UTC 受影響",
+    "登入頁失敗率接近 20%",
+    "4 分鐘內被自動監控發現",
+    "總解決時間約 1 小時 22 分"
+   ],
+   "interviewUse": "回答「SSO / IdP 掛了怎麼辦」時，以此說明 auth 依賴要有降級路徑與事前演練，以及依賴方只能控制偵測與 fallback，修復在供應商。",
+   "detection": "Atlassian 自動監控在 4 分鐘內偵測到；總解決時間約 1 小時 22 分（原文）。",
+   "sources": [
+    {
+     "title": "Atlassian Bitbucket Status: Authentication failures impacting multiple Atlassian Cloud products",
+     "url": "https://bitbucket.status.atlassian.com/incidents/c5vf9tc5t5lx"
+    }
+   ],
+   "topics": [
+    "auth",
+    "reliability"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "jsdelivr-2024-05-cloudflare-cert-validation",
+   "problem": "third-party-dependency",
+   "company": "jsDelivr",
+   "title": "Multi-CDN 也會失效：Cloudflare 換 CA 後憑證驗證方式改變，回傳過期憑證 5 小時",
+   "date": "2024-05",
+   "kind": "postmortem",
+   "symptom": "2024-05-02 夜間，cdn.jsdelivr.net 對特定地區（非洲、亞洲、部分歐洲與拉美）回傳過期 SSL 憑證，持續超過 5 小時；美國、加拿大、西歐等地不受影響，走 Fastly 的使用者也正常。",
+   "rootCause": "Cloudflare 把憑證簽發從 DigiCert 換到 Google Trust Services，同時把網域驗證從 DNS 記錄改成 HTTP 驗證。jsDelivr 因為是 multi-CDN、DNS 放在第三方，HTTP 驗證會打到不同 CDN 而失敗，簽新憑證失敗後 Cloudflare 退回 2020 年過期的舊憑證。",
+   "whyHard": "供應商的「良性」內部變更沒有通知；平常運作 10 年的託管憑證機制被當作不會失效；故障只影響部分地區，由 multi-CDN 的路由決定，不容易從單一視角發現。",
+   "fix": "短期：檢視整個系統，讓類似問題自動 re-route；今後 CDN 供應商有重大變更就先停用該 CDN、事後人工驗證。長期：簡化並自動化 DNS、load balancing、failover，並接上自家 Globalping 做監控與 failover。",
+   "tradeoff": "自動 re-route 與「發現問題就停用整個 CDN」會犧牲效能與成本；multi-CDN 讓託管憑證、DNS 驗證這類供應商整合功能變得更複雜，多供應商 != 多一層保險。",
+   "lessons": [
+    "多供應商備援的失效模式在於「共用控制面」：DNS、憑證、設定，而不只是資料面",
+    "對供應商的託管功能（auto cert）也要主動監控憑證到期與實際回傳內容",
+    "路由到 N 個 CDN 時，健康檢查要涵蓋憑證、內容正確性，而不只是 TCP/HTTP 200"
+   ],
+   "numbers": [
+    "持續超過 5 小時",
+    "受影響地區：非洲、亞洲、部分歐洲與拉美；美加與西歐不受影響",
+    "Cloudflare 託管憑證機制運作近 10 年"
+   ],
+   "interviewUse": "談 multi-CDN 時能補上「備援會引入新的失效面（憑證、DNS 驗證、路由規則）」，以及 active health check 要檢查憑證與內容。",
+   "detection": "原文未寫發現方式，只描述夜間開始、持續 5 小時以上。",
+   "sources": [
+    {
+     "title": "jsDelivr May outage postmortem",
+     "url": "https://www.jsdelivr.com/blog/jsdelivr-may-outage-postmortem/"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "api-networking"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "lucidworks-2025-12-okta-ip-block",
+   "problem": "third-party-dependency",
+   "company": "Lucidworks",
+   "title": "Okta 故障加上 rate limit：IdP 封鎖 Lucidworks IP，整個 SaaS 平台 401",
+   "date": "2025-12",
+   "kind": "postmortem",
+   "symptom": "2025-12-03 13:30 UTC 起平台多數功能不可用：API 回 HTTP 401/403（token invalid / expired），platform UI 無法存取；Neural Hybrid Search 查詢直接失敗。12-05 再次發生類似問題。",
+   "rootCause": "身分供應商 Okta 發生中斷並採取嚴格 rate limit；同時 Lucidworks 遭受 DDoS，流量遠超 Okta 門檻，Lucidworks IP 被 Okta 長時間封鎖，導致拿不到 JWKS 而驗證 token 失敗。另外 production 遺留 failOnError flag，使向量化服務不可用時查詢整個失敗而非退回 lexical 搜尋。",
+   "whyHard": "三個原因同時發生：供應商故障、自身被攻擊、設定遺留；症狀（401）看起來像 token 問題而非供應商封鎖；修復需要供應商協助更新 IP allowlist。",
+   "fix": "止血：更換 Lucidworks Platform IP，使驗證恢復；與 Okta support 維護 allowlist。後續：快取 JWKS 作為 Okta 中斷時的 fallback、關閉 failOnError 並啟用自動 lexical-only fallback、強化 rate limit 與 DDoS 防護、加合成監控。",
+   "tradeoff": "快取 JWKS 要處理金鑰輪替與撤銷的時效；lexical fallback 的搜尋品質比 hybrid 差，需要接受降級。",
+   "lessons": [
+    "驗證用的公鑰（JWKS）不該每次都即時向 IdP 取，要快取並設定容忍過期的策略",
+    "第三方對你的限流 / 封鎖是另一種故障模式，需要與供應商約定 allowlist 與聯絡路徑",
+    "對可選的相依功能（向量化）用 fail-open 降級，而不是整個查詢失敗"
+   ],
+   "numbers": [
+    "2025-12-03 13:30 UTC 開始，22:03 UTC 恢復",
+    "2025-12-05 16:17–19:00 UTC 再度發生",
+    "建議升級到 Fusion 5.9.15 以上取得自動 lexical fallback"
+   ],
+   "interviewUse": "回答「第三方 IdP 掛了怎麼辦」：快取 JWKS、對供應商限流要有 allowlist，並說明 optional dependency 要 fail-open 降級。",
+   "detection": "原文提及靠分析 Okta 服務狀態、驗證 log 的 JWKS 取得失敗與流量分析找出原因；承認需要改善合成監控以縮短偵測時間，未寫具體發現時間。",
+   "sources": [
+    {
+     "title": "Lucidworks Platform Status: SaaS Platform unavailable (postmortem)",
+     "url": "https://status.lucidworks.com/incidents/66mrf3f1k3j1"
+    }
+   ],
+   "topics": [
+    "auth",
+    "rate-limiting"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "heroku-2025-10-aws-us-east-1",
+   "problem": "third-party-dependency",
+   "company": "Heroku",
+   "title": "AWS us-east-1 事故下的 Heroku：單區 control plane 與 auto-remediation 放大衝擊",
+   "date": "2025-10",
+   "kind": "postmortem",
+   "symptom": "2025-10-20 起 Virginia region 的 Heroku 出現 Postgres / Kafka provisioning 延遲、Platform API 與 dyno 管理失敗、metrics / autoscaling 中斷、custom domain 的 H99 與 5xx；10/21 03:33 UTC 結案。",
+   "rootCause": "主要由雲端基礎設施供應商 Virginia region 先後的資料庫與網路中斷觸發，再被 Heroku 單區 control plane 與自動化失靈放大。",
+   "whyHard": "網路中斷時 Data 控制面無法判斷服務健康，auto-remediation 誤觸發部分資料庫 failover；Platform API 的 Key Value Store 卡在 partial failover；circuit breaker 觸發得太晚，control plane 與受影響 region 同在，需人工介入。",
+   "fix": "止血：暫停 Data auto-remediation、人工修正 Platform API 的 KVS（19:11 UTC）、cycling control plane instances。長期：調整 circuit breaker 觸發時機、評估把 observability 工具分散到多 region、研究降低對單一 region 的過度依賴。",
+   "tradeoff": "把 control plane 做成多 region 會增加複雜度與資料一致性成本；circuit breaker 觸發太早會誤擋正常請求。",
+   "lessons": [
+    "健康判斷依賴的訊號本身受同一個故障影響時，auto-remediation 會做出錯誤決策，要有「無法判斷就暫停」的機制",
+    "control plane 與 data plane 要放在不同故障域",
+    "circuit breaker 是為了隔離上游故障，閾值與時機要用演練驗證"
+   ],
+   "numbers": [
+    "06:53 UTC 首次告警，10/21 03:33 UTC 結案",
+    "部分 provisioning 請求延遲最多 4 小時",
+    "19:11 UTC 人工修正 KVS"
+   ],
+   "interviewUse": "談 AWS 區域故障對 PaaS / SaaS 的連鎖衝擊：control plane 不能與它管理的資源共命運，auto-remediation 要有 kill switch。",
+   "detection": "06:53 UTC Heroku 工程師收到寫入 metrics 資料庫失敗的告警；供應商於 07:11 UTC 才通知客戶有 API 錯誤率升高（原文）。",
+   "sources": [
+    {
+     "title": "Incident Review: Intermittent Disruption and Degradation of Heroku Services on October 20, 2025",
+     "url": "https://www.heroku.com/blog/incident-review-intermittent-disruption-of-services-on-october-2025/"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "storage-choice"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "cloudflare-2025-08-aws-peering-congestion",
+   "problem": "third-party-dependency",
+   "company": "Cloudflare",
+   "title": "與 AWS us-east-1 的 peering 壅塞：兩方同時調整 BGP 讓情況更糟",
+   "date": "2025-08",
+   "kind": "postmortem",
+   "symptom": "2025-08-21 16:27 UTC 起，origin 在 AWS us-east-1 的客戶經 Cloudflare 出現高延遲、封包遺失與 origin 連線失敗；全球其他服務不受影響。",
+   "rootCause": "單一客戶從 AWS us-east-1 大量請求 Cloudflare 快取物件，回應流量塞滿 Cloudflare 與 AWS 之間的直接 peering；AWS 為減壓撤回部分 BGP 廣播，流量被導到另一組也隨即飽和的 peering；另有一條 link 只剩一半容量、DCI 待擴容。",
+   "whyHard": "兩個組織各自的 traffic engineering 互相抵觸，AWS 撤回前綴後 Cloudflare 沒有未壅塞的路徑可選。",
+   "fix": "止血：對造成流量的客戶限流（19:05 UTC），再加 traffic engineering（19:27 UTC），AWS 隨後恢復 BGP 宣告。長期：開發選擇性降低單一客戶流量優先權的機制、加速 DCI 擴容、與 AWS 對齊 BGP 作法、建立每客戶資源預算的流量管理系統。",
+   "tradeoff": "每客戶預算限制可能壓制合法高峰；多出的 peering 容量有成本。",
+   "lessons": [
+    "與關鍵供應商之間的互連本身是依賴，要有容量餘裕與 per-tenant 隔離",
+    "雙方都有自動 / 手動緩解動作時要事先協調，避免互相抵消",
+    "跨組織事故要預先建立聯絡與操作 runbook"
+   ],
+   "numbers": [
+    "16:27 UTC 開始，20:18 UTC 結束",
+    "19:38 UTC 前影響大幅降低",
+    "流量使 Cloudflare 到 AWS 的總流量加倍"
+   ],
+   "interviewUse": "談「依賴的雲端區域」時，補充 peering / 網路邊界也是依賴，並提到 tenant 隔離。",
+   "detection": "16:44 UTC 網路團隊被內部壅塞告警通知；17:45 UTC 才為客戶影響正式升級事故（原文時間線）。",
+   "sources": [
+    {
+     "title": "Cloudflare incident on August 21, 2025",
+     "url": "https://blog.cloudflare.com/cloudflare-incident-on-august-21-2025/"
+    }
+   ],
+   "topics": [
+    "rate-limiting",
+    "api-networking"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "github-2025-06-copilot-model-provider",
+   "problem": "third-party-dependency",
+   "company": "GitHub",
+   "title": "Copilot 模型供應商故障：停用受影響 provider endpoint 止血",
+   "date": "2025-06",
+   "kind": "postmortem",
+   "symptom": "2025-06-12 17:55–21:07 UTC，GitHub Copilot 對 Gemini 模型不可用、Claude 模型可用性降低；VS Code、JetBrains、Copilot Chat 出現高錯誤率、慢回應、逾時。",
+   "rootCause": "其中一個模型供應商發生故障。",
+   "whyHard": "Copilot 同時依賴多個模型供應商，單一供應商故障讓部分模型不可用，錯誤與逾時直接影響前端。",
+   "fix": "止血：暫時停用受影響的 provider endpoint 以降低使用者衝擊；長期：更新對基礎設施供應商故障的 incident response playbook，改善監控與告警以縮短偵測與緩解時間。",
+   "tradeoff": "停用 endpoint 意味著使用者暫時少了某些模型選項；原文未描述自動切換。",
+   "lessons": [
+    "多供應商的好處：關掉壞的 provider，其餘繼續服務",
+    "針對供應商故障要有專屬 playbook，而不只通用故障流程",
+    "偵測時間是改進重點，原文承認需要降低"
+   ],
+   "numbers": [
+    "3 小時 12 分（17:55–21:07 UTC）"
+   ],
+   "interviewUse": "談到多 LLM / 多供應商時，說明可以局部停用壞掉的 provider endpoint 做降級。",
+   "detection": "原文承認需要改善監控與告警以縮短偵測時間，未寫實際發現時間。",
+   "sources": [
+    {
+     "title": "GitHub Availability Report: June 2025",
+     "url": "https://github.blog/news-insights/company-news/github-availability-report-june-2025/"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "api-networking"
+   ],
+   "byAgents": true
+  },
+  {
+   "id": "github-2025-10-codespaces-third-party",
+   "problem": "third-party-dependency",
+   "company": "GitHub",
+   "title": "Codespaces 對第三方依賴的兩次故障：devcontainer image build 與第三方供應商大規模中斷",
+   "date": "2025-10",
+   "kind": "postmortem",
+   "symptom": "10/20 08:05–10:50 UTC Codespaces 建立錯誤率平均 39.5%、峰值 71%，resume 平均 23.4%；10/29 14:07–23:15 UTC 因第三方供應商大規模故障，Codespaces 錯誤率平均 90%、峰值 100%，Actions 大型 runner 與 Enterprise Importer 等也受影響。",
+   "rootCause": "10/20：建置 devcontainer image 所需的第三方依賴故障，引發級聯失敗；10/29：廣泛的第三方供應商中斷。",
+   "whyHard": "Codespaces 的建立路徑含同步的第三方依賴，故障沒有降級方案；10/29 故障跨多個產品，需等供應商恢復。",
+   "fix": "10/20 依賴恢復後即緩解；10/29 約 20:25–20:40 UTC 起各服務開始恢復。原文未描述長期修正。",
+   "tradeoff": "原文未揭露改善措施，無法評估代價。",
+   "lessons": [
+    "同一類第三方依賴在一個月內失效兩次，說明依賴盤點與降級要成為常態工程",
+    "build / provisioning 這類路徑如果同步依賴外部 registry 或服務，需要快取或備援來源"
+   ],
+   "numbers": [
+    "10/20 錯誤率平均 39.5%、峰值 71%",
+    "10/20 resume 錯誤率平均 23.4%、峰值 46%",
+    "10/29 持續 6 小時 58 分，Codespaces 平均 90%",
+    "約 100 個 Copilot Metrics API 下載請求失敗"
+   ],
+   "interviewUse": "說明哪些 control path 依賴外部 build 依賴要設計快取或降級，並把依賴清單視為 SLO 的一部分。",
+   "detection": "原文未寫發現方式或時間。",
+   "sources": [
+    {
+     "title": "GitHub Availability Report: October 2025",
+     "url": "https://github.blog/news-insights/company-news/github-availability-report-october-2025/"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "blobs"
+   ],
+   "byAgents": true
+  }
+ ],
+ "quiz": [
+  {
+   "q": "你的 build 依賴 npm registry；某個依賴包被作者 unpublish 導致 CI 全壞。你會怎麼設計讓這種事不會讓 build 中斷？代價是什麼？",
+   "a": "用 lockfile 鎖版本，再加內部 mirror / artifact proxy 或 vendoring，讓 build 讀自己的快取而非即時打 registry。代價是維運 mirror 的成本與同步延遲，也要處理安全更新。npm 的 left-pad 事件導致 2.5 小時中斷。",
+   "topic": "third-party-dependency",
+   "kind": "情境"
+  },
+  {
+   "q": "IdP / SSO 供應商掛了，為什麼只靠「換一家 IdP」不夠？你會先做什麼降級？",
+   "a": "第一步是快取 JWKS 與沿用有效 session，讓已登入使用者短期可用；多 IdP 切換涉及使用者目錄與設定，短期難做。Lucidworks 事件靠 JWKS 快取 + 與供應商維護 IP allowlist；Atlassian 則承認自己的 fallback 沒有預期有效。",
+   "topic": "third-party-dependency",
+   "kind": "取捨"
+  },
+  {
+   "q": "Multi-CDN 一定比單一 CDN 可靠嗎？舉一個失效例子。",
+   "a": "不一定。多 CDN 把共用的控制面（DNS、憑證、路由規則）變成新的失效面。jsDelivr 因 Cloudflare 改用 HTTP 驗證，multi-CDN 路由導致驗證失敗，回傳過期憑證超過 5 小時；Fastly 路徑則不受影響。需要對各 CDN 做憑證與內容的 active health check。",
+   "topic": "third-party-dependency",
+   "kind": "取捨"
+  },
+  {
+   "q": "為什麼 PaaS 的 control plane 不該與它管理的 region 放在同一個故障域？auto-remediation 要有什麼保護？",
+   "a": "同域會讓故障發生時管控工具也無法使用，需人工介入。Heroku 在 AWS 區域事故中，因為網路中斷無法判斷健康狀態，auto-remediation 誤觸發部分資料庫 failover。保護：無法判斷健康時暫停自動修復的 kill switch，circuit breaker 要及早觸發。",
+   "topic": "third-party-dependency",
+   "kind": "情境"
+  },
+  {
+   "q": "你的產品依賴 LLM / 簡訊 / 支付等多個第三方供應商，其中一個掛了，最低成本的降級做法是什麼？",
+   "a": "將每個供應商包成可獨立停用的 endpoint，故障時關掉壞的、其餘繼續服務（GitHub Copilot 停用受影響的 provider endpoint）；對非同步路徑（OTP）做多供應商 fallback（MojoAuth 切換 Twilio）。代價是整合成本與服務品質不一致。",
+   "topic": "third-party-dependency",
+   "kind": "取捨"
+  },
+  {
+   "q": "可選的相依功能（例如向量化搜尋）故障時，該 fail-open 還是 fail-closed？",
+   "a": "可選功能應 fail-open 並降級（退回 lexical-only 搜尋）。Lucidworks 因 production 遺留 failOnError，向量化不可用時整個查詢失敗，放大了 Okta 事故的衝擊。",
+   "topic": "third-party-dependency",
+   "kind": "概念"
+  }
+ ]
+}

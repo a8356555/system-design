@@ -1,0 +1,370 @@
+{
+ "problem": "time-clock",
+ "problemName": "時間與時鐘",
+ "incidents": [
+  {
+   "id": "azure-2012-leap-day-bug",
+   "company": "Microsoft Azure",
+   "title": "閏日 bug：Guest Agent 憑證 valid-to 算出 2013/2/29，新 VM 全數建立失敗",
+   "date": "2012-02",
+   "kind": "postmortem",
+   "symptom": "2012/2/29 UTC 起新建 / 重啟的 VM 無法啟動；影響 Compute、Access Control Service、Service Bus、SQL Azure Portal、Data Sync。Storage 與 SQL Azure 本身未受影響。",
+   "rootCause": "Guest Agent（GA）產生 transfer certificate 時，valid-to 日期用「今天日期的年份 +1」計算，閏日得到不存在的 2013/2/29，憑證建立失敗。GA 失敗後，要等多次 timeout 才標示需人工調查。",
+   "whyHard": "每一台機器同時（UTC 午夜）踩到同一個程式 bug，replica / failover 完全無用。修復過程中又出第二次事故：把不相容的 HA networking plugin 部署到七個只更新一半的 cluster，造成這些 cluster 的 VM 全部斷網。",
+   "fix": "止血：確認 root cause 後全域關閉 service management，避免客戶再觸發。修復：修正 GA 日期計算並分批 rollout。後續改進：GA 失敗改為 fail-fast，不再等三個 25 分鐘 timeout 才標示需人工處理。",
+   "tradeoff": "全域關閉 service management 等於主動讓管理面不可用，換取不擴大傷害；急修（hotfix）的測試與部署流程被壓縮，結果引發第二次事故。fail-fast 則可能把短暫失敗誤判成永久故障。",
+   "lessons": [
+    "日期運算不要用「年份 +1」這類字串 / 欄位直接運算，閏日、月底、DST 都要列為必測案例。",
+    "同一台機器上的錯誤偵測 timeout 若太長（此例累計 75 分鐘），就等於偵測延遲；故障分類（硬體 vs 軟體 bug）要能快速判斷。",
+    "緊急修復不要跳過『部分更新 cluster 的相容性』檢查，否則修復本身會變成第二個事故。"
+   ],
+   "numbers": [
+    "4:00 PM PST 2/28（= 00:00 UTC 2/29）bug 被觸發",
+    "三次 25 分鐘 timeout（共 75 分鐘）後才達到 Human Investigate 門檻",
+    "6:38 PM 找到 root cause；6:55 PM 全域停用 service management",
+    "2:47 AM 第二次事故，七個 cluster 斷網",
+    "3/1 2:15 AM 全部服務宣告健康",
+    "客戶獲得 33% 帳單 credit"
+   ],
+   "detection": "GA 失敗要到 timeout 三次（共 75 分鐘）後才被標為需人工調查；約 2 小時 38 分（4:00 PM → 6:38 PM PST）後才找到 root cause。微軟後續改為 fail-fast 以縮短偵測。",
+   "interviewUse": "說明『時間 bug 會讓所有 replica 同時壞』，所以 replication 擋不了，要靠測試日期邊界（leap day、年底）與快速故障偵測。",
+   "sources": [
+    {
+     "title": "Summary of Windows Azure Service Disruption on Feb 29th, 2012",
+     "url": "https://azure.microsoft.com/en-us/blog/summary-of-windows-azure-service-disruption-on-feb-29th-2012/"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "auth"
+   ],
+   "problem": "time-clock",
+   "byAgents": true
+  },
+  {
+   "id": "linux-2012-leap-second-hrtimer-futex",
+   "company": "Linux kernel（開源社群）",
+   "title": "2012 閏秒：hrtimer 沒收到 clock_was_set() 通知，futex 相關 CPU 飆高",
+   "date": "2012-06",
+   "kind": "postmortem",
+   "symptom": "2012/6/30 插入閏秒後，部分 Linux 機器出現 futex 相關的 load spike，常見於 MySQL、Firefox、Thunderbird、Java 應用。",
+   "rootCause": "timekeeping 在插入閏秒時沒有呼叫 clock_was_set() 通知 hrtimer 子系統，CLOCK_REALTIME 為基礎的 timer 因此提早 1 秒到期；user space 不斷重設這些 timer，造成 CPU 空轉。Kernel commit 由 Jan Engelhardt 回報。",
+   "whyHard": "症狀是『應用程式 CPU 高』而不是 clock 錯誤，與閏秒的關聯不直觀；而且所有跑同一版 kernel 的機器同時發作。",
+   "fix": "暫時 workaround：執行 date -s \"`date`\"，透過 settimeofday() 觸發 clock_was_set()。正式修復：在 kernel/time/timekeeping.c 兩處閏秒調整點補上 clock_was_set() 呼叫（需要先有讓 clock_was_set 能在 atomic context 呼叫的前置 patch）。",
+   "tradeoff": "workaround 需要在每台機器手動 / 批次執行，且會手動 step 系統時間，對依賴單調時間的程式本身有風險；根治需要升級 kernel。",
+   "lessons": [
+    "對閏秒這類『罕見事件』的路徑，kernel 與 library 幾乎沒被實戰測過；上線前要在測試環境模擬閏秒。",
+    "應用層的 timer 邏輯不要假設 CLOCK_REALTIME 單調；用 CLOCK_MONOTONIC。",
+    "異常 CPU 飆高要把『當時是否有時間事件』列入排查清單。"
+   ],
+   "numbers": [
+    "fix 新增 4 行於 kernel/time/timekeeping.c",
+    "commit author date 2012-07-05"
+   ],
+   "detection": "來源（kernel commit message）僅載明 Jan Engelhardt 為回報者，未寫發現的方式與耗時。",
+   "interviewUse": "說明 wall clock 會跳動、timer 與 wall clock 掛勾的系統會連鎖壞掉，所以 timeout / interval 要用 monotonic clock。",
+   "sources": [
+    {
+     "title": "time: Fix leapsecond triggered hrtimer/futex load spike issue（kernel commit）",
+     "url": "https://lkml.iu.edu/hypermail/linux/kernel/1207.1/00339.html"
+    }
+   ],
+   "topics": [
+    "reliability"
+   ],
+   "problem": "time-clock",
+   "byAgents": true
+  },
+  {
+   "id": "meta-2022-leave-leap-second",
+   "company": "Meta",
+   "title": "Meta 主張廢除閏秒：17 小時 quadratic smear 與負閏秒風險",
+   "date": "2022-07",
+   "kind": "design-writeup",
+   "symptom": "歷史上閏秒屢次造成事故：Reddit 2012 約 30–40 分鐘中斷（hrtimer 被時間變化搞到空轉）；Cloudflare 2017 DNS 失敗（Go 的 time.Now() 非單調，負值餵進 rand.Int63n() 後 panic）。",
+   "rootCause": "閏秒是不規則、罕見、人工插入的時間不連續，軟體 / 核心路徑很少被測；NTP 與 timer 對『一分鐘 61 秒』或時間跳動的處理常有 bug。",
+   "whyHard": "只發生過正閏秒；若出現負閏秒（23:59:58 直接到 00:00:00），Meta 指出這從未在大規模實測過，可能對依賴 timer / scheduler 的軟體造成嚴重影響。",
+   "fix": "Meta 自己用 smearing：從 00:00:00 UTC 開始，17 小時的 quadratic 演算法把閏秒攤開。長期主張：業界停止新增閏秒，凍結在 27。",
+   "tradeoff": "smear 的窗口要夠長，否則 NTP client 會認為 server 不一致而把它排出 quorum；但 smear 期間時間與 UTC 有最多接近 1 秒的偏差，混用 smear 與非 smear 的時間來源會產生衝突。",
+   "lessons": [
+    "與其特殊處理時間不連續，不如讓時間平滑變化（slew / smear），這樣所有上層軟體都不用認識閏秒。",
+    "smear 必須是整個 fleet 一致的策略，不能混用。",
+    "最好的解法有時是消除問題的來源（廢除閏秒），而不是每個系統各自防禦。"
+   ],
+   "numbers": [
+    "自 1972 起已加 27 次閏秒",
+    "Meta smear 窗口 17 小時（quadratic）",
+    "Reddit 2012 約 30–40 分鐘中斷"
+   ],
+   "detection": "設計文章，不適用；文中對 Reddit / Cloudflare 事故也未寫偵測方式與耗時。",
+   "interviewUse": "當面試官問『時間怎麼處理』，可講：用 UTC + monotonic clock 量 duration，並解釋為什麼 fleet 要統一 smear。",
+   "sources": [
+    {
+     "title": "It's time to leave the leap second in the past",
+     "url": "https://engineering.fb.com/2022/07/25/production-engineering/its-time-to-leave-the-leap-second-in-the-past/"
+    }
+   ],
+   "topics": [
+    "reliability"
+   ],
+   "problem": "time-clock",
+   "byAgents": true
+  },
+  {
+   "id": "google-leap-smear",
+   "company": "Google",
+   "title": "Leap smear：把閏秒攤平在長時間窗口，而不是插入 23:59:60",
+   "date": "2016",
+   "kind": "design-writeup",
+   "symptom": "沒有任何主流 OS 能正確處理一分鐘 61 秒；過去以特例處理閏秒造成許多問題。Google 以 2008、2012、2015 閏秒的經驗為基礎改用 smear。",
+   "rootCause": "閏秒造成 clock step（時間不連續）；對分散式系統是大量 timestamp 不連續與 timer 錯亂的來源。",
+   "whyHard": "smear 要讓所有機器（NTP client）同步採用同一種曲線，且不能與非 smear 時間來源混用，否則在 smear 窗口內不同來源的時間會差距數百毫秒以上。",
+   "fix": "2016 部落格：2016 年閏秒前後各 10 小時（共 20 小時）把時鐘放慢 0.0014%，所有 Google 服務、API 與 Compute Engine VM 都用 smear 時間。後來的公開 NTP 文件：改為 24 小時線性 smear（正午到正午 UTC），頻率偏差約 11.6 ppm，與 AWS 等業界做法一致。",
+   "tradeoff": "smear 期間時間與 UTC 有偏差（最大約半秒等級），對需要與 UTC 嚴格對時的外部系統（如與非 smear 夥伴交換 timestamp）不適用；窗口越長頻率偏差越小，但偏離 UTC 的時間越久。",
+   "lessons": [
+    "讓時間連續（slew）通常比讓時間跳動（step）安全。",
+    "時間來源要統一：不要混用 smeared 與 non-smeared 的 NTP server。",
+    "Google 的演算法從 20 小時 / 0.0014% 演進為 24 小時線性，顯示窗口與曲線是可調的 tradeoff，而非固定答案。"
+   ],
+   "numbers": [
+    "2016 做法：20 小時（前後各 10 小時）、速率 0.0014%",
+    "目前建議：24 小時線性 smear（正午到正午 UTC）、頻率變化約 11.6 ppm",
+    "smear 持續 86,401 秒"
+   ],
+   "detection": "設計文章，不適用。",
+   "interviewUse": "被問閏秒時可答：『我們用 leap smear 避免 step，並確保 fleet 只用同一種時間來源』。",
+   "sources": [
+    {
+     "title": "Making every leap second count with our new public NTP servers",
+     "url": "https://cloud.google.com/blog/products/gcp/making-every-leap-second-count-with-our-new-public-ntp-servers"
+    },
+    {
+     "title": "Google Public NTP: Leap Smear",
+     "url": "https://developers.google.com/time/smear"
+    }
+   ],
+   "topics": [
+    "reliability",
+    "consistency"
+   ],
+   "problem": "time-clock",
+   "byAgents": true
+  },
+  {
+   "id": "google-spanner-truetime",
+   "company": "Google",
+   "title": "Spanner TrueTime：時間以區間表示，用 commit wait 換 external consistency",
+   "date": "2012",
+   "kind": "design-writeup",
+   "symptom": "全球分散式交易需要全域一致的事務順序，但各機器時鐘只能被同步到有限誤差；如果忽略誤差，後開始的交易可能得到比先 commit 的交易更小的 timestamp。",
+   "rootCause": "分散式系統中沒有『絕對現在』，不同機器的 wall clock 一定有偏差；傳統時間 API 不揭露不確定性。",
+   "whyHard": "要同時兼顧：時間誤差的有界保證、時鐘 / 主節點故障的容錯，以及不能讓交易延遲過高。時鐘本身偶爾會壞，必須偵測並剔除。",
+   "fix": "TrueTime API 回傳 TTinterval [earliest, latest]，保證包含真實時間。每個 datacenter 有多個 time master（多數配 GPS，其餘為 atomic clock 的 Armageddon master），各機器 daemon 輪詢多個 master 並用 Marzullo 演算法的變體剔除 liar。寫入時 coordinator 做 commit wait：等到 TT.after(s) 為真才讓資料可見，確保 timestamp 順序即真實順序。",
+   "tradeoff": "每次寫入都要做 commit wait，延遲隨時間不確定性 ε 成長；需要 GPS / atomic clock 專用硬體與維運。時鐘 drift 假設一旦被打破（> 200 μs/s）就破壞保證。",
+   "lessons": [
+    "與其假裝時鐘準確，不如讓 API 暴露不確定性，並把不確定性轉成顯式的等待時間。",
+    "時間來源要多樣（GPS + atomic）以避免單一故障源。",
+    "保證建立在假設上（drift 上限），必須主動偵測並剔除違反假設的機器。"
+   ],
+   "numbers": [
+    "ε 在生產環境呈鋸齒狀，約 1 到 7 ms，大多數時間平均約 4 ms",
+    "daemon poll 間隔目前 30 秒",
+    "套用的 drift 速率設為 200 微秒 / 秒",
+    "論文統計：bad CPU 的機率是 bad clock 的 6 倍"
+   ],
+   "detection": "設計文章，不適用；論文只說明 clock 異常遠比 CPU 異常少見（6 倍）。",
+   "interviewUse": "講 external consistency 時提 TrueTime：commit wait 是『用延遲換正確性』的典型例子，也是 Spanner 與 CockroachDB 的分歧點。",
+   "sources": [
+    {
+     "title": "Spanner: Google's Globally-Distributed Database (OSDI '12)",
+     "url": "https://www.usenix.org/system/files/conference/osdi12/osdi12-final-16.pdf"
+    }
+   ],
+   "topics": [
+    "consistency",
+    "id-generation"
+   ],
+   "problem": "time-clock",
+   "byAgents": true
+  },
+  {
+   "id": "cockroach-2022-living-without-atomic-clocks",
+   "company": "Cockroach Labs",
+   "title": "沒有 atomic clock 的 CockroachDB：HLC + uncertainty restart",
+   "date": "2022",
+   "kind": "design-writeup",
+   "symptom": "在一般商用硬體上跑 NTP 同步的叢集，節點時鐘有偏差；若沒有 TrueTime，如何仍給 transaction 嚴格的順序保證。",
+   "rootCause": "分散式 node 的 wall clock 有偏差上限（max clock offset）；讀者的時鐘落後時，會遇到時間戳比自己『未來』的資料，無法判斷該資料是在它開始前還是後 commit。",
+   "whyHard": "一旦實際偏差超過設定的 max offset，一致性保證就被破壞，因此需要持續偵測並在違反時讓節點自殺。",
+   "fix": "使用 HLC（hybrid logical clock），交易起點取 wall clock 並建立 uncertainty window [commit ts, commit ts + max offset]。讀到不確定窗口內的寫入時做 uncertainty restart，把 provisional timestamp 提高並縮小窗口。節點週期性互相檢查 offset，超過閾值就 self-terminate。",
+   "tradeoff": "Spanner 總是在寫入後等待；CockroachDB 則是『有時重試讀取』。多數 restart 只重試一次（例如 2ms 讀變 4ms），上限受 max offset 約束，NTP 環境可能高達 250ms；節點因時鐘偏差自殺會造成可用性損失。",
+   "lessons": [
+    "沒有硬體時鐘時，可以把時間不確定性變成軟體層的重試，而不是寫入等待。",
+    "max offset 是設定也是安全邊界；越小性能越好，但風險越高。",
+    "必須有機制偵測並隔離時鐘過度偏移的節點。"
+   ],
+   "numbers": [
+    "NTP 同步系統的最大延遲可達 250ms",
+    "多數 uncertainty restart 只需重試一次，例如 2ms 的讀變 4ms"
+   ],
+   "detection": "設計文章，不適用。",
+   "interviewUse": "比較 Spanner 與 CockroachDB：Spanner 付出寫入 commit wait，CockroachDB 付出讀取 restart 與 max offset 管理。",
+   "sources": [
+    {
+     "title": "Living without atomic clocks: Where CockroachDB and Spanner diverge",
+     "url": "https://cockroachlabs.com/blog/living-without-atomic-clocks/"
+    }
+   ],
+   "topics": [
+    "consistency"
+   ],
+   "problem": "time-clock",
+   "byAgents": true
+  },
+  {
+   "id": "cockroach-clock-management-max-offset",
+   "company": "Cockroach Labs",
+   "title": "CockroachDB 的 clock management：max-offset 預設 500ms、drift 80% 就停機",
+   "date": "未載明",
+   "kind": "design-writeup",
+   "symptom": "VM 之間 clock skew 會讓 query 效能降低：落後的 reader 遇到時間戳較大的資料而需要重啟 transaction。",
+   "rootCause": "NTP 對雲端 VM 的時鐘同步不夠準，且時間有 step / 跳動時，節點的 offset 估計會失準。",
+   "whyHard": "偏差不是永遠固定；時間 step 會讓 offset 瞬間超限，而保護機制是直接關機，故障域會是整個節點。",
+   "fix": "節點間定期交換 clock signal 計算 offset；偏差超過 max-offset 的 80%（預設 400ms）會自己 shutdown。建議使用單調的 slew / smear 時間，而不是 step；AWS 用 169.254.169.123、GCP 用 metadata.google.internal，Azure 因為原生時間不 smear 需改用 Google 或 Amazon 的來源，全部使用 Chrony。",
+   "tradeoff": "把 max-offset 從預設 500ms 降到 250ms 在良好 NTP 下被認為通常安全，可提升性能，但並發的長交易重試機率會提高。",
+   "lessons": [
+    "一致性保證依賴時鐘假設時，要有主動偵測與 fail-stop 機制。",
+    "雲端時間服務的 leap second 處理不同（smear vs 非 smear），選來源要看清楚。",
+    "寧可 slew 不要 step。"
+   ],
+   "numbers": [
+    "max-offset 預設 500 ms",
+    "偵測閾值：80%（預設 400ms）",
+    "建議可降到 250ms"
+   ],
+   "detection": "設計 / 維運文件，不適用；機制是節點之間定期比對 offset 並在超過 80% max-offset 時自行關機。",
+   "interviewUse": "當面試官問『時鐘偏移太大怎麼辦』：偵測 + fail-stop，並說明時間來源的 smear 設定要一致。",
+   "sources": [
+    {
+     "title": "Clock management in CockroachDB",
+     "url": "https://www.cockroachlabs.com/blog/clock-management-cockroachdb/"
+    }
+   ],
+   "topics": [
+    "consistency",
+    "reliability"
+   ],
+   "problem": "time-clock",
+   "byAgents": true
+  },
+  {
+   "id": "aws-time-sync-clockbound",
+   "company": "AWS",
+   "title": "Amazon Time Sync Service 與 ClockBound：把 clock error bound 暴露給應用",
+   "date": "未載明",
+   "kind": "design-writeup",
+   "symptom": "原本 Time Sync Service 只有毫秒精度；需要微秒級（如交易、廣播）的客戶得自建時間基礎設施，成本高。",
+   "rootCause": "應用不知道自己時鐘『可能有多少誤差』，因此無法安全地比較不同機器的 timestamp。",
+   "whyHard": "NTP 的誤差來源很多（網路延遲、dispersion、硬體），單純相信系統時間會產生錯誤順序；而 PHC 與 NTP 對閏秒的處理不同。",
+   "fix": "提供 NTP（169.254.169.123）與 PTP Hardware Clock（PHC，ENA driver 2.10.0+）兩種連線；ClockBound 這個開源 daemon 計算 clock error bound，讓應用拿到時間區間而不只是一個數字。NTP / 公共 pool 繼續 smear 閏秒，PHC 直接依 UTC（不 smear）。",
+   "tradeoff": "PHC 精度較高但閏秒會做 step，與 NTP 的 smear 來源不能混用；需要升級 ENA driver 與新 instance。",
+   "lessons": [
+    "時間 API 應該回傳「時間 + 誤差界」。",
+    "別在同一 fleet 中混用 smear 與 non-smear 的時間來源。",
+    "高精度時間讓分散式 DB 的事件排序更可行，但仍需錯誤界。"
+   ],
+   "numbers": [
+    "NTP 連線誤差界通常小於 100 微秒",
+    "PHC 連線誤差界通常小於 40 微秒",
+    "Clock accuracy 在低兩位數微秒範圍"
+   ],
+   "detection": "設計文章，不適用。",
+   "interviewUse": "當要在雲上做跨節點事件排序時，說『用 ClockBound 類型的 error bound，並避免混用 smear 設定』。",
+   "sources": [
+    {
+     "title": "It's About Time: Microsecond-Accurate Clocks on Amazon EC2 Instances",
+     "url": "https://aws.amazon.com/blogs/compute/its-about-time-microsecond-accurate-clocks-on-amazon-ec2-instances/"
+    }
+   ],
+   "topics": [
+    "consistency"
+   ],
+   "problem": "time-clock",
+   "byAgents": true
+  },
+  {
+   "id": "cloudflare-2017-leap-second",
+   "problem": "change-induced",
+   "company": "Cloudflare",
+   "title": "閏秒讓時間倒退，RRDNS 的 RTT 變負數而 panic",
+   "date": "2017-01",
+   "kind": "postmortem",
+   "symptom": "使用 CNAME 的客戶出現部分 DNS 解析失敗；高峰約 0.2% DNS 查詢受影響，不到 1% 的 HTTP 請求出錯。",
+   "rootCause": "RRDNS 用 Go 的 time.Now() 計算上游 resolver 的 RTT；閏秒讓時間倒退，量到的 RTT 為負數，經平滑後進到加權選擇邏輯，rand.Int63n 收到負數引數就 panic。",
+   "whyHard": "這不是一次部署，而是『時間本身』的變更：所有機器在同一個時刻遇到同一個條件，無法用分批發布隔離；程式假設時間差永遠不小於 0，而 Go 當時沒有 monotonic clock。resolver 回應只要幾毫秒，所以倒退一秒就足以讓測量為負。",
+   "fix": "修正：RRDNS 遇到負值時忘記目前的上游效能數據讓它重新收斂，不再把負數傳給選擇函式（一行修正），並重啟 RRDNS。優先把修正送到錯誤最多的 data center；00:55 在單一 canary 節點確認、01:03 canary data center 確認、06:45 影響結束。",
+   "tradeoff": "遇到負值就丟棄數據，會短暫失去對上游 resolver 表現的記憶，選擇品質降低；根本解法是使用 monotonic clock，但要等語言 / runtime 支援。",
+   "lessons": [
+    "時間相關假設（時間單調遞增、差值不為負）是全域同時失效的典型來源，所有時間差計算都應檢查負值或使用 monotonic clock。",
+    "對全球同時發生的事件（閏秒、憑證到期、日期滾動），無法靠 canary 隔離，只能靠預先演練與程式防禦。"
+   ],
+   "numbers": [
+    "影響從 2017-01-01 00:00 UTC 持續到 06:45 UTC",
+    "高峰約 0.2% DNS 查詢受影響，不到 1% HTTP 請求出錯",
+    "遍及 102 個 data center，00:10 升級給工程師，00:34 確認問題"
+   ],
+   "interviewUse": "說明『所有節點同時遇到的事件』無法分批發布，只能靠防禦式程式與預先演練；並可舉例時間假設的陷阱。",
+   "sources": [
+    {
+     "title": "How and why the leap second affected Cloudflare DNS",
+     "url": "https://blog.cloudflare.com/how-and-why-the-leap-second-affected-cloudflare-dns/"
+    }
+   ],
+   "topics": [
+    "reliability"
+   ],
+   "byAgents": true,
+   "alsoIn": [
+    "change-induced"
+   ]
+  }
+ ],
+ "quiz": [
+  {
+   "q": "Cloudflare 與 Reddit 都被閏秒擊中。為什麼這種故障 replication / multi-AZ 擋不住？",
+   "a": "因為所有機器在同一個時刻、用同一份程式碼處理同一個時間事件，失效是『相關的（correlated）』，replica 越多反而越多台一起壞。需要靠測試時間邊界與 smear 統一策略。",
+   "topic": "time-clock",
+   "kind": "情境"
+  },
+  {
+   "q": "量測 request duration 或設定 timeout，用 wall clock 還是 monotonic clock？為什麼？",
+   "a": "用 monotonic clock。wall clock 會被 NTP 調整、閏秒或手動修改而往回跳，可能得到負 duration（如 2017 年閏秒事故），monotonic 只增不減。代價是它無法跨機器比較、也不能轉成日曆時間。",
+   "topic": "time-clock",
+   "kind": "取捨"
+  },
+  {
+   "q": "Leap smear（Google / Meta）與直接 step 閏秒，各自的取捨？什麼情況不適用？",
+   "a": "smear 把 1 秒攤在長窗口（Google 24 小時線性；Meta 17 小時 quadratic），時間永遠連續，軟體不用認識 23:59:60；代價是窗口內與 UTC 有最多接近 1 秒的偏差。若 fleet 混用 smear 與 step 的來源，或要與外部嚴格 UTC 對時，就不適用。",
+   "topic": "time-clock",
+   "kind": "取捨"
+  },
+  {
+   "q": "Spanner 的 TrueTime 與 CockroachDB 的 HLC 都要處理時鐘不確定性。兩者把代價放在哪？",
+   "a": "Spanner 在寫入時做 commit wait（ε 約 1–7ms，平均約 4 ms），保證順序但每次寫都多等；CockroachDB 沒有專用硬體，讓讀取遇到 uncertainty window 內的資料時重試，上限隨 max offset 增加（NTP 下可達約 250ms），並在 offset 過大時節點自殺。要低寫延遲且有 GPS/atomic 硬體選 TrueTime，商用硬體選 HLC。",
+   "topic": "time-clock",
+   "kind": "取捨"
+  },
+  {
+   "q": "Azure 2012 閏日事故中，為什麼偵測拖了很久？你設計時怎麼避免？",
+   "a": "GA 失敗要等三個 25 分鐘 timeout（共 75 分鐘）才進入需要人工調查。改為 fail-fast，且憑證 / 日期邏輯要有閏日測試。代價是 fail-fast 可能把暫時性錯誤誤判為永久。",
+   "topic": "time-clock",
+   "kind": "情境"
+  },
+  {
+   "q": "Spanner 論文說 clock drift 假設為 200 μs/s。如果某台機器的 drift 超過它，系統如何保護自己？",
+   "a": "daemon 會偵測頻率偏移超出由元件規格得出的最壞界線，並把該機器剔除；同時 daemon 用 Marzullo 演算法剔除 liar master。保證建立在假設上，所以要主動偵測違反假設的節點。",
+   "topic": "time-clock",
+   "kind": "概念"
+  }
+ ]
+}
