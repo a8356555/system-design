@@ -23,7 +23,3 @@ npm-debug.log*
 # Env
 .env
 .env.local
-
-# Claude Code auto-generated logs
-.claude/session-progress.log
-.claude/command-audit.log
