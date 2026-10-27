@@ -105,7 +105,8 @@
     "reliability"
    ],
    "problem": "capacity-peaks",
-   "byAgents": true
+   "byAgents": true,
+   "accessNote": "原站擋自動讀取，內容依 Internet Archive 公開存檔整理"
   },
   {
    "id": "epic-2018-fortnite-3-4m-ccu",

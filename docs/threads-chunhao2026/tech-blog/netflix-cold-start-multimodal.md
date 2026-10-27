@@ -1,5 +1,6 @@
 # MAPS: Netflix's Multimodal Asset Personalization at Scale
 > 原文：https://netflixtechblog.com/maps-netflixs-multimodal-asset-personalization-at-scale-32f96320785e（作者 Emma Yanyang Kong 等 8 人；2026-08-28 發表。原文經 Wayback Machine 存檔 https://web.archive.org/web/2026/https://netflixtechblog.com/maps-netflixs-multimodal-asset-personalization-at-scale-32f96320785e 核對，下列「原文重點」已逐條對照原文） ｜ Netflix ｜ Threads 解讀：https://www.threads.com/@chunhao2026/post/DdT76cJiXqJ（2026-09-15）
+> 🗄 原站擋自動讀取，內容依 Internet Archive 公開存檔整理（2026-10 起不再以此方式讀取被擋的網站）。
 > 註：貼文本身沒附原文連結，原文是依貼文主題（cold start、CLIP、五種畫布合併）以搜尋比對的，吻合度高但未經作者確認。
 
 ## 一句話重點

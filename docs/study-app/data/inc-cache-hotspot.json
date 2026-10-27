@@ -149,7 +149,8 @@
    "byAgents": true,
    "alsoIn": [
     "tail-latency"
-   ]
+   ],
+   "accessNote": "原站擋自動讀取，內容依 Internet Archive 公開存檔整理"
   },
   {
    "id": "slack-2022-memcached-flush-scatter-query",
@@ -262,7 +263,8 @@
     "scaling-reads"
    ],
    "problem": "cache-hotspot",
-   "byAgents": true
+   "byAgents": true,
+   "accessNote": "原站擋自動讀取，內容依 Internet Archive 公開存檔整理"
   },
   {
    "id": "instagram-2019-promise-cache",
@@ -295,7 +297,8 @@
     "scaling-reads"
    ],
    "problem": "cache-hotspot",
-   "byAgents": true
+   "byAgents": true,
+   "accessNote": "原站擋自動讀取，內容依 Internet Archive 公開存檔整理"
   },
   {
    "id": "nodejs-2023-cache-purge-404",

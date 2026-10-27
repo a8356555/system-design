@@ -1,5 +1,6 @@
 # GenRec: Towards LLM-Native Recommendation at Netflix
 > 原文：https://netflixtechblog.com/genrec-towards-llm-native-recommendation-at-netflix-f20be6f643e3（作者 Ying Li、Arjun Rao、Shradha Sehgal；2026-07-30 發表。原文經 Wayback Machine 存檔 https://web.archive.org/web/2026/https://netflixtechblog.com/genrec-towards-llm-native-recommendation-at-netflix-f20be6f643e3 核對，下列「原文重點」已逐條對照原文） ｜ Netflix ｜ Threads 解讀：https://www.threads.com/@chunhao2026/post/DcOZHciDJ6h（2026-08-19）
+> 🗄 原站擋自動讀取，內容依 Internet Archive 公開存檔整理（2026-10 起不再以此方式讀取被擋的網站）。
 
 ## 一句話重點
 Netflix 把 ranker 從「幾千個手工特徵 + 客製神經網路」改成「把使用者歷史 verbalize 成 prompt，丟給 post-train 過的 LLM，用 prefill-only 一次 forward 對整個候選集打分」，用 10-40 倍更少的 Phase-2 標註資料就贏過成熟的 production ranker。

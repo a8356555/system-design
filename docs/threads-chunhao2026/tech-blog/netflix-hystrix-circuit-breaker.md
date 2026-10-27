@@ -1,5 +1,6 @@
 # Hystrix：Netflix 的 latency 與 fault tolerance library（Case Study）
 > 原文：https://github.com/Netflix/Hystrix/wiki（Home / How-it-Works / Configuration 三頁已讀；下列「原文重點」多數段落只出自此 wiki）；另以 Netflix TechBlog 2011-12-08 Ben Schmaus「Making the Netflix API More Resilient」（Hystrix 的前身設計，原文經 Wayback Machine 存檔（https://web.archive.org/web/2026/https://netflixtechblog.com/making-the-netflix-api-more-resilient-a8ec62159c2d）核對；該文本身未出現 Hystrix 名稱，也未談 thread pool 隔離細節）補充，見「2011 TechBlog 原文補充」一節 ｜ Netflix / 2011 起，2012-11 開源（日期取自貼文，wiki 頁面未逐字確認發布日） ｜ Threads 解讀：https://www.threads.com/@chunhao2026/post/DeeijLkjI_M（2026-10-14）
+> 🗄 主體取自可直接讀取的 GitHub wiki；只有「2011 TechBlog 原文補充」一節因原站擋自動讀取，依 Internet Archive 公開存檔整理（2026-10 起不再以此方式讀取被擋的網站）。
 
 ## 一句話重點
 Hystrix 的核心不是「斷路器」本身，而是每個依賴一個獨立 thread pool（bulkhead）加上 pool 滿了直接拒絕的 fail fast；一個依賴變慢只會榨乾自己的 pool，不會拖死整個服務。

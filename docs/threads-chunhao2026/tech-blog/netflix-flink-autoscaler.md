@@ -1,5 +1,6 @@
 # A Tale of Two Flink Autoscalers
 > 原文：https://netflixtechblog.com/a-tale-of-two-flink-autoscalers-e9f6a1b1492b ｜ Netflix / 2026-09（InfoQ 報導日 2026-09-07） ｜ Threads 解讀：https://www.threads.com/@chunhao2026/post/Dc3iu_KjCVY（2026-09-04）
+> 🗄 原站擋自動讀取，內容依 Internet Archive 公開存檔整理（2026-10 起不再以此方式讀取被擋的網站）。
 
 > 取得方式備註：貼文沒附連結；原文經 Wayback Machine 存檔（https://web.archive.org/web/2026/https://netflixtechblog.com/a-tale-of-two-flink-autoscalers-e9f6a1b1492b）核對，下列「原文重點」已逐條對照原文（作者 Samuel Yeboah、Francesco Di Chiara、Mingliang Liu）。
 

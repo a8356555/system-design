@@ -125,7 +125,8 @@
    "topics": [
     "blobs"
    ],
-   "byAgents": true
+   "byAgents": true,
+   "accessNote": "原站擋自動讀取，內容依 Internet Archive 公開存檔整理"
   },
   {
    "id": "per-shot-dynamic-optimizer",
@@ -162,7 +163,8 @@
     "blobs",
     "async-jobs"
    ],
-   "byAgents": true
+   "byAgents": true,
+   "accessNote": "原站擋自動讀取，內容依 Internet Archive 公開存檔整理"
   },
   {
    "id": "chunked-parallel-mot-transcoding",

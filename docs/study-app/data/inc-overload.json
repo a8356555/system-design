@@ -142,7 +142,8 @@
     "reliability",
     "api-networking"
    ],
-   "byAgents": true
+   "byAgents": true,
+   "accessNote": "原站擋自動讀取，內容依 Internet Archive 公開存檔整理"
   },
   {
    "id": "uber-qalm-criticality-shedding",
@@ -179,7 +180,8 @@
     "reliability",
     "api-networking"
    ],
-   "byAgents": true
+   "byAgents": true,
+   "accessNote": "原站擋自動讀取，內容依 Internet Archive 公開存檔整理"
   },
   {
    "id": "linkedin-hodor-overload-detection",

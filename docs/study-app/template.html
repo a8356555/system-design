@@ -428,6 +428,7 @@ window.DATA = /*DATA*/null;
     h += '<div class="chain"><div class="c-naive"><span class="k">直覺做法</span>' + esc(m.naive) + '</div><div class="c-break"><span class="k">哪裡會壞</span>' + esc(m.breaks) +
       '</div><div class="c-trick"><span class="k">實際做法</span>' + esc(m.trick) + '</div><div class="c-cost"><span class="k">代價</span>' + esc(m.cost) + "</div></div>";
     if (m.numbers?.length) h += '<div class="nums">' + m.numbers.map((n) => '<span class="num">' + esc(n) + "</span>").join("") + "</div>";
+    if (m.accessNote) h += '<div class="chips"><span class="badge b-agents" title="' + esc(m.accessNote) + '">' + esc(m.accessNote) + '</span></div>';
     if (m.numbersUnverified) h += '<div class="chips"><span class="badge b-premium" title="來源頁面無法自動讀取，數字未能逐字核對">數字未核對</span></div>';
     if (m.alternatives?.length) h += '<div class="mini"><h5 class="h-b">什麼時候不用它</h5><ul>' + m.alternatives.map((a) => "<li><b>" + esc(a.name) + "</b>：" + esc(a.pickIf) + "</li>").join("") + "</ul></div>";
     if (m.interviewUse) h += '<div class="use"><b>面試怎麼用</b>' + esc(m.interviewUse) + "</div>";
@@ -466,6 +467,7 @@ window.DATA = /*DATA*/null;
     if (x.detection && !/^(來源)?(未載明|不適用|原文無|未提供|文章未寫|原文未)/.test(x.detection)) h += '<div class="use"><b>怎麼發現的</b>' + esc(x.detection) + "</div>";
     if (x.interviewUse) h += '<div class="use"><b>面試怎麼用</b>' + esc(x.interviewUse) + "</div>";
     if (x.alsoIn?.length) h += '<div class="chips"><span class="mono" style="font-size:11px;color:var(--ink-2)">也屬於</span>' + x.alsoIn.map((p) => '<a class="chip" href="#inc-' + esc(p) + '">' + esc(problemName[p] || p) + "</a>").join("") + "</div>";
+    if (x.accessNote) h += '<div class="chips"><span class="badge b-agents" title="' + esc(x.accessNote) + '">' + esc(x.accessNote) + '</span></div>';
     if (x.numbersUnverified) h += '<div class="chips"><span class="badge b-premium" title="來源頁面無法自動讀取，數字未能逐字核對">數字未核對</span></div>';
     const tps = (x.topics || []).filter((t) => topicById[t]);
     if (tps.length) h += '<div class="chips">' + tps.map((t) => '<a class="chip" href="#topic-' + t + '">' + esc(shortTitle(topicById[t].title)) + "</a>").join("") + "</div>";

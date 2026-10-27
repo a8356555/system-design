@@ -1,5 +1,6 @@
 # How and Why Netflix Built a Real-Time Distributed Graph, Part 3 — Querying the Graph with gRPC
 > 原文：https://netflixtechblog.com/how-and-why-netflix-built-a-real-time-distributed-graph-part-3-querying-the-graph-with-grpc-0f3468349607 ｜ Netflix（作者 Nilesh Mishra, Ajit Koti） / 2026-08-07 ｜ Threads 解讀：https://www.threads.com/@chunhao2026/post/Dci51VaDSCs（2026-08-27）
+> 🗄 原站擋自動讀取，內容依 Internet Archive 公開存檔整理（2026-10 起不再以此方式讀取被擋的網站）。
 
 > 取得方式備註：原文經 Wayback Machine 存檔（https://web.archive.org/web/2026/https://netflixtechblog.com/how-and-why-netflix-built-a-real-time-distributed-graph-part-3-querying-the-graph-with-grpc-0f3468349607）核對，下列「原文重點」已逐條對照原文。貼文只列出前 2 點，其餘作者解讀未取得。
 

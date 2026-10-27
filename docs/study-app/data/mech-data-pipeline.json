@@ -269,7 +269,8 @@
     "streaming",
     "realtime"
    ],
-   "byAgents": false
+   "byAgents": false,
+   "accessNote": "原站擋自動讀取，內容依轉載全文整理"
   },
   {
    "id": "kafka-transactions-eos",

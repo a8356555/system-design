@@ -274,7 +274,8 @@
     "reliability"
    ],
    "problem": "tail-latency",
-   "byAgents": true
+   "byAgents": true,
+   "accessNote": "原站擋自動讀取，內容依轉載全文整理"
   },
   {
    "id": "cockroach-2022-go-scheduler-elastic-work",
