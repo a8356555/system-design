@@ -1,0 +1,151 @@
+# Lambda Architecture .gitignore
+
+# Compiled class files
+*.class
+
+# Log files
+*.log
+
+# Maven
+*/target/
+dependency-reduced-pom.xml
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.project
+.settings/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Docker volumes and data
+data/
+volumes/
+logs/
+
+# Backup files
+backups/
+*.backup
+*.bak
+backup_*
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.swp
+*.swo
+
+# Environment files
+.env
+.env.local
+.env.prod
+.env.development
+.env.test
+
+# Generated files
+*.pid
+*.seed
+*.cover
+
+# Runtime data
+pids/
+*.pid
+*.seed
+
+# Coverage directory used by tools like istanbul
+coverage/
+.nyc_output/
+
+# Test reports
+test-reports/
+*.xml
+junit.xml
+
+# Flink data
+flink-checkpoints/
+flink-savepoints/
+flink-ha/
+
+# Spark data
+spark-warehouse/
+metastore_db/
+derby.log
+
+# HDFS data
+hdfs-data/
+hdfs-logs/
+
+# ClickHouse data
+clickhouse-data/
+clickhouse-logs/
+
+# Prometheus data
+prometheus-data/
+
+# Grafana data
+grafana-data/
+
+# Kafka data
+kafka-data/
+kafka-logs/
+zk-data/
+zk-logs/
+
+# Redis data
+redis-data/
+dump.rdb
+
+# Local development overrides
+docker-compose.override.yml
+docker-compose.local.yml
+
+# Jupyter notebooks
+.ipynb_checkpoints/
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# Documentation build
+docs/_build/

@@ -1,0 +1,278 @@
+groups:
+  - name: lambda_architecture_alerts
+    rules:
+      # Lambda Architecture Specific Alerts
+      - alert: DataFreshnessAlert
+        expr: lambda_data_freshness_seconds > 7200  # 2 hours
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Lambda architecture data is stale"
+          description: "Data freshness is {{ $value }} seconds (> 2 hours). Batch layer may be failing."
+
+      - alert: BatchSpeedLayerInconsistency
+        expr: abs(lambda_batch_count - lambda_speed_count) / lambda_batch_count > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Inconsistency between batch and speed layers"
+          description: "Difference between batch and speed layer counts is > 10%"
+
+      - alert: ServingLayerDown
+        expr: up{job="serving-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Serving Layer API is down"
+          description: "The serving layer API is not responding"
+
+  - name: batch_layer_alerts
+    rules:
+      - alert: SparkMasterDown
+        expr: up{job="spark-master"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Spark Master is down"
+          description: "Spark Master has been down for more than 2 minutes"
+
+      - alert: SparkWorkerDown
+        expr: up{job="spark-worker"} == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Spark Worker is down"
+          description: "At least one Spark Worker is down"
+
+      - alert: BatchJobFailure
+        expr: increase(spark_streaming_batch_processing_total{result="failure"}[1h]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Batch processing job failed"
+          description: "{{ $value }} batch jobs have failed in the last hour"
+
+      - alert: BatchJobDelay
+        expr: time() - lambda_last_batch_completion_timestamp > 7200  # 2 hours
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Batch processing is delayed"
+          description: "Last batch job completed {{ $value }} seconds ago"
+
+  - name: speed_layer_alerts
+    rules:
+      - alert: FlinkJobDown
+        expr: up{job="flink-jobmanager"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Flink JobManager is down"
+          description: "Flink JobManager has been down for more than 1 minute"
+
+      - alert: FlinkTaskManagerDown
+        expr: up{job="flink-taskmanager"} == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Flink TaskManager is down"
+          description: "At least one Flink TaskManager is down"
+
+      - alert: FlinkCheckpointFailure
+        expr: rate(flink_jobmanager_job_numFailedCheckpoints[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Flink checkpoint failures detected"
+          description: "Checkpoint failure rate is {{ $value }} per second"
+
+      - alert: FlinkHighBackpressure
+        expr: flink_taskmanager_job_task_backpressured > 0.8
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High backpressure in Flink task"
+          description: "Backpressure ratio is {{ $value | humanizePercentage }} for task {{ $labels.task_name }}"
+
+      - alert: FlinkHighLag
+        expr: flink_consumer_lag > 100000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High consumer lag in speed layer"
+          description: "Consumer lag is {{ $value }} messages"
+
+  - name: storage_layer_alerts
+    rules:
+      - alert: ClickHouseDown
+        expr: up{job="clickhouse"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "ClickHouse is down"
+          description: "ClickHouse has been down for more than 1 minute"
+
+      - alert: ClickHouseSlowQuery
+        expr: histogram_quantile(0.95, rate(clickhouse_query_duration_seconds_bucket[5m])) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "ClickHouse queries are slow"
+          description: "95th percentile query duration is {{ $value }}s"
+
+      - alert: ClickHouseHighMemoryUsage
+        expr: (clickhouse_memory_usage / clickhouse_memory_limit) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "ClickHouse memory usage is high"
+          description: "Memory usage is {{ $value | humanizePercentage }}"
+
+      - alert: RedisDown
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis is down"
+          description: "Redis cache is not available"
+
+      - alert: RedisHighMemoryUsage
+        expr: (redis_memory_used_bytes / redis_memory_max_bytes) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis memory usage is high"
+          description: "Redis memory usage is {{ $value | humanizePercentage }}"
+
+  - name: kafka_alerts
+    rules:
+      - alert: KafkaDown
+        expr: up{job="kafka"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Kafka is down"
+          description: "Kafka broker is not responding"
+
+      - alert: KafkaHighLag
+        expr: kafka_consumer_lag_sum > 50000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Kafka consumer lag is high"
+          description: "Consumer lag is {{ $value }} messages for topic {{ $labels.topic }}"
+
+      - alert: KafkaPartitionOffline
+        expr: kafka_server_replica_manager_offline_replicas_count > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Kafka has offline partitions"
+          description: "{{ $value }} partitions are offline"
+
+  - name: hdfs_alerts
+    rules:
+      - alert: HDFSNameNodeDown
+        expr: up{job="hdfs-namenode"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "HDFS NameNode is down"
+          description: "HDFS NameNode has been down for more than 2 minutes"
+
+      - alert: HDFSDataNodeDown
+        expr: up{job="hdfs-datanode"} == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "HDFS DataNode is down"
+          description: "At least one HDFS DataNode is down"
+
+      - alert: HDFSLowDiskSpace
+        expr: hdfs_capacity_remaining_gb / hdfs_capacity_total_gb < 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "HDFS low disk space"
+          description: "HDFS has less than 10% free space remaining"
+
+  - name: api_alerts
+    rules:
+      - alert: HighAPILatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High API latency"
+          description: "95th percentile API latency is {{ $value }}s"
+
+      - alert: HighAPIErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High API error rate"
+          description: "API error rate is {{ $value | humanizePercentage }}"
+
+      - alert: LowCacheHitRate
+        expr: rate(cache_hits_total[5m]) / rate(cache_requests_total[5m]) < 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low cache hit rate"
+          description: "Cache hit rate is {{ $value | humanizePercentage }}"
+
+  - name: system_alerts
+    rules:
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage detected"
+          description: "CPU usage is {{ $value }}% on instance {{ $labels.instance }}"
+
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage detected"
+          description: "Memory usage is {{ $value | humanizePercentage }} on instance {{ $labels.instance }}"
+
+      - alert: DiskSpaceLow
+        expr: (1 - (node_filesystem_avail_bytes / node_filesystem_size_bytes)) > 0.9
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Disk space is low"
+          description: "Disk usage is {{ $value | humanizePercentage }} on {{ $labels.mountpoint }}"

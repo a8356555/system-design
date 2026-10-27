@@ -1,0 +1,82 @@
+# Compiled class files
+*.class
+
+# Log files
+*.log
+
+# Maven
+flink/target/
+flink/dependency-reduced-pom.xml
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Docker volumes and data
+data/
+volumes/
+logs/
+
+# Backup files
+backups/
+*.backup
+*.bak
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Environment files
+.env
+.env.local
+.env.prod
+
+# Generated files
+*.pid
+*.seed
+*.cover
+
+# Runtime data
+pids/
+*.pid
+*.seed
+
+# Coverage directory used by tools like istanbul
+coverage/
+
+# Test reports
+test-reports/
+*.xml
+
+# Prometheus data
+prometheus-data/
+
+# Grafana data
+grafana-data/
+
+# ClickHouse data
+clickhouse-data/
+clickhouse-logs/
+
+# Kafka data
+kafka-data/
+zk-data/
+zk-logs/
+
+# Flink data
+flink-checkpoints/
+flink-savepoints/
+flink-ha/

@@ -1,0 +1,154 @@
+groups:
+  - name: kafka_alerts
+    rules:
+      - alert: KafkaHighLag
+        expr: kafka_consumer_lag_sum > 100000
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Kafka consumer lag is too high"
+          description: "Consumer lag is {{ $value }} messages for topic {{ $labels.topic }}"
+
+      - alert: KafkaPartitionOffline
+        expr: kafka_server_replica_manager_offline_replicas_count > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Kafka has offline partitions"
+          description: "{{ $value }} partitions are offline"
+
+      - alert: KafkaHighDiskUsage
+        expr: (kafka_log_size / kafka_log_max_size) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Kafka disk usage is high"
+          description: "Kafka log disk usage is {{ $value | humanizePercentage }}"
+
+  - name: flink_alerts
+    rules:
+      - alert: FlinkJobDown
+        expr: up{job="flink-jobmanager"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Flink JobManager is down"
+          description: "Flink JobManager has been down for more than 1 minute"
+
+      - alert: FlinkCheckpointFailure
+        expr: rate(flink_jobmanager_job_numFailedCheckpoints[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Flink checkpoint failures detected"
+          description: "Checkpoint failure rate is {{ $value }} per second"
+
+      - alert: FlinkHighBackpressure
+        expr: flink_taskmanager_job_task_backpressured > 0.8
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High backpressure in Flink task"
+          description: "Backpressure ratio is {{ $value | humanizePercentage }} for task {{ $labels.task_name }}"
+
+      - alert: FlinkHighMemoryUsage
+        expr: (flink_taskmanager_status_jvm_memory_heap_used / flink_taskmanager_status_jvm_memory_heap_max) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Flink TaskManager memory usage is high"
+          description: "Memory usage is {{ $value | humanizePercentage }} on TaskManager {{ $labels.tm_id }}"
+
+  - name: clickhouse_alerts
+    rules:
+      - alert: ClickHouseDown
+        expr: up{job="clickhouse"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "ClickHouse is down"
+          description: "ClickHouse has been down for more than 1 minute"
+
+      - alert: ClickHouseSlowQuery
+        expr: histogram_quantile(0.95, rate(clickhouse_query_duration_seconds_bucket[5m])) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "ClickHouse queries are slow"
+          description: "95th percentile query duration is {{ $value }}s"
+
+      - alert: ClickHouseHighMemoryUsage
+        expr: (clickhouse_memory_usage / clickhouse_memory_limit) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "ClickHouse memory usage is high"
+          description: "Memory usage is {{ $value | humanizePercentage }}"
+
+      - alert: ClickHouseTooManyParts
+        expr: clickhouse_table_parts > 1000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Too many parts in ClickHouse table"
+          description: "Table {{ $labels.table }} has {{ $value }} parts"
+
+  - name: data_freshness_alerts
+    rules:
+      - alert: DataFreshnessAlert
+        expr: (time() - clickhouse_max_event_timestamp) > 300
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Data is not fresh"
+          description: "Latest event timestamp is {{ $value }}s behind current time"
+
+      - alert: NoDataIngestion
+        expr: rate(clickhouse_insert_queries_total[5m]) == 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No data ingestion detected"
+          description: "No INSERT queries to ClickHouse in the last 5 minutes"
+
+  - name: system_alerts
+    rules:
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage detected"
+          description: "CPU usage is {{ $value }}% on instance {{ $labels.instance }}"
+
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage detected"
+          description: "Memory usage is {{ $value | humanizePercentage }} on instance {{ $labels.instance }}"
+
+      - alert: DiskSpaceLow
+        expr: (1 - (node_filesystem_avail_bytes / node_filesystem_size_bytes)) > 0.9
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Disk space is low"
+          description: "Disk usage is {{ $value | humanizePercentage }} on {{ $labels.mountpoint }}"
