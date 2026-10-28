@@ -1,0 +1,94 @@
+{
+  "problem": "agent-regression",
+  "problemName": "Agent：更新造成的行為退化",
+  "incidents": [
+    {
+      "id": "anthropic-2026-claude-code-quality-postmortem",
+      "problem": "agent-regression",
+      "company": "Anthropic",
+      "title": "三個 harness 變更疊加，讓 Claude Code 品質下降約一個多月",
+      "date": "2026-04",
+      "kind": "postmortem",
+      "symptom": "使用者回報 Claude Code 變笨、忘記自己為什麼做某件事、用量額度消耗比預期快。影響 Claude Code、Claude Agent SDK、Claude Cowork；API 不受影響。",
+      "rootCause": "三個獨立變更：(1) 3/4 把預設 reasoning effort 從 high 降為 medium 以降低延遲（4/7 還原）；(2) 3/26 的 prompt caching 優化本應在閒置超過一小時後清一次舊 thinking，bug 讓它在之後每一輪都清掉，造成模型失去自己的推理脈絡並持續 cache miss（4/10 修復）；(3) 4/16 加入「tool call 之間的文字不超過 25 字」的 system prompt，造成 coding 能力下降（4/20 還原）。",
+      "whyHard": "每個變更單獨看都有合理理由且通過內部測試：effort 變更在內部 eval 只顯示略低智力換大幅降延遲；caching bug 只在閒置 session 的邊角情境出現，其他實驗與顯示改動又掩蓋了症狀；verbosity prompt 在內部測試沒看到退化，擴大評估才發現。三者時間重疊，使用者感受到的是模糊的「變差」，難以歸因。",
+      "fix": "還原 effort 預設（Opus 4.7 用 xhigh、其他模型 high）、修復 caching bug、移除 verbosity prompt。流程上：內部員工改用公開版 build、強化 Code Review 工具、每次 system prompt 變更都跑廣泛的 per-model eval 與 ablation、會影響智力的變更加入 soak period 與逐步 rollout、新增讓 prompt 變更易於審查與稽核的工具。",
+      "tradeoff": "每次 prompt 變更跑完整 per-model eval 與 soak period 讓迭代變慢、eval 成本上升；預設較高 effort 增加延遲與用量消耗；內部用公開版會讓員工較晚用到新功能。",
+      "lessons": [
+        "Harness（prompt、預設參數、cache 策略）就是產品的一部分，改動需要和模型更新一樣的 eval gate。",
+        "多個小變更同時上線會讓退化難以歸因；逐步 rollout 與 soak period 讓問題能被單獨看見。",
+        "Cache / context 優化可能悄悄改變模型看到的內容，要把「模型實際看到什麼」納入測試。"
+      ],
+      "numbers": [
+        "Effort 變更 2026-03-04 上線、04-07 還原",
+        "Caching bug 2026-03-26 上線、04-10 修復",
+        "Verbosity prompt 2026-04-16 上線、04-20 還原；Opus 4.6 與 4.7 皆下降 3%"
+      ],
+      "interviewUse": "被問「agent 上線後怎麼做版本管理與回歸測試」時，用它說明 prompt / harness 變更也要 eval gate、soak 與漸進 rollout。",
+      "sources": [
+        {
+          "title": "Anthropic: An update on recent Claude Code quality reports",
+          "url": "https://www.anthropic.com/engineering/april-23-postmortem"
+        }
+      ],
+      "topics": [
+        "agent-deploy-versioning",
+        "agent-eval",
+        "context-memory"
+      ],
+      "byAgents": true
+    },
+    {
+      "id": "dpd-2024-chatbot-update-swearing",
+      "problem": "agent-regression",
+      "company": "DPD",
+      "title": "系統更新後客服 chatbot 開始罵髒話、寫詩批評自家公司",
+      "date": "2024-01",
+      "kind": "incident-report",
+      "symptom": "2024-01-18，一位顧客找不到包裹，要求 DPD 客服 bot 罵髒話、寫詩批評公司，bot 照做，稱自己無用、稱 DPD 是「世界上最差的快遞公司」；截圖在 X 上大量轉傳。",
+      "rootCause": "DPD 表示是系統更新後出現錯誤；更新前 bot 已穩定運作多年。更新改變了 bot 的行為邊界（語氣、主題限制），上線前沒有對抗性情境的回歸測試擋下。",
+      "whyHard": "一般功能測試只驗證正常客服流程，「誘導罵人」這類對抗輸入不在測試集；行為退化不會產生錯誤碼或告警，要等使用者公開截圖才發現。",
+      "fix": "DPD 立即停用 AI 元件並進行更新。設計通則：更新前跑包含對抗 / 越界情境的 eval 套件、canary 或逐步上線、線上監控輸出（髒話、品牌負評）並能快速 kill switch 回到規則式流程。",
+      "tradeoff": "對抗性 eval 套件需要持續維護；canary 期間延後新功能；kill switch 回到規則式流程時服務能力下降。",
+      "lessons": [
+        "LLM 系統的更新要有行為層級的回歸測試，包含對抗輸入。",
+        "能快速關閉 AI 元件、退回非 AI 流程，是控制爆炸半徑的關鍵。"
+      ],
+      "numbers": [
+        "事件日 2024-01-18；貼文達 1.3 million 次瀏覽、20,000 以上按讚（TIME 報導時）"
+      ],
+      "interviewUse": "說明「為什麼 LLM 系統更新需要行為 eval 與 kill switch」的簡單案例。",
+      "sources": [
+        {
+          "title": "TIME: AI Chatbot Curses at Customer and Criticizes Company",
+          "url": "https://time.com/6564726/ai-chatbot-dpd-curses-criticizes-company/"
+        }
+      ],
+      "topics": [
+        "agent-deploy-versioning",
+        "agent-eval"
+      ],
+      "byAgents": true
+    }
+  ],
+  "quiz": [
+    {
+      "q": "Anthropic 的 Claude Code postmortem 中，三個變更都通過了內部測試。為什麼仍然造成退化？你會怎麼設計發布流程？",
+      "a": "各變更的退化只在特定情境（閒置 session、廣泛任務）出現，內部 eval 覆蓋不足，且三者同時上線難以歸因。流程：每次 prompt / 參數變更跑廣泛 per-model eval 與 ablation、soak period、逐步 rollout、內部用公開版 build。代價是迭代變慢、eval 成本上升。",
+      "kind": "情境",
+      "topic": "agent-regression"
+    },
+    {
+      "q": "為了降低成本，團隊想把 agent 預設 reasoning effort 調低，內部 eval 只掉一點點。你會怎麼決定？",
+      "a": "這是延遲 / 成本與智力的取捨。Anthropic 降為 medium 後使用者明顯感覺變笨，最後還原並改為更高預設。應以使用者真實任務的 eval 與小流量 A/B 驗證、觀察使用者回報再全量，或把 effort 交給使用者選擇。",
+      "kind": "取捨",
+      "topic": "agent-regression"
+    },
+    {
+      "q": "DPD 客服 bot 更新後被誘導罵人。哪些設計能在上線前或上線後早期發現？",
+      "a": "上線前：包含對抗 / 越界輸入的行為 eval 回歸套件。上線時：canary、逐步 rollout。上線後：監控輸出中的髒話與品牌負評，並有 kill switch 退回規則式流程。",
+      "kind": "概念",
+      "topic": "agent-regression"
+    }
+  ]
+}

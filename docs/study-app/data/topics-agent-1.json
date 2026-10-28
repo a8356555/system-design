@@ -1,0 +1,509 @@
+{
+  "topics": [
+    {
+      "id": "agent-vs-workflow",
+      "title": "Agent 還是 Workflow（自主程度）",
+      "group": "Agent 系統設計",
+      "oneLiner": "決定「下一步由程式碼寫死，還是交給 LLM 決定」，以及值不值得拆成多個 agent；自主程度越高，彈性越大，但成本、延遲與錯誤累積也越大。",
+      "question": "這個功能為什麼要用 agent？寫成固定流程不行嗎？要不要做成 multi-agent？",
+      "signals": [
+        "步驟數量事先無法預測（開放式研究、debug）",
+        "流程固定、每步可被 lint / test / schema 驗證",
+        "有一定要執行的合規步驟（lint、權限檢查、審核）",
+        "延遲要求在 1–2 秒內的互動查詢",
+        "廣度優先、可平行的資料蒐集，資訊量超過單一 context window",
+        "面試官問「為什麼不用 multi-agent？」或「token 成本怎麼控制？」"
+      ],
+      "options": [
+        {
+          "name": "單次 LLM call + retrieval / routing",
+          "how": "一次呼叫，前面加檢索或一個分類器把輸入導到專用 prompt / 模型（Anthropic 的 routing pattern）。",
+          "bestWhen": "從文件中找答案這類最常見的問題；Dropbox Dash 用 RAG 處理一般問答。",
+          "cost": "最便宜、延遲最低；Dropbox 讓超過 95% 的查詢維持在 1–2 秒內。",
+          "failure": "做不了多步驟任務（Dropbox 原話：RAG「incapable of performing complex, multi-step tasks」）；routing 分錯類會把問題送到錯的 handler，且通常沒有補救路徑。",
+          "scale": "所有系統的起點；只有在 eval 顯示它不夠時才往下走。"
+        },
+        {
+          "name": "固定 workflow（prompt chaining / parallelization，由 code 決定路徑）",
+          "how": "Anthropic 定義：LLM 與工具透過「predefined code paths」串接；每一步是一個 LLM call，順序與分支寫在程式裡。",
+          "bestWhen": "任務能乾淨拆成固定子任務；需要可預測的成本與延遲。Stripe Payment Method Factory 發現「predictable coordination is better implemented in code」。",
+          "cost": "chain 每多一步就多一次延遲（以速度換準確）；每出現新情境就要改 code。",
+          "failure": "遇到沒預料到的分支只能失敗或走錯；corner case 越堆越多——Spotify 的 deterministic Maven 升級腳本長到超過 20,000 行。",
+          "scale": "流程可預測時任何規模都適用，也最容易測試與除錯。"
+        },
+        {
+          "name": "混合：deterministic 骨架 + agent 節點",
+          "how": "git、lint、測試等必經步驟用 code 保證執行，中間需要創造力的步驟交給 agent loop，並限制重試次數（Stripe Minions 最多跑兩輪 CI）。",
+          "bestWhen": "有必經的合規步驟，而且結果可以自動驗證（測試、lint、型別檢查）。",
+          "cost": "要設計兩種節點的介面與 devbox / sandbox，harness 工程量大；仍要付 agent 節點的 token。",
+          "failure": "agent 節點切太大就退化成純 agent；驗證太弱時會把錯誤的 PR 推出去，只是推得更快。",
+          "scale": "Stripe Minions 每週超過 1,000 個 merged PR；Spotify background agent 已 merge 超過 1,500 個 PR。"
+        },
+        {
+          "name": "單一 agent 迴圈（LLM 自己決定下一步）",
+          "how": "LLM 在迴圈中選工具、讀結果、決定下一步，直到判斷完成；context 從頭到尾連續（Cognition 推薦的 single-threaded linear agent）。",
+          "bestWhen": "開放式問題，步數無法預測，且有能驗證結果的環境（Anthropic：「difficult or impossible to predict the required number of steps」）。",
+          "cost": "Anthropic 量到 agent 約用 chat 的 4 倍 token；延遲與成本不可預測，需要預算上限。",
+          "failure": "錯誤會累積（compounding errors）、迴圈、太早宣告完成；工具一多邊界就模糊——Shopify 觀察到 20–50 個工具開始出現非預期組合，50+ 就難以推理。",
+          "scale": "Shopify 的結論：single agent 能處理的複雜度比你預期的高；先撐到真的不夠再拆。"
+        },
+        {
+          "name": "Multi-agent（orchestrator + 平行 subagents）",
+          "how": "lead agent 拆任務、平行派 subagent，各自用乾淨 context 探索，最後由 lead 彙整。",
+          "bestWhen": "廣度優先、讀取型、可平行的任務；資訊量超過單一 context；任務價值高到付得起額外 token。",
+          "cost": "Anthropic 量到 multi-agent 約用 chat 的 15 倍 token；BrowseComp 上 token 用量單獨就解釋 80% 的表現差異——好處很大一部分是「花更多 token」。",
+          "failure": "subagent 只拿到部分 context，各自做出互相衝突的隱含決策（Cognition 的 Flappy Bird 例子）；MAST 從 1,600+ 條 trace 歸納出 14 種 multi-agent 失敗模式。",
+          "scale": "Anthropic 研究系統（Opus 4 lead + Sonnet 4 subagents）在內部 eval 比單一 Opus 4 好 90.2%；但它明說多數 coding 任務可平行的部分比研究少，不適合。"
+        }
+      ],
+      "decisionGuide": [
+        {"if": "流程固定、每步可驗證", "then": "固定 workflow", "why": "可預測的成本與延遲，容易測；Anthropic 原則是「只在能證明有改善時才加複雜度」。"},
+        {"if": "有一定要執行的步驟（lint、測試、合規）但中間需要判斷", "then": "deterministic 骨架 + agent 節點", "why": "必經步驟交給 code 才有保證，prompt 裡寫「記得跑 lint」不是保證（Stripe Minions）。"},
+        {"if": "步數不可預測、需要邊做邊看", "then": "單一 agent 迴圈 + 步數 / token 上限", "why": "context 連續、不會有 agent 間的決策衝突；Cognition 與 Shopify 都建議先用 single agent。"},
+        {"if": "讀取型、可平行、資訊量超過一個 context window、任務價值高", "then": "multi-agent orchestrator-worker，彙整交給單一 agent", "why": "平行探索換準確率與時間；寫入收斂到一個 agent 避免衝突。"},
+        {"if": "互動延遲預算只有 1–2 秒", "then": "單次 call + retrieval，複雜問題才升級到 agent", "why": "agent 迴圈的延遲無法放進這種預算；Dropbox 把兩者分流。"}
+      ],
+      "defaultAnswer": "預設用 workflow，必經步驟一律寫在 code 裡，只有「下一步無法事先決定」的部分才交給 agent；multi-agent 只用在讀取型、可平行、值得付約 15 倍 token 的任務。",
+      "interviewScript": "我會先問這個任務的步驟能不能事先列出來。能列出來就用 workflow，成本和延遲可預測，也好寫 eval；列不出來的那段才放 agent loop，而且 lint、測試、權限檢查這些必經步驟仍由 code 執行，像 Stripe Minions 那樣。我不會一開始就上 multi-agent：Anthropic 自己量到它約用 15 倍 token，而且 subagent 之間的隱含決策會衝突；只有當任務是平行的讀取、資訊量超過一個 context window 時，我才拆 orchestrator-worker，並讓最後的寫入由單一 agent 完成。",
+      "pitfalls": [
+        "為了看起來像 AI 產品而直接上 multi-agent，沒有先證明 single agent 不夠。",
+        "把必經的合規步驟寫在 prompt 裡（「記得跑測試」），而不是寫在 code 裡。",
+        "把 Anthropic 的 90.2% 當成通用結論；那是研究型任務的內部 eval，而且 token 多花很多。",
+        "沒有 eval 就增加自主程度，無法證明更複雜的架構真的比較好。",
+        "以為 agent 一定比 workflow 慢又貴；Stripe 的經驗是錯誤由 code 擋下來，反而省 token。"
+      ],
+      "cases": [
+        {"name": "Stripe Payment Method Factory", "ref": "agent-case:stripe-payment-method-factory", "note": "一開始用 LLM orchestrator 協調執行，後來改成 code 分派任務，因為「predictable coordination is better implemented in code」；規劃階段保留 agent。整合時間從六個月降到兩到六週。"},
+        {"name": "Stripe Minions", "ref": "agent-case:stripe-minions", "note": "blueprint 交錯 agent loop 與 deterministic 節點（git、linter、測試），保證必經步驟一定執行；最多兩輪 CI，每週超過 1,000 個 merged PR。"},
+        {"name": "Dropbox Dash", "ref": "agent-case:dropbox-dash-agents", "note": "一般問答用 RAG（>95% 查詢在 1–2 秒內），多步驟任務才用 agent；agent 產生 DSL 程式碼並做靜態分析後再執行。"},
+        {"name": "Anthropic Research", "ref": "agent-case:anthropic-multi-agent-research", "note": "研究這種廣度優先的讀取任務選 multi-agent，比單 agent 好 90.2%，代價是約 15 倍 token；並明說多數 coding 任務不適合。"},
+        {"name": "Spotify background coding agent", "ref": "agent-case:spotify-honk-part1", "note": "把超過 20,000 行的 deterministic 遷移腳本換成 agent，但保留 Fleet Management 的 PR 管理流程與 LLM-as-judge 驗證 diff。"},
+        {"name": "Shopify Sidekick", "ref": "agent-case:shopify-sidekick", "note": "明確建議避免太早做 multi-agent；工具數量到 20–50 個時就開始出現邊界模糊的問題。"}
+      ],
+      "sources": [
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://cognition.com/blog/dont-build-multi-agents",
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://www.langchain.com/blog/how-and-when-to-build-multi-agent-systems",
+        "https://stripe.dev/blog/minions-stripes-one-shot-end-to-end-coding-agents",
+        "https://stripe.dev/blog/stripes-payment-method-factory-orchestrating-agents-for-repeated-custom-integrations",
+        "https://dropbox.tech/machine-learning/building-dash-rag-multi-step-ai-agents-business-users",
+        "https://engineering.atspotify.com/2025/11/spotifys-background-coding-agent-part-1",
+        "https://shopify.engineering/building-production-ready-agentic-systems",
+        "https://arxiv.org/abs/2503.13657"
+      ],
+      "byAgents": true
+    },
+    {
+      "id": "orchestration",
+      "title": "Orchestration（控制流：誰決定下一步）",
+      "group": "Agent 系統設計",
+      "oneLiner": "多個 LLM 步驟或 agent 之間，由誰決定下一步做什麼、誰保留控制權、要不要等待；這裡只談控制流，傳什麼資料見 agent-comm。",
+      "question": "你有三個專門 agent，誰來決定先呼叫哪一個？subagent 跑太久怎麼辦？要擴到上百個 agent 怎麼協調？",
+      "signals": [
+        "多個專門 agent（客服分流、研究、寫 code）",
+        "需要平行 fan-out 再彙整",
+        "使用者對話要交給某個 specialist 直接接手",
+        "長時間、大量 agent 同時工作（數百個、數週）",
+        "需要可預測的成本與延遲 vs 需要彈性"
+      ],
+      "options": [
+        {
+          "name": "Code 控制流（graph / state machine，LLM 只當節點）",
+          "how": "流程寫成圖，由程式決定下一步與平行分支；OpenAI Agents SDK 稱為 orchestrating via code，「more deterministic and predictable, in terms of speed, cost and performance」。",
+          "bestWhen": "路徑已知、可平行的子步驟固定；例如 Uber Redlining 用 LangGraph 平行跑 intent detection、risk assessment、policy lookup。",
+          "cost": "每多一種路徑就要改圖；設計者要先懂業務流程。",
+          "failure": "遇到圖上沒有的情境只能落到 fallback 或出錯；圖長大後變成難維護的巨型 state machine。",
+          "scale": "任何規模都適用，是可靠度最高的選擇。"
+        },
+        {
+          "name": "Orchestrator-worker / agents-as-tools（中心化）",
+          "how": "lead agent 動態拆任務、把 specialist 當工具呼叫，結果回到 lead，由 lead 決定下一步並彙整；控制權不離開 lead。",
+          "bestWhen": "子任務無法事先預測（Anthropic：「can't predict the subtasks needed」），且需要一個地方彙整結果。",
+          "cost": "lead 是瓶頸也是單點；Anthropic 目前同步等待一批 subagent，「the entire system can be blocked while waiting for a single subagent」。",
+          "failure": "lead 派工失控——Anthropic 早期版本對簡單問題也會產生 50 個 subagent；任務描述模糊時 subagent 重複工作。",
+          "scale": "平行 tool calling 讓複雜查詢的研究時間最多減少 90%；要在 prompt 裡依問題複雜度規定 subagent 數量。"
+        },
+        {
+          "name": "Handoff（去中心化，控制權轉移）",
+          "how": "目前的 agent 把對話交給 specialist，specialist 成為這一輪剩下時間的 active agent，直接回應使用者（OpenAI Agents SDK handoff）。",
+          "bestWhen": "客服分流這類「找到對的專家後由專家接手」的場景，讓每個 agent 的 prompt 保持聚焦。",
+          "cost": "原 agent 失去控制，沒有一個地方能彙整多個 specialist 的結果。",
+          "failure": "specialist 之間互相踢皮球形成 handoff loop；交接時 context 給得不完整，接手的 agent 重問使用者。",
+          "scale": "適合 specialist 數量少、邊界清楚的分流；需要跨 specialist 彙整時改用 agents-as-tools。"
+        },
+        {
+          "name": "階層式 planner / worker / judge",
+          "how": "planner 持續探索並產生任務（可遞迴產生 sub-planner），worker 只專心完成被指派的任務、彼此不協調，judge 在每個週期結束時決定是否繼續（Cursor）。",
+          "bestWhen": "長時間、大量 agent 的專案（Cursor 同時跑數百個 agent、持續數週）。",
+          "cost": "多層 planner 與 judge 本身就要 token；需要一套任務佇列與週期管理。",
+          "failure": "planner 拆錯任務會被數百個 worker 放大；judge 標準太鬆就會一直跑下去。",
+          "scale": "Cursor 用它產出超過 100 萬行、1,000 個檔案；最多 14.6K commits。"
+        },
+        {
+          "name": "對等協作（共享狀態自主認領 / group chat / debate）",
+          "how": "沒有 orchestrator，各 agent 自己挑下一個任務（Anthropic C compiler：在 current_tasks/ 寫鎖檔、靠 git 同步），或在群組對話中輪流發言、互相辯論。",
+          "bestWhen": "任務天然能切成很多獨立小塊、且有外部 oracle 或測試能判斷對錯；實務上很少見。",
+          "cost": "C compiler 用 16 個 agent、近 2,000 個 session，花了將近 $20,000。",
+          "failure": "大家同時撞上同一個問題（編譯 Linux 時 16 個 agent 都在修同一個 bug，要引入 GCC oracle 才拆開）；Cursor 的扁平架構讓 agent 變得規避風險、只做小改動；multi-agent debate 研究指出它「do not reliably outperform」self-consistency 與 ensembling。",
+          "scale": "研究與實驗用；production 通常要加上階層或 code 控制。"
+        }
+      ],
+      "decisionGuide": [
+        {"if": "流程與分支事先已知", "then": "Code 控制流（graph）", "why": "速度、成本、行為都可預測；Stripe 也把協調從 LLM 移回 code。"},
+        {"if": "子任務要動態決定，且結果需要彙整", "then": "Orchestrator-worker（agents-as-tools）", "why": "控制權留在 lead，能彙整；用 prompt + code 限制 subagent 數量。"},
+        {"if": "找到對的專家後由專家直接面對使用者", "then": "Handoff", "why": "每個 agent prompt 聚焦；但不需要跨專家彙整才適合。"},
+        {"if": "數百個 agent、跑數天以上", "then": "planner / worker / judge 階層", "why": "Cursor 試過鎖和 OCC 的扁平協調都失敗，加上角色分工才擴得上去。"},
+        {"if": "subagent 跑很久、lead 不需要結果就能繼續", "then": "非同步 subagent（fire-and-forget）", "why": "避免整個系統被最慢的 subagent 卡住；代價是 lead 無法在同一輪彙整。"}
+      ],
+      "defaultAnswer": "能寫成 graph 的就用 code 控制流；需要動態拆任務時用 orchestrator-worker，先做同步等待（簡單、好彙整），並用 code 限制 subagent 數量與步數，到大規模長時間任務再加 planner / worker / judge 階層。",
+      "interviewScript": "我會先把控制流分成兩種：已知路徑就寫成 graph，LLM 只是節點，這樣成本和延遲可預測。路徑未知時我用 orchestrator-worker，控制權留在 lead，subagent 當工具呼叫，因為最後總要有一個地方彙整；代價是 lead 會被最慢的 subagent 卡住，而且可能過度派工，所以我會用 code 設 subagent 數量與預算上限。我不會用沒有階層的對等協作：Cursor 試過共享鎖檔，20 個 agent 只剩 2 到 3 個的吞吐量。",
+      "pitfalls": [
+        "讓 LLM orchestrator 決定本來就固定的流程，平白多花 token 又不穩定。",
+        "沒限制 subagent 數量，簡單問題也派出幾十個 subagent。",
+        "handoff 之後還期待原 agent 彙整結果——控制權已經轉走了。",
+        "用 debate / group chat 想提高準確率，卻沒有和 self-consistency 這種便宜的基準比較。",
+        "把控制流（誰決定）和資料流（傳什麼）混為一談，面試時說不清楚失敗來自哪裡。"
+      ],
+      "cases": [
+        {"name": "Anthropic Research", "ref": "agent-case:anthropic-multi-agent-research", "note": "orchestrator-worker、同步等待一批 subagent；承認同步會讓 lead 無法引導 subagent，早期還出現簡單查詢派出 50 個 subagent 的問題。"},
+        {"name": "Cursor 長時間自主 coding", "ref": "agent-case:cursor-scaling-agents", "note": "扁平鎖檔 → OCC → planner / worker / judge 三代演進；鎖讓 20 個 agent 只剩 2–3 個的吞吐，OCC 讓 agent 規避風險，最後靠階層擴到數百個 agent。"},
+        {"name": "Anthropic C compiler", "ref": "agent-case:anthropic-c-compiler", "note": "刻意不用 orchestrator，16 個 agent 用 git 和鎖檔自主認領任務；遇到共同瓶頸時要靠 GCC oracle 拆分工作。"},
+        {"name": "Stripe Payment Method Factory", "ref": "agent-case:stripe-payment-method-factory", "note": "執行階段原本用 LLM orchestrator，改成 code 分派以換取可靠性與成本。"},
+        {"name": "Uber Redlining Agent", "ref": "agent-case:uber-redlining-agent", "note": "後端用 LangGraph workflow 平行跑 intent detection、risk assessment、policy lookup，控制流由圖決定。"}
+      ],
+      "sources": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://openai.github.io/openai-agents-python/multi_agent/",
+        "https://cursor.com/blog/scaling-agents",
+        "https://www.anthropic.com/engineering/building-c-compiler",
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://arxiv.org/abs/2311.17371",
+        "https://arxiv.org/abs/2503.13657",
+        "https://www.uber.com/tw/en/blog/building-ubers-redlining-agent/",
+        "https://www.inngest.com/blog/three-patterns-you-need-for-agentic-systems"
+      ],
+      "byAgents": true
+    },
+    {
+      "id": "planning-reflection",
+      "title": "規劃與自我修正策略",
+      "group": "Agent 系統設計",
+      "oneLiner": "agent 迴圈內部要「想一步做一步」還是「先規劃再執行」，以及失敗後由誰、用什麼標準判斷要不要重來；直接影響 LLM 呼叫次數、延遲與正確率。",
+      "question": "怎麼讓 agent 不亂走？要先產生完整計畫嗎？agent 說「做完了」你怎麼知道是真的？",
+      "signals": [
+        "多步驟工具呼叫，步驟之間有依賴",
+        "有些步驟可以平行（多個獨立查詢）",
+        "有明確的驗收標準（測試、schema、規格）",
+        "agent 常太早宣告完成或自評過於樂觀",
+        "延遲敏感，想減少大模型呼叫次數"
+      ],
+      "options": [
+        {
+          "name": "ReAct（想一步做一步）",
+          "how": "推理與動作交錯：每次工具呼叫前都由 LLM 想下一步，看到結果再想下一步。",
+          "bestWhen": "環境回饋決定下一步，事先規劃意義不大（例如 Ramp Tour Guide 逐步操作 UI，一次只產生一個動作）。",
+          "cost": "每個工具呼叫都要一次 LLM call（LangChain 指出的第一個缺點），延遲與成本隨步數線性增加。",
+          "failure": "一次只規劃一個子問題，容易走出次佳路徑；長任務中迷失目標、重複步驟。",
+          "scale": "步數少、需要即時反應的互動場景；長任務要加上計畫或 todo 檔。"
+        },
+        {
+          "name": "Plan-and-Execute（先規劃，再執行，必要時 re-plan）",
+          "how": "planner 產生多步驟計畫，executor（可用小模型）逐步執行，執行完再決定要不要 re-plan。",
+          "bestWhen": "步驟可以事先大致列出；想用大模型規劃、小模型執行來省成本（Perplexity Pro Search 先產生計畫再逐步搜尋）。",
+          "cost": "多一次規劃延遲；工具仍是逐一序列執行。",
+          "failure": "計畫基於錯誤假設時，executor 會忠實執行錯的計畫，直到 re-plan 才發現；計畫太細會失去彈性。",
+          "scale": "多步驟搜尋與資料分析；Perplexity 用可展開的步驟 UI 讓使用者願意等更久。"
+        },
+        {
+          "name": "ReWOO（計畫中用變數引用前一步結果）",
+          "how": "planner 一次輸出整個計畫，步驟間用 #E1、#E2 這類變數引用前一步的輸出；worker 代入變數執行，solver 最後整合。",
+          "bestWhen": "步驟之間的依賴在規劃時就清楚，想避免每步都回到 planner。",
+          "cost": "仍是序列執行；planner 必須一次就把依賴寫對。",
+          "failure": "中間結果和預期不同時（例如搜尋沒結果），計畫無法調整，錯誤一路傳到 solver。",
+          "scale": "依賴固定、結果變異小的查詢鏈。"
+        },
+        {
+          "name": "LLMCompiler（計畫是 DAG，依賴滿足就平行執行）",
+          "how": "planner 串流輸出帶依賴的任務 DAG，task fetching unit 一旦依賴滿足就平行派發，joiner 決定 re-plan 或結束。",
+          "bestWhen": "有多個彼此獨立的工具呼叫（多個查詢、多個 API），延遲是重點。",
+          "cost": "需要自建排程器與依賴解析，除錯比序列執行難。",
+          "failure": "planner 漏掉隱含依賴時會平行執行本該有先後的步驟，得到錯誤或競爭的結果。",
+          "scale": "論文報告相對 ReAct 延遲最多快 3.7 倍、成本最多省 6.7 倍、準確率最多提升約 9%（論文自測 benchmark）。"
+        },
+        {
+          "name": "Reflexion / 自我反思重試",
+          "how": "失敗後讓 agent 用文字反思回饋，把反思存進 episodic memory，下一次嘗試時參考。",
+          "bestWhen": "有可靠的回饋訊號（測試結果、錯誤訊息），且允許多次嘗試。",
+          "cost": "每次重試都要完整再跑一次；重試次數乘上整體成本。",
+          "failure": "回饋訊號來自 agent 自評時會過度樂觀——Anthropic 觀察到 agent「confidently praising the work」，即使品質明顯普通。",
+          "scale": "論文在 HumanEval 達到 91% pass@1，對照 GPT-4 的 80%；前提是有測試當外部訊號。"
+        },
+        {
+          "name": "獨立 evaluator（generator-evaluator + 事先約定「完成」的定義）",
+          "how": "把產生與評估拆成不同 agent；evaluator 被調成懷疑態度並實際操作測試，每個階段前兩者先協商「sprint contract」定義完成標準（Anthropic harness）。",
+          "bestWhen": "品質主觀或難以單靠單元測試判斷、任務很長、錯誤代價高。",
+          "cost": "Anthropic 同一個 prompt：單 agent 20 分鐘 $9，完整 harness 6 小時 $200，貴 20 倍以上。",
+          "failure": "evaluator 太鬆就形同自評；太嚴則無限迴圈，需要輪數上限；模型變強後原本的拆解變成多餘負擔（Anthropic 在 Opus 4.6 後拿掉 sprint 結構）。",
+          "scale": "高價值、長時間任務；每次換模型都要重新檢查哪些 harness 元件還需要。"
+        }
+      ],
+      "decisionGuide": [
+        {"if": "每一步都依賴環境即時回饋（UI 操作、互動 debug）", "then": "ReAct，限制可選動作", "why": "事先規劃意義不大；Ramp 發現縮小決策空間比加規劃更能提升準確率。"},
+        {"if": "步驟能事先列出、想省大模型成本", "then": "Plan-and-Execute，大模型規劃、小模型執行", "why": "不必每次工具呼叫都叫大模型。"},
+        {"if": "有多個獨立工具呼叫、延遲是重點", "then": "LLMCompiler 式 DAG 平行執行", "why": "依賴滿足就派發，把序列延遲換成最長路徑延遲。"},
+        {"if": "有測試或錯誤訊息等外部訊號", "then": "Reflexion 式重試，設重試上限", "why": "外部訊號讓反思有依據；沒有訊號的自評不可靠。"},
+        {"if": "品質難以自動判斷、錯了代價高", "then": "獨立 evaluator + 事先約定完成標準", "why": "自評過度樂觀；代價是時間與成本大幅上升。"}
+      ],
+      "defaultAnswer": "預設用 ReAct 加一個 todo / 計畫檔讓 agent 不迷路，驗證交給外部訊號（測試、schema），不靠自評；步驟可預先列出時改 Plan-and-Execute 省成本，品質要求高時才加獨立 evaluator。",
+      "interviewScript": "我會先看有沒有外部驗證訊號。有測試的話，我用 ReAct 加上依測試結果重試，並設重試上限；Reflexion 在 HumanEval 從 80% 提到 91%，前提就是有測試。步驟能預先列出時，我改用 Plan-and-Execute，大模型規劃、小模型執行；獨立呼叫多就排成 DAG 平行跑。我不信任 agent 自評：Anthropic 觀察到 agent 會自信地稱讚普通的成果，所以高價值任務我會拆出 evaluator，代價是成本可能貴 20 倍。",
+      "pitfalls": [
+        "讓同一個 agent 評自己的成果，然後把「它說完成了」當驗收。",
+        "反思重試沒有上限，失敗任務會一直燒 token。",
+        "計畫產生後就不再 re-plan，錯誤假設一路執行到底。",
+        "換了更強的模型卻沒拿掉舊 harness 元件，平白多付延遲與成本。",
+        "把 LLMCompiler 論文的 3.7 倍當成你的系統也會有；那是可平行呼叫多的 benchmark。"
+      ],
+      "cases": [
+        {"name": "Perplexity Pro Search", "ref": "agent-case:langchain-perplexity-agent", "note": "選 Plan-and-Execute：先產生步驟計畫再逐步搜尋，前一步結果影響下一步；把計畫展示給使用者，讓他們願意等更久。"},
+        {"name": "Ramp Tour Guide", "ref": "agent-case:langchain-ramp-agent", "note": "反例：一次產生一個動作比事先規劃整個流程有效，還把規劃 + 執行兩次 LLM call 合併成一個 prompt 來降延遲；靠縮小決策空間提升準確率。"},
+        {"name": "Anthropic 長時間應用 harness", "ref": "agent-case:anthropic-harness-long-running-apps", "note": "planner / generator / evaluator 三個 agent，用 sprint contract 定義完成標準；比單 agent 貴 20 倍以上但品質明顯更好，模型升級後拿掉 sprint 結構。"},
+        {"name": "Dropbox Dash", "ref": "agent-case:dropbox-dash-agents", "note": "規劃輸出成 Python-like DSL 程式碼，先做靜態分析檢查正確性與安全，再 deterministic 執行，失敗更容易診斷。"}
+      ],
+      "sources": [
+        "https://www.langchain.com/blog/planning-agents",
+        "https://arxiv.org/abs/2303.11366",
+        "https://arxiv.org/abs/2312.04511",
+        "https://www.anthropic.com/engineering/harness-design-long-running-apps",
+        "https://www.anthropic.com/engineering/building-effective-agents",
+        "https://www.langchain.com/breakoutagents/perplexity",
+        "https://www.langchain.com/breakoutagents/ramp",
+        "https://dropbox.tech/machine-learning/building-dash-rag-multi-step-ai-agents-business-users"
+      ],
+      "byAgents": true
+    },
+    {
+      "id": "agent-comm",
+      "title": "Agent 間溝通與共享狀態（資料流）",
+      "group": "Agent 系統設計",
+      "oneLiner": "agent 之間傳什麼（完整 trace、摘要、檔案參照）、經由什麼傳（回傳值、共享檔案、事件、協定），以及平行寫入時如何避免互相衝突。",
+      "question": "subagent 做完要把什麼交回給 lead？兩個平行的 agent 改到同一個東西怎麼辦？MCP 和 A2A 差在哪？",
+      "signals": [
+        "subagent 結果太長會塞爆 lead 的 context",
+        "多個 agent 平行修改同一份程式碼或文件",
+        "需要跨組織、跨廠商的 agent 互相合作",
+        "lead 需要彙整結果 vs 結果直接給使用者",
+        "agent 各自做出隱含決策（風格、介面、假設）"
+      ],
+      "options": [
+        {
+          "name": "傳完整 trace / 共享整段 context",
+          "how": "接手或被派工的 agent 拿到前面完整的對話與工具呼叫紀錄（Cognition 原則 1：「share full agent traces, not just individual messages」）。",
+          "bestWhen": "任務高度耦合、隱含決策很多（寫 code、設計），寧可不平行也要一致。",
+          "cost": "context 快速膨脹，碰到 context rot 與 window 上限；無法真正平行。",
+          "failure": "trace 太長時模型抓不到重點，或被截斷；實際上會逼你退回單一 agent。",
+          "scale": "Cognition 的結論是乾脆用 single-threaded agent，長任務再加一個專門壓縮歷史的 LLM。"
+        },
+        {
+          "name": "回傳摘要 / 結構化結果",
+          "how": "subagent 在自己的 context 裡探索，只回傳精簡摘要（Anthropic：通常 1,000–2,000 tokens）或固定格式的結果。",
+          "bestWhen": "讀取型子任務：查資料、分析、回答一個明確問題。",
+          "cost": "派工時要寫清楚目標、輸出格式、工具與邊界；摘要品質決定上游品質。",
+          "failure": "摘要丟掉隱含決策，平行 subagent 各自假設不同而衝突——Cognition 的 Flappy Bird：一個做出 Super Mario 背景，一個做出風格不搭的鳥。",
+          "scale": "Inngest 報告 sync subagent 用摘要讓 parent context 減少 90% 以上，可以多次派工。"
+        },
+        {
+          "name": "共享檔案系統 / artifact 參照",
+          "how": "subagent 把成果寫到外部儲存（檔案、DB、git），只把輕量參照回傳給 coordinator（Anthropic Research）；或所有 agent 共用一個 git repo。",
+          "bestWhen": "產出很大（報告、程式碼），不該經過 lead 的 context 轉手；需要持久化與稽核。",
+          "cost": "需要命名規則、權限與清理；讀者要自己決定讀哪些檔。",
+          "failure": "多個寫入者衝突——C compiler 專案的 merge conflict「are frequent」；參照指向的內容被後來者覆寫。",
+          "scale": "Anthropic C compiler：16 個 agent 共用 git repo，用 current_tasks/ 鎖檔避免重複認領。"
+        },
+        {
+          "name": "共享狀態 + 併發控制（鎖 / OCC）",
+          "how": "agent 讀寫同一份協調狀態，用鎖或 optimistic concurrency（寫入時狀態已變就失敗）避免衝突。",
+          "bestWhen": "多個 agent 需要知道彼此在做什麼，且寫入衝突能被偵測。",
+          "cost": "鎖會排隊；OCC 需要重試邏輯。",
+          "failure": "Cursor：agent 持有鎖太久或忘了釋放，20 個 agent 只剩 2–3 個的吞吐；改成 OCC 後沒有階層，agent 變得規避風險、只做小改動。",
+          "scale": "幾個 agent 還行；數百個 agent 要改成 planner 指派任務、worker 之間不協調。"
+        },
+        {
+          "name": "非同步事件 / message passing",
+          "how": "parent 發出事件後立刻繼續，subagent 獨立執行完再透過事件把結果送到使用者原本的頻道（Inngest async / scheduled）。",
+          "bestWhen": "長時間研究、報告、提醒等不需要回傳給 parent 的工作；Inngest 建議預設用 async。",
+          "cost": "parent 無法在同一輪彙整多個結果；排程後的任務難取消或修改。",
+          "failure": "多個 async subagent 完全隔離，結論互相矛盾也沒人整合；排程任務的描述在執行時已過期。",
+          "scale": "Inngest 限制只能一層委派（subagent 不能再派 subagent），避免路由失控。"
+        },
+        {
+          "name": "跨組織協定：A2A（agent↔agent），搭配 MCP（agent↔工具）",
+          "how": "A2A 讓不透明的 agent 以 task 與 artifact 協作、可維持多輪狀態；MCP 則把工具與資源接到單一 agent。官方說法：「MCP is vertical」、「A2A is horizontal」。",
+          "bestWhen": "對方是另一個組織或團隊維護、內部不公開的 agent（例如供應商的議價 agent）。",
+          "cost": "多一層協定與身分驗證；對方是黑盒，除錯與 eval 都只能看介面。",
+          "failure": "把該是 MCP 工具的東西包成 agent，徒增延遲與不確定性；跨組織的信任邊界成為 prompt injection 入口。",
+          "scale": "組織內同一個系統通常不需要；跨組織整合時才值得。"
+        }
+      ],
+      "decisionGuide": [
+        {"if": "子任務是讀取、彼此獨立", "then": "平行 subagent，回傳摘要", "why": "讀取天然可平行（LangChain 的 read vs write 區分），摘要讓 lead context 不爆。"},
+        {"if": "子任務要寫入同一份產出（程式碼、報告）", "then": "收斂到單一 writer；或共享 trace 的 single agent", "why": "寫入攜帶隱含決策，平行寫入會衝突（Cognition 原則 2）。"},
+        {"if": "產出很大或需要持久化", "then": "寫進檔案系統 / 儲存，只傳參照", "why": "避免經 lead context 轉手造成「傳話遊戲」與 token 浪費。"},
+        {"if": "多個 agent 必須共享協調狀態", "then": "OCC 而不是長時間的鎖，數量大時改由 planner 指派", "why": "Cursor 經驗：鎖讓吞吐崩潰，OCC 簡單但需要階層補足。"},
+        {"if": "對方是另一個組織的 agent", "then": "A2A；自己的工具用 MCP", "why": "A2A 處理有狀態的 agent 對話，MCP 處理結構化工具呼叫。"}
+      ],
+      "defaultAnswer": "平行的部分只做讀取，subagent 回傳 1,000–2,000 tokens 的摘要或寫檔後只傳參照；所有寫入收斂到單一 agent，避免平行 agent 做出互相衝突的隱含決策。",
+      "interviewScript": "我會用讀和寫來切。讀取型子任務可以平行，subagent 在自己的 context 裡探索，只回傳摘要，或把大結果寫進儲存再傳參照，lead 的 context 才不會爆。寫入我會收斂到一個 agent：Cognition 的 Flappy Bird 例子顯示，平行寫入的 agent 會做出互相衝突的隱含決策。如果真的要多個 agent 共享狀態，我用 OCC 而不是鎖，因為 Cursor 量到鎖讓 20 個 agent 只剩 2 到 3 個的吞吐；規模再大就改成 planner 指派、worker 之間不溝通。",
+      "pitfalls": [
+        "只傳一句任務描述給 subagent，沒給目標、輸出格式與邊界，結果重工或偏題。",
+        "讓多個 agent 平行寫同一份產出，最後才發現風格與介面互相矛盾。",
+        "把 subagent 的完整輸出原封不動塞回 lead，context 很快就滿了。",
+        "混淆 MCP 和 A2A：MCP 接工具，A2A 接另一個 agent。",
+        "用長時間持有的鎖協調 agent；LLM 不保證會釋放鎖。"
+      ],
+      "cases": [
+        {"name": "Anthropic Research", "ref": "agent-case:anthropic-multi-agent-research", "note": "subagent 把成果存到外部系統，只把輕量參照交回 coordinator；平行只做研究，最後由單一 agent 寫報告。"},
+        {"name": "Cursor 長時間自主 coding", "ref": "agent-case:cursor-scaling-agents", "note": "共享協調檔 + 鎖失敗（吞吐從 20 降到 2–3），OCC 讓 agent 規避風險；最後讓 worker 彼此不溝通、由 planner 分派。"},
+        {"name": "Anthropic C compiler", "ref": "agent-case:anthropic-c-compiler", "note": "用 git 當共享狀態、鎖檔認領任務，merge conflict 頻繁但交給 agent 自己解；agent 維護失敗做法與待辦文件給其他 agent 讀。"}
+      ],
+      "sources": [
+        "https://cognition.com/blog/dont-build-multi-agents",
+        "https://www.langchain.com/blog/how-and-when-to-build-multi-agent-systems",
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents",
+        "https://www.inngest.com/blog/three-patterns-you-need-for-agentic-systems",
+        "https://cursor.com/blog/scaling-agents",
+        "https://www.anthropic.com/engineering/building-c-compiler",
+        "https://a2a-protocol.org/latest/topics/a2a-and-mcp/"
+      ],
+      "byAgents": true
+    },
+    {
+      "id": "context-memory",
+      "title": "Context 管理與記憶",
+      "group": "Agent 系統設計",
+      "oneLiner": "單一 agent 的 context window 裡放什麼、什麼時候壓縮或清掉、什麼放到外部（檔案、記憶庫）需要時再讀；目標是「not a token less, not a token more」。",
+      "question": "agent 跑了 50 次工具呼叫，context 快滿了怎麼辦？跨 session 要記得使用者偏好，怎麼設計？",
+      "signals": [
+        "長任務、大量工具呼叫（Manus 平均約 50 次）",
+        "context 接近上限，或品質隨對話變長而下降",
+        "需要跨 session 接續工作",
+        "要記住使用者偏好或過去對話",
+        "工具很多，工具描述本身就吃掉大量 token",
+        "成本由 input token 主導（Manus input:output 約 100:1）"
+      ],
+      "options": [
+        {
+          "name": "全部塞進長 context",
+          "how": "把文件、歷史、工具輸出全放進 window，靠模型自己找重點。",
+          "bestWhen": "資料量小、任務短、只跑一次。",
+          "cost": "input token 隨步數累加；不做 KV-cache 友善設計時更貴（Manus：Claude Sonnet cached 0.30 vs uncached 3 USD/MTok，差 10 倍）。",
+          "failure": "context rot：Chroma 測了 18 個模型，表現隨輸入長度變得越來越不可靠，且一個 distractor 就會降低準確率；超過上限會被截斷（Anthropic 研究系統以 200,000 tokens 為界）。",
+          "scale": "只適合短任務；長度越長越不可靠，與模型宣稱的 window 大小無關。"
+        },
+        {
+          "name": "Compaction / 摘要壓縮 + tool result clearing",
+          "how": "接近上限時讓模型摘要歷史，保留架構決策、未解 bug、實作細節，丟掉重複輸出；最輕量的版本是把用過的原始工具輸出清掉。",
+          "bestWhen": "同一個 session 要繼續長跑，前面的細節大多不再需要。",
+          "cost": "壓縮本身要一次 LLM call；每次壓縮後 prompt 前綴改變，cache 失效。",
+          "failure": "摘要漏掉後來才發現重要的細節，且無法還原；Cognition 為此建議用專門（甚至 fine-tune）的壓縮模型。",
+          "scale": "長 session 的預設手段；壓縮規則要用真實長 trace 測，不是只看短對話。"
+        },
+        {
+          "name": "Context reset + 結構化筆記（progress 檔、feature list、todo.md）",
+          "how": "agent 把進度、決策、待辦寫到檔案（NOTES.md、claude-progress.txt、JSON feature list、git commit），新 session 用乾淨 context 先讀這些檔再接續。",
+          "bestWhen": "跨多個 context window 的長任務；模型在 context 快滿時會急著收尾（Anthropic 觀察到 Sonnet 4.5 的「context anxiety」）。",
+          "cost": "每個新 session 要花步驟重建狀態；需要設計筆記格式與啟動流程。",
+          "failure": "筆記沒更新或被改寫——Anthropic 改用 JSON 而不是 Markdown，因為模型較不會亂改 JSON；筆記遺漏的資訊在 reset 後就消失。",
+          "scale": "Anthropic 範例的 feature list 超過 200 項；Manus 用 todo.md 反覆複述目標，避免在約 50 次工具呼叫中偏離。"
+        },
+        {
+          "name": "檔案系統當外部記憶 + just-in-time 載入",
+          "how": "context 只放識別碼（路徑、URL、查詢），需要時才用 grep / glob / 讀檔載入；指令與工具也按需出現（Shopify 的 JIT instructions、Cursor 動態載入少用的工具）。",
+          "bestWhen": "資料量大且會變動、事先不知道要哪些（程式碼庫、文件庫）。",
+          "cost": "要多輪工具呼叫探索，比預先檢索慢；工具與檔案結構要設計得讓 agent 找得到。",
+          "failure": "agent 沒想到要去讀關鍵檔而答錯；中途動態增刪工具會改變 prompt 前綴、讓 KV-cache 失效（補充判斷；Manus 的做法是用 state machine 做 masking 而不移除工具）。",
+          "scale": "Cursor 把少用的內建工具改成按需載入，static context 的工具描述 token 減少 60%；Claude Code 採 CLAUDE.md 預載 + 執行時 grep 的混合做法。"
+        },
+        {
+          "name": "Subagent 當 context 隔離",
+          "how": "把會產生大量中間輸出的探索交給 subagent，它在自己的乾淨 context 裡工作，只回傳 1,000–2,000 tokens 的摘要。",
+          "bestWhen": "探索性、讀取型的子任務（搜尋、讀大量檔案），主 agent 只需要結論。",
+          "cost": "subagent 也要付 token；Cursor 發現過度鼓勵派 subagent 反而浪費，拿掉相關 prompt。",
+          "failure": "摘要丟失主 agent 後來需要的細節，或 subagent 做出主 agent 不知道的隱含決策（見 agent-comm）。",
+          "scale": "Inngest 報告用摘要讓 parent context 減少 90% 以上。"
+        },
+        {
+          "name": "跨 session 長期記憶（semantic / episodic memory）",
+          "how": "把使用者偏好、過去對話、反思存進記憶庫，下次依關鍵字或語意檢索後注入；MemGPT 把它做成類 OS 的分層記憶。",
+          "bestWhen": "產品需要記得使用者（客服、個人助理），而重要資訊可能出現在很久以前。",
+          "cost": "多一套儲存、抽取與檢索流程；每次檢索都增加延遲與 token。",
+          "failure": "記錯或過期的記憶被當成事實注入；惡意內容寫入記憶後在未來 session 被執行（memory poisoning）；Salesforce 文中沒有談多租戶隔離，這要自己補。",
+          "scale": "Salesforce Agentforce 在推理前做 keyword search，只有命中才注入，讓 context 有上限、延遲最低。"
+        }
+      ],
+      "decisionGuide": [
+        {"if": "短任務、資料量小", "then": "直接放進 context", "why": "最簡單；但要保持 prompt 前綴穩定以吃到 KV-cache。"},
+        {"if": "單一 session 長跑、前面細節多半不再需要", "then": "tool result clearing → compaction", "why": "先清最便宜的原始工具輸出，再做摘要。"},
+        {"if": "任務跨多個 context window 或多天", "then": "context reset + JSON / progress 檔 + git commit", "why": "乾淨 context 避免 context rot；結構化檔案比摘要更不會漏與被亂改。"},
+        {"if": "資料量大且會變（程式碼庫）", "then": "just-in-time：只放識別碼，按需 grep / 讀檔", "why": "永遠讀到最新內容，不用預先塞滿 context。"},
+        {"if": "要跨 session 記住使用者", "then": "長期記憶 + 條件式注入（命中才注入）", "why": "控制 context 大小與延遲；寫入時要驗證以防污染。"},
+        {"if": "成本主要來自 input token", "then": "append-only context、不在中途刪改工具（用 masking）", "why": "Manus：cached 與 uncached 價格差 10 倍。"}
+      ],
+      "defaultAnswer": "context 只放當下需要的東西：大資料只放識別碼、需要才讀；長 session 先清工具輸出再 compaction；跨 window 用 progress 檔與 git 交接；長期記憶命中才注入。同時讓 prompt 前綴保持穩定以吃到 KV-cache。",
+      "interviewScript": "我不會依賴大 context window，因為 Chroma 測 18 個模型都看到表現隨長度變得不可靠。我的順序是：先把原始工具輸出清掉；不夠再做 compaction，保留決策與未解的 bug；任務跨多個 window 時就 reset，靠 progress 檔、JSON 功能清單和 git commit 交接，代價是每個新 session 要花幾步重建狀態。大型程式碼庫我只放路徑，需要時 grep，而且 context 維持 append-only，因為 Manus 量到 cached 與 uncached 的 token 價格差 10 倍。",
+      "pitfalls": [
+        "以為 1M window 就不用管 context；context rot 跟長度有關，不是跟上限有關。",
+        "中途刪除或重排工具定義與歷史，讓 KV-cache 全部失效。",
+        "把失敗的步驟從 context 裡清掉，模型就學不到教訓（Manus 建議保留錯誤）。",
+        "用 Markdown 當進度清單，被模型隨手改寫或刪掉項目。",
+        "長期記憶沒有驗證就寫入，也沒有依使用者 / tenant 隔離。"
+      ],
+      "cases": [
+        {"name": "Manus", "ref": "agent-case:manus-context-engineering", "note": "以 KV-cache 命中率為核心指標：append-only context、用 masking 而不移除工具、檔案系統當無上限記憶、todo.md 複述目標、保留錯誤步驟。"},
+        {"name": "Cursor token efficiency", "ref": "agent-case:cursor-token-efficiency", "note": "system prompt 砍掉約 66%、少用工具改按需載入（static 工具描述 token 少 60%），整體 token 成本降 7% 且品質不降。"},
+        {"name": "Shopify Sidekick", "ref": "agent-case:shopify-sidekick", "note": "把指令跟著工具結果 just-in-time 回傳，而不是全塞進 system prompt，讓核心 prompt 只管基本行為。"},
+        {"name": "Salesforce Agentforce memory", "ref": "agent-case:salesforce-agentforce-memory", "note": "比較過全部注入、LLM 按需檢索、漸進揭露、語意檢索，最後選在推理前做 keyword search、命中才注入，換取有上限的 context 與低延遲。"},
+        {"name": "Anthropic 長時間應用 harness", "ref": "agent-case:anthropic-harness-long-running-apps", "note": "Sonnet 4.5 有 context anxiety，所以用 context reset 而不是 compaction；Opus 4.5 大致沒有這個行為後改回連續 session。"},
+        {"name": "Spotify background coding agent", "ref": "agent-case:spotify-honk-part1", "note": "選擇版本控制、可測試的較大靜態 prompt，而不是透過 MCP 動態抓 context，並刻意不給 code search 工具，用可預測性換彈性。"}
+      ],
+      "sources": [
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents",
+        "https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus",
+        "https://www.trychroma.com/research/context-rot",
+        "https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents",
+        "https://www.anthropic.com/engineering/harness-design-long-running-apps",
+        "https://cursor.com/blog/improved-token-efficiency",
+        "https://shopify.engineering/building-production-ready-agentic-systems",
+        "https://engineering.salesforce.com/ai-agents-need-memory-building-persistent-memory-for-agentforce/",
+        "https://engineering.atspotify.com/2025/11/context-engineering-background-coding-agents-part-2",
+        "https://arxiv.org/abs/2310.08560",
+        "https://cognition.com/blog/dont-build-multi-agents"
+      ],
+      "byAgents": true
+    }
+  ],
+  "quiz": [
+    {"q": "Anthropic 對 workflow 與 agent 的定義差在哪？", "a": "workflow 是 LLM 與工具透過預先寫好的 code path 串接；agent 是 LLM 自己決定流程與工具使用。差別在「誰決定下一步」。", "topic": "agent-vs-workflow", "kind": "概念"},
+    {"q": "你要做一個自動修 lint 錯誤並開 PR 的系統，流程中「跑 linter、push 到 git」要交給 agent 決定嗎？", "a": "不要。必經步驟寫在 code 裡（Stripe Minions 的 deterministic 節點），只把「怎麼修」交給 agent loop，並限制 CI 重試輪數；prompt 寫「記得跑 lint」不是保證。", "topic": "agent-vs-workflow", "kind": "情境"},
+    {"q": "Cognition 說不要做 multi-agent，Anthropic 卻用 multi-agent 做研究並提升 90.2%，怎麼調和？", "a": "看任務是讀還是寫：研究是平行的讀取，最後由單一 agent 寫報告；寫 code 這種寫入型任務的隱含決策會衝突。另外 Anthropic 也承認代價是約 15 倍 token，且 token 量解釋了 80% 的表現差異。", "topic": "agent-vs-workflow", "kind": "取捨"},
+    {"q": "Anthropic 量到 agent 與 multi-agent 相對一般 chat 大約多用幾倍 token？", "a": "agent 約 4 倍，multi-agent 約 15 倍。", "topic": "agent-vs-workflow", "kind": "數字"},
+    {"q": "什麼時候該用 handoff 而不是 agents-as-tools？", "a": "當 specialist 應該直接接手、面對使用者，且不需要回到原 agent 彙整時用 handoff；若需要一個 manager 保留控制並彙整多個 specialist 的結果，用 agents-as-tools。", "topic": "orchestration", "kind": "取捨"},
+    {"q": "你要讓 20 個 coding agent 在同一個 repo 平行工作，先想到用共享檔案 + 鎖讓它們自己認領任務。會遇到什麼問題？怎麼改？", "a": "Cursor 試過：agent 持有鎖太久或忘了釋放，20 個只剩 2–3 個的吞吐；改 OCC 後 agent 又變得規避風險。改成 planner 產生任務、worker 只做被指派的任務且彼此不協調、judge 決定是否繼續。", "topic": "orchestration", "kind": "情境"},
+    {"q": "orchestrator-worker 同步等待一批 subagent 的代價是什麼？什麼時候改非同步？", "a": "lead 無法中途引導、subagent 之間無法協調，整個系統會被最慢的 subagent 卡住。當 lead 不需要結果就能繼續（報告、長時間研究）時改非同步，代價是無法在同一輪彙整。", "topic": "orchestration", "kind": "取捨"},
+    {"q": "想用 multi-agent debate 提升答案準確率，面試官問你為什麼不用？", "a": "研究指出 MAD 目前不穩定優於 self-consistency、ensembling 這些較便宜的方法，而且對超參數敏感、難調；應該先用便宜的基準比較。", "topic": "orchestration", "kind": "取捨"},
+    {"q": "ReAct 的兩個主要缺點是什麼？", "a": "每次工具呼叫都要一次 LLM call（慢、貴）；一次只規劃一個子問題，容易走出次佳路徑。", "topic": "planning-reflection", "kind": "概念"},
+    {"q": "一個查詢要同時呼叫 5 個獨立 API 再彙整，延遲很重要。你選 ReAct、Plan-and-Execute 還是 LLMCompiler？", "a": "LLMCompiler 式 DAG：依賴滿足就平行派發，延遲接近最長路徑。ReAct 與 Plan-and-Execute 都是序列執行。代價是要自建排程器，且 planner 漏掉隱含依賴時會出錯。", "topic": "planning-reflection", "kind": "情境"},
+    {"q": "為什麼不讓 generator agent 自己評估成果就好？代價是什麼？", "a": "agent 自評會自信地稱讚普通的成果；拆出被調成懷疑態度的 evaluator 才能逼出問題。代價很高：Anthropic 的例子單 agent 20 分鐘 $9，完整 harness 6 小時 $200。", "topic": "planning-reflection", "kind": "取捨"},
+    {"q": "Ramp 的 UI 導覽 agent 為什麼不先規劃完整流程？", "a": "一次產生一個動作比事先規劃更有效，還把規劃與執行合併成一個 prompt 降延遲；他們發現提升準確率最有效的方法是縮小決策空間。", "topic": "planning-reflection", "kind": "情境"},
+    {"q": "Reflexion 在 HumanEval 的 pass@1 是多少？前提是什麼？", "a": "91%，對照 GPT-4 的 80%；前提是有可靠的回饋訊號（測試結果），反思存在 episodic memory 中供下次嘗試使用。", "topic": "planning-reflection", "kind": "數字"},
+    {"q": "Cognition 的兩條原則是什麼？", "a": "1）共享 context，而且要共享完整 agent trace，不只是單一訊息；2）動作帶有隱含決策，衝突的決策會帶來壞結果。", "topic": "agent-comm", "kind": "概念"},
+    {"q": "研究系統的 subagent 各自找到大量資料，要怎麼交回 lead 才不會塞爆 context？", "a": "回傳 1,000–2,000 tokens 的摘要，或把完整結果寫到外部儲存只回傳參照（Anthropic Research 的做法）；代價是摘要可能丟掉後來需要的細節。", "topic": "agent-comm", "kind": "情境"},
+    {"q": "兩個 subagent 平行分別做遊戲背景與角色，最後風格對不起來。根因是什麼？怎麼設計避免？", "a": "根因是平行寫入時各自做了隱含決策且看不到彼此（Flappy Bird 例子）。寫入型任務收斂到單一 agent，或至少共享完整 trace；平行只留給讀取型子任務。", "topic": "agent-comm", "kind": "情境"},
+    {"q": "MCP 和 A2A 的分工？什麼時候需要 A2A？", "a": "MCP 是 vertical，把工具與資源接到單一 agent；A2A 是 horizontal，讓不透明的 agent 之間做有狀態、多輪的協作。對方是另一個組織維護的 agent 時才需要 A2A，組織內工具用 MCP 就好。", "topic": "agent-comm", "kind": "取捨"},
+    {"q": "Context window 有 1M tokens，為什麼還要做 context 管理？", "a": "context rot：Chroma 測 18 個模型，表現隨輸入長度變得不可靠，單一 distractor 就會降低準確率；而且 input token 成本隨步數累加。", "topic": "context-memory", "kind": "概念"},
+    {"q": "Agent 已跑了數小時、要跨多個 context window 完成一個 app。你選 compaction 還是 context reset + 筆記？", "a": "跨多個 window 選 reset + 結構化筆記（progress 檔、JSON feature list、git commit）：乾淨 context 避免 context rot 與 context anxiety，JSON 也比較不會被模型亂改。代價是每個新 session 要花步驟重建狀態；單一 session 內短期延長才用 compaction。", "topic": "context-memory", "kind": "取捨"},
+    {"q": "為什麼 Manus 不在任務中途把用不到的工具從 context 移除？", "a": "移除工具會改變 prompt 前綴讓 KV-cache 失效（補充判斷），而 Manus 量到 cached 0.30 vs uncached 3 USD/MTok，差 10 倍；所以改用 context-aware state machine 做 logits masking 限制可選工具。", "topic": "context-memory", "kind": "取捨"},
+    {"q": "客服 agent 要記得使用者一個月前提過的偏好，但不想每次都把所有記憶塞進 context。怎麼設計？", "a": "長期記憶 + 條件式注入：Salesforce Agentforce 在推理前做 keyword search，命中才注入，context 有上限且延遲低。另外要依使用者 / tenant 隔離，寫入前驗證以防 memory poisoning。", "topic": "context-memory", "kind": "情境"}
+  ]
+}

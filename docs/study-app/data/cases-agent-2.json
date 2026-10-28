@@ -1,0 +1,1286 @@
+[
+ {
+  "id": "shopify-sidekick",
+  "title": "Shopify Sidekick（商家助理 agent）",
+  "kind": "業界實例",
+  "source": "Agent Case Study",
+  "file": "",
+  "origin": "https://shopify.engineering/building-production-ready-agentic-systems",
+  "core": "工具一多，agent 的行為邊界就變模糊，system prompt 也會堆滿互相衝突的規則；真正難的是在工具持續增加時維持可預測性，並建立一套能信任的評估（LLM judge 要先和人類對齊，訓練時還要防 reward hacking）。",
+  "scaleNumbers": [
+   "工具數經驗法則：0–20 個邊界清楚；20–50 個邊界開始模糊、工具組合出現意外結果；50 個以上同一件事有多種做法，很難推理",
+   "LLM judge 與人類的 Cohen's Kappa 從 0.02 調到 0.61，人類彼此一致性基準 0.69（公司自述）",
+   "judge 與人類的平均相關性從 0.66 提升到 0.75（公司自述）",
+   "處理 reward hacking 後，syntax 驗證正確率從約 93% 提升到約 99%（公司自述）"
+  ],
+  "decisions": [
+   {
+    "decision": "工具與規則變多後，指令放在哪裡",
+    "chosen": "JIT（just-in-time）instructions：跟著 tool 回傳資料一起注入，只在相關情境才出現",
+    "rejected": [
+     {
+      "option": "把所有規則寫進一份大 system prompt",
+      "why": "「Death by a Thousand Instructions」：規則互相衝突、充滿 edge case，難維護也難除錯"
+     }
+    ],
+    "tradeoff": "指令變成分散在各工具裡，需要額外管理；換來 context 精準、cache 效率較好，且容易依 beta flag 或模型版本切換指令。"
+   },
+   {
+    "decision": "single-agent 還是 multi-agent",
+    "chosen": "先維持 single-agent loop",
+    "rejected": [
+     {
+      "option": "一開始就拆成 multi-agent",
+      "why": "文章主張單一 agent 能處理的複雜度比想像中高；過早拆分只增加協調成本"
+     }
+    ],
+    "tradeoff": "工具數超過 50 個時單一 agent 會變難推理，此時要靠 JIT instructions 與清楚的能力邊界撐住；真的撐不住才考慮拆分。"
+   },
+   {
+    "decision": "評估資料集從哪來",
+    "chosen": "Ground Truth Sets（GTX）：抽樣真實商家對話，由 3 位產品專家多面向標註，用 Cohen's Kappa、Kendall Tau、Pearson 做統計驗證",
+    "rejected": [
+     {
+      "option": "手工策劃的 golden dataset",
+      "why": "只涵蓋團隊預想得到的情境，無法反映正式環境的真實分布"
+     }
+    ],
+    "tradeoff": "要持續付出專家標註成本；人類彼此的一致性就是 LLM judge 的理論上限。"
+   },
+   {
+    "decision": "怎麼判斷 LLM judge 可以信任",
+    "chosen": "反覆調整 judge prompt 直到和人類對齊；驗證方式是在 GTX 中隨機把 judge 換成人類，若分不出哪組有 judge 就算可信",
+    "rejected": [
+     {
+      "option": "直接拿未校準的 LLM judge 打分",
+      "why": "一開始 Kappa 只有 0.02，幾乎等於亂猜"
+     }
+    ],
+    "tradeoff": "校準需要人工標註與多輪迭代；換到可以大規模自動評估。"
+   },
+   {
+    "decision": "RL 訓練的 reward 怎麼設計",
+    "chosen": "N-stage gated reward：先做 procedural 驗證（語法、schema），通過後才交給 LLM judge 做語意評分",
+    "rejected": [
+     {
+      "option": "只用 LLM judge 單一 reward",
+      "why": "模型會 reward hacking：拒答（opt-out）、把 customer tags 當萬用欄位、幻想 ID 或 enum；例如把 status enabled 寫成 customer_tags CONTAINS 'enabled'"
+     }
+    ],
+    "tradeoff": "validator 與 judge 必須跟著新的 hacking 手法持續修補；修好後端到端品質才追上 SFT baseline。"
+   }
+  ],
+  "topics": [
+   "tool-interface",
+   "context-memory",
+   "agent-eval",
+   "agent-vs-workflow"
+  ],
+  "followUps": [
+   "工具超過 50 個怎麼辦？先把能力分組、指令改 JIT 注入；仍混亂才考慮 router 或 sub-agent。",
+   "LLM judge 要對齊到多好才算夠？以人類彼此的一致性為上限（這裡是 Kappa 0.69），judge 接近這個值才可信。",
+   "上線前怎麼測新版本？用 LLM 模擬商家，把真實對話的目標重播給候選版本比較。"
+  ]
+ },
+ {
+  "id": "uber-enhanced-agentic-rag",
+  "title": "Uber Genie Enhanced Agentic RAG（on-call copilot）",
+  "kind": "業界實例",
+  "source": "Agent Case Study",
+  "file": "",
+  "origin": "https://www.uber.com/blog/enhanced-agentic-rag/",
+  "core": "資安與隱私政策文件充滿表格和細微差異，傳統 RAG 會撈到不相關的 chunk、切壞表格而給出錯誤建議；難在把「文件處理品質」和「查詢前後的 agentic 精煉」一起做好，並讓評估從數週縮到數分鐘才能快速迭代。",
+  "scaleNumbers": [
+   "可接受答案比例相對提升 27%（公司自述）",
+   "錯誤建議相對減少 60%（公司自述）",
+   "golden test set 100+ 個問題；原本的資料來源是 40+ 份資安與隱私政策文件",
+   "LLM-as-Judge 以 0–5 分評分；實驗評估時間從數週降到數分鐘（公司自述）"
+  ],
+  "decisions": [
+   {
+    "decision": "文件怎麼載入與切塊",
+    "chosen": "自製 Google Docs loader 遞迴取出段落、表格、目錄；表格轉 markdown 並用 LLM 補摘要與關鍵字，table-aware chunking 不切斷表格",
+    "rejected": [
+     {
+      "option": "PDF loader（PyPDFLoader、PdfPlumber、PyMuPDF、LlamaParse 等）",
+      "why": "常抓不到結構化文字與格式"
+     },
+     {
+      "option": "html2text / Markdownify",
+      "why": "表格 cell 失去 row/column 對應"
+     }
+    ],
+    "tradeoff": "自製 loader 要長期維護且只適用 Uber 環境；LLM enrichment 多一筆離線成本，但檢索品質明顯變好。"
+   },
+   {
+    "decision": "檢索前要不要加 agent 步驟",
+    "chosen": "Query Optimizer（改寫、拆解模糊問題）＋ Source Identifier（用文件摘要、FAQ 與 few-shot 先縮小文件範圍）",
+    "rejected": [
+     {
+      "option": "使用者原始 query 直接做向量檢索",
+      "why": "模糊或複合問題會撈到不相關 chunk，是錯誤建議的主因"
+     }
+    ],
+    "tradeoff": "每次查詢多幾次 LLM 呼叫、延遲變高；換到正確率。"
+   },
+   {
+    "decision": "檢索方式",
+    "chosen": "Hybrid：向量檢索加上以 enriched metadata（摘要、FAQ、關鍵字）為基礎的 BM25，取聯集後由 post-processing agent 去重並依原文位置排序",
+    "rejected": [
+     {
+      "option": "只用向量檢索",
+      "why": "領域專有名詞的相關性不夠"
+     }
+    ],
+    "tradeoff": "要多維護 BM25 索引與 offline feature store；metadata 需要定期重算以免過期。"
+   },
+   {
+    "decision": "agent 編排方式",
+    "chosen": "目前用 LangGraph 跑固定順序（Query Optimizer → Source Identifier → 檢索 → Post-Processor）",
+    "rejected": [
+     {
+      "option": "自寫的循序實作",
+      "why": "LangGraph 較好擴充，日後要加平行、條件分支或 self-critique 比較容易"
+     },
+     {
+      "option": "完全由 LLM 動態決定步驟",
+      "why": "（補充）固定流程較容易評估與除錯，目前需求不需要動態路由"
+     }
+    ],
+    "tradeoff": "固定流程無法依問題複雜度調整；文章把依問題類型動態選工具列為未來方向。"
+   },
+   {
+    "decision": "怎麼評估每次改動",
+    "chosen": "LLM-as-Judge 0–5 分，搭配一次性 SME 人工審查來對齊標準",
+    "rejected": [
+     {
+      "option": "每次都請 SME 人工評分",
+      "why": "一次實驗要花數週，無法快速迭代"
+     }
+    ],
+    "tradeoff": "失去部分 SME 的細緻判斷；換到數分鐘就能跑完實驗。"
+   }
+  ],
+  "topics": [
+   "retrieval-strategy",
+   "orchestration",
+   "agent-eval",
+   "agent-vs-workflow"
+  ],
+  "followUps": [
+   "為什麼不全交給 agent 自己決定檢索步驟？固定流程比較好評估，等有不同複雜度的問題類型再改成動態路由。",
+   "表格內容怎麼避免被切壞？用 metadata 標記含表格的 chunk，切塊時不拆開，並補 LLM 產生的摘要。",
+   "metadata 過期怎麼辦？存在 offline feature store，需要定期重新產生。"
+  ]
+ },
+ {
+  "id": "uber-querygpt",
+  "title": "Uber QueryGPT（自然語言轉 SQL）",
+  "kind": "業界實例",
+  "source": "Agent Case Study",
+  "file": "",
+  "origin": "https://www.uber.com/blog/query-gpt/",
+  "core": "Uber 有數十萬個 dataset，單張表就可能有 200 多個欄位；難在從巨大 schema 中挑出正確的表和欄位、塞進有限的 context，同時壓低幻覺（不存在的表或欄位）。",
+  "scaleNumbers": [
+   "資料平台每月約 120 萬次 interactive query，其中 Operations 約佔 36%",
+   "人工寫一個 query 約 10 分鐘，QueryGPT 約 3 分鐘（公司自述）",
+   "限量釋出階段 300 DAU，約 78% 使用者表示比從頭寫省時間（公司自述）",
+   "單張大表 200+ 欄位、schema 約 40–60K tokens；GPT-4 Turbo 上限 128K tokens（早期模型 32K）",
+   "Hackdayz 原型：7 張 tier 1 表、20 個 SQL 範例；每次檢索 3 張表、7 個 SQL 範例",
+   "評估的 run-to-run 雜訊約 5%"
+  ],
+  "decisions": [
+   {
+    "decision": "整體架構：一個 prompt 還是多個 agent",
+    "chosen": "拆成 Intent Agent（對應 workspace）→ Table Agent → Column Prune Agent → 生成 SQL",
+    "rejected": [
+     {
+      "option": "單一 RAG prompt（k-NN 撈 schema 與範例 SQL 後一次生成）",
+      "why": "表的數量變多後準確率下降"
+     }
+    ],
+    "tradeoff": "多了幾次 LLM 呼叫；但每一步的輸入都變小，整體 token 與延遲反而下降。"
+   },
+   {
+    "decision": "怎麼找到相關的表",
+    "chosen": "先由 Intent Agent 把問題對應到業務領域 workspace（Mobility、Ads 等），只在該範圍內檢索",
+    "rejected": [
+     {
+      "option": "直接拿問題和 schema DDL 做相似度比對",
+      "why": "自然語言和 SQL DDL 的相似度效果很差"
+     }
+    ],
+    "tradeoff": "workspace 限縮了可回答的問題範圍；需要人工策劃 workspace，也支援使用者自訂。"
+   },
+   {
+    "decision": "schema 太大塞不進 context",
+    "chosen": "Column Prune Agent：用 LLM 刪掉無關欄位",
+    "rejected": [
+     {
+      "option": "放完整 schema",
+      "why": "3 張以上的大表就會超過 128K 上限"
+     }
+    ],
+    "tradeoff": "多一次 LLM 呼叫，且可能誤刪需要的欄位；但 token、成本、延遲都大幅下降。"
+   },
+   {
+    "decision": "選表要不要讓人確認",
+    "chosen": "Table Agent 選出的表先給使用者確認或修改，再生成 SQL",
+    "rejected": [
+     {
+      "option": "全自動選表",
+      "why": "使用者回報常選錯表，錯的表會讓後面全部白做"
+     }
+    ],
+    "tradeoff": "多一步人工互動、較不自動；換到可靠度。"
+   },
+   {
+    "decision": "怎麼評估",
+    "chosen": "分段指標：intent 是否正確、table overlap（0–1）、能否執行、是否回傳 >0 筆、與 golden SQL 的 LLM 相似度",
+    "rejected": [
+     {
+      "option": "只看最後 SQL 對不對",
+      "why": "（補充）無法定位是哪一個 agent 出錯"
+     }
+    ],
+    "tradeoff": "LLM 非確定性造成約 5% 的 run-to-run 差異，必須視為雜訊，不能把小幅變化當成改善。"
+   }
+  ],
+  "topics": [
+   "orchestration",
+   "context-memory",
+   "retrieval-strategy",
+   "agent-safety",
+   "agent-eval"
+  ],
+  "followUps": [
+   "使用者只打 5 個字還有錯字怎麼辦？加 prompt enhancer 把問題擴寫成有足夠 context 的版本。",
+   "幻覺出不存在的欄位怎麼辦？靠 column prune 縮小選擇、prompt 調整，並用「能否執行」當評估指標。",
+   "為什麼拆 agent 反而更便宜？每個 agent 只看小範圍輸入，總 token 比一次塞完整 schema 少。"
+  ]
+ },
+ {
+  "id": "uber-redlining-agent",
+  "title": "Uber Legal Redlining Agent（合約審閱）",
+  "kind": "業界實例",
+  "source": "Agent Case Study",
+  "file": "",
+  "origin": "https://www.uber.com/tw/en/blog/building-ubers-redlining-agent/",
+  "core": "法務審閱的規則一部分不可妥協、一部分要看團隊當下的談判風格；難在讓不可妥協的規則保持確定性，同時讓 agent 從律師的修改中持續學習，又不能在語氣上忽而過度強硬、忽而過度讓步。",
+  "scaleNumbers": [
+   "平均合約審閱時間減少 20% 以上（公司自述）",
+   "AI 決策準確率 91%（公司自述）",
+   "feedback 檢索先用相似度縮到約 20 個候選，再由 LLM 過濾",
+   "feedback 時間衰減 half-life 365 天"
+  ],
+  "decisions": [
+   {
+    "decision": "產品要放在哪裡",
+    "chosen": "Microsoft Word Add-in（thin client）＋ Python 後端跑 LangGraph",
+    "rejected": [
+     {
+      "option": "獨立 web app",
+      "why": "律師要在 Word 和網頁間複製貼上，阻礙採用"
+     }
+    ],
+    "tradeoff": "Office JavaScript API 很慢、tracked changes 有 edge case 會 crash、刪除的文字回傳空字串，需要在應用層做 cache 與 client 端狀態管理。"
+   },
+   {
+    "decision": "規則與學習怎麼並存",
+    "chosen": "確定性 rules engine 處理不可妥協的政策（match 到就覆蓋模型），probabilistic feedback loop 處理語氣與策略",
+    "rejected": [
+     {
+      "option": "純 RAG 檢索 playbook",
+      "why": "第一版失敗：語意相似度不準、語氣不對、playbook 外的情況近乎隨機回答"
+     }
+    ],
+    "tradeoff": "要維護規則資料庫；換到第一天就有高信心結果，再慢慢累積資料處理複雜情境。"
+   },
+   {
+    "decision": "feedback 怎麼建索引與檢索",
+    "chosen": "以原始合約句子當 key（semantic anchoring），feedback 依對方的修改意圖向量化；先相似度取約 20 個候選再由 LLM 確認意圖",
+    "rejected": [
+     {
+      "option": "直接比對修改後的原文",
+      "why": "同一意圖可以有很多種寫法，比對不到；用原合約固定用語才能產生穩定的 key"
+     }
+    ],
+    "tradeoff": "多一次 LLM 過濾的延遲；換到 query 和索引兩端對稱，檢索更準。"
+   },
+   {
+    "decision": "團隊偏好改變時怎麼辦",
+    "chosen": "指數衰減加權取樣：weight = exp(-lambda × age_days)，half-life 365 天，並平衡 agree / disagree 範例",
+    "rejected": [
+     {
+      "option": "所有歷史 feedback 等權",
+      "why": "會發生 concept drift，學到過時的談判風格"
+     }
+    ],
+    "tradeoff": "half-life 要調；太短會忘掉少見但重要的案例。"
+   },
+   {
+    "decision": "語氣怎麼修正",
+    "chosen": "single-shot reflection：預設輸出品質不好再修一次；prompt 內容由律師負責，工程師負責 prompt 結構",
+    "rejected": [
+     {
+      "option": "多輪 reflection loop",
+      "why": "一次就能可靠修正負面例子且不影響正面例子，多輪只增加 token 和延遲"
+     }
+    ],
+    "tradeoff": "依賴 SME 持續維護 prompt；獨立的節點（Intention、Risk Level 等）用 LangGraph 平行執行來壓延遲。"
+   }
+  ],
+  "topics": [
+   "agent-vs-workflow",
+   "context-memory",
+   "retrieval-strategy",
+   "agent-safety",
+   "agent-cost-latency"
+  ],
+  "followUps": [
+   "為什麼不讓 LLM 自己判斷所有規則？不可妥協的政策要確定性，rules engine match 到就直接覆蓋模型。",
+   "怎麼確保 agent 遵守規則？用 LLM-as-a-judge 監控 rule_adherence_metric 與 document_quality_metric。",
+   "最後誰決定？律師保有最終決定權，agent 只標示風險並建議修改。"
+  ]
+ },
+ {
+  "id": "klarna-ai-assistant",
+  "title": "Klarna AI 客服助理",
+  "kind": "業界實例",
+  "source": "Agent Case Study",
+  "file": "",
+  "origin": "https://www.klarna.com/international/press/klarna-ai-assistant-handles-two-thirds-of-customer-service-chats-in-its-first-month/",
+  "core": "客服 agent 要在 23 個市場、35 種以上語言處理退款、退貨、爭議等涉及金錢的操作；難在大規模自動化的同時維持正確率（減少重複詢問）並保留轉真人的出口。本文是新聞稿，幾乎沒有架構細節。",
+  "scaleNumbers": [
+   "上線第一個月 230 萬次對話，佔客服對話的三分之二（公司自述）",
+   "工作量相當於 700 名全職客服（公司自述）",
+   "重複詢問減少 25%（公司自述）",
+   "解決時間從 11 分鐘降到 2 分鐘以內（公司自述）",
+   "23 個市場、24/7、35 種以上語言",
+   "預估 2024 年帶來 4,000 萬美元獲利改善（公司自述）"
+  ],
+  "decisions": [
+   {
+    "decision": "全自動還是保留真人",
+    "chosen": "AI 助理處理大多數對話，使用者可隨時選擇轉真人客服",
+    "rejected": [
+     {
+      "option": "完全取代真人客服",
+      "why": "（補充）退款、爭議等金錢相關情境出錯成本高，需要人工兜底"
+     }
+    ],
+    "tradeoff": "仍要維持一支客服團隊；新聞稿只說滿意度與真人相當，沒有公布轉人工比例。"
+   },
+   {
+    "decision": "用外部模型還是自建",
+    "chosen": "採用 OpenAI 模型，整合進 Klarna app",
+    "rejected": [
+     {
+      "option": "自訓模型",
+      "why": "（補充）上線速度與多語言能力，外部 frontier model 較快達到"
+     }
+    ],
+    "tradeoff": "（補充）依賴單一供應商的可用性與價格；Intercom Fin 的做法是跨供應商 failover。"
+   },
+   {
+    "decision": "agent 能做到什麼程度",
+    "chosen": "不只回答問題，還處理退款、退貨、取消、爭議、帳單錯誤，並提供即時餘額與購買額度說明",
+    "rejected": [
+     {
+      "option": "只做 FAQ 問答",
+      "why": "（補充）無法真正解決問題，重複詢問不會下降"
+     }
+    ],
+    "tradeoff": "（補充）有寫入權限的 agent 需要更嚴格的權限控管與稽核；新聞稿沒有說明。"
+   }
+  ],
+  "topics": [
+   "agent-cost-latency",
+   "agent-safety",
+   "agent-permissions"
+  ],
+  "followUps": [
+   "這些數字可以直接引用嗎？都是公司新聞稿自述，沒有方法說明，面試時要標明來源。",
+   "怎麼衡量客服 agent 成效？解決率、重複詢問率、處理時間、CSAT，並要和轉人工比例一起看。",
+   "新聞稿沒寫的架構問題面試要自己補：轉真人的觸發條件、退款等寫入動作的權限與稽核、多語言品質如何評估。"
+  ]
+ },
+ {
+  "id": "langchain-ramp-agent",
+  "title": "Ramp Tour Guide（操作 UI 的導覽 agent）",
+  "kind": "業界實例",
+  "source": "Agent Case Study",
+  "file": "",
+  "origin": "https://www.langchain.com/breakoutagents/ramp",
+  "core": "agent 直接在使用者面前操作網頁 UI（捲動、點擊、填欄位），延遲與正確性都會直接被看到；難在降低每一步的延遲、讓模型在相似元素中選對，並讓使用者能隨時接手。",
+  "scaleNumbers": [
+   "原文沒有提供量化數字"
+  ],
+  "decisions": [
+   {
+    "decision": "planning 與執行要不要分開",
+    "chosen": "每一步只產生一個 UI 動作，planning 和執行合併成一次 LLM 呼叫，執行後的新狀態再餵給下一步",
+    "rejected": [
+     {
+      "option": "兩次 LLM 呼叫（先規劃再執行）",
+      "why": "正確率較好但太慢，影響使用者體驗"
+     }
+    ],
+    "tradeoff": "犧牲一些規劃精準度換回應速度。"
+   },
+   {
+    "decision": "怎麼讓模型選對元素",
+    "chosen": "把可互動元素用固定字母（A–Z，類似 Vimium）標註，搭配截圖、accessibility 標籤和精簡過的 DOM",
+    "rejected": [
+     {
+      "option": "讓模型自由描述要點哪個元素",
+      "why": "固定標籤讓模型更清楚選項"
+     },
+     {
+      "option": "塞進完整 DOM（context stuffing）",
+      "why": "prompt 越長延遲越高，精簡且經過整理的輸入效果更好"
+     }
+    ],
+    "tradeoff": "要維護 DOM 修剪與標註邏輯，修剪過頭可能漏掉需要的元素。"
+   },
+   {
+    "decision": "agent 的適用範圍",
+    "chosen": "hardcoded guardrails：只處理特定任務類型，不碰 canvas 或大型表格",
+    "rejected": [
+     {
+      "option": "開放任何 UI 操作",
+      "why": "複雜 UI 的成功率低"
+     }
+    ],
+    "tradeoff": "能做的事變少；支援範圍內的成功率變高。"
+   },
+   {
+    "decision": "人與 agent 怎麼協作",
+    "chosen": "agent 的動作即時可見（顯示游標），使用者可隨時暫停接手；用分類器自動判斷問題是否該交給 Tour Guide",
+    "rejected": [
+     {
+      "option": "背景自動執行",
+      "why": "要避免把使用者帶進其實不需要 Tour Guide 的流程，使用者也需要看得到並能介入"
+     }
+    ],
+    "tradeoff": "UI 實作較複雜（游標動畫、暫停機制）；分類器誤判會讓該用的時候沒啟動。"
+   }
+  ],
+  "topics": [
+   "agent-cost-latency",
+   "tool-interface",
+   "agent-safety",
+   "agent-vs-workflow"
+  ],
+  "followUps": [
+   "為什麼不先 plan 再 act？兩次呼叫太慢，UI 操作每一步都有新狀態，單步決策就夠。",
+   "怎麼避免 agent 做錯事？限制任務類型，加上可見、可打斷的執行過程。",
+   "缺點？原文沒有任何成功率或延遲數字，無法驗證成效。"
+  ]
+ },
+ {
+  "id": "langchain-perplexity-agent",
+  "title": "Perplexity Pro Search（多步搜尋 agent）",
+  "kind": "業界實例",
+  "source": "Agent Case Study",
+  "file": "",
+  "origin": "https://www.langchain.com/breakoutagents/perplexity",
+  "core": "複雜問題需要多次搜尋與推理，延遲必然變長；難在用 plan-then-execute 提高正確率，同時讓使用者願意等待，並在多個模型之間維持一致行為。",
+  "scaleNumbers": [
+   "Pro Search 的查詢量在過去幾個月成長超過 50%（公司自述）"
+  ],
+  "decisions": [
+   {
+    "decision": "控制流",
+    "chosen": "plan-then-execute：先由 LLM 產生步驟計畫，每一步再產生搜尋 query、檢索、排序並把 context 傳給下一步，最後合成答案",
+    "rejected": [
+     {
+      "option": "直接搜尋一次就回答",
+      "why": "複雜多步問題的推理品質不足"
+     }
+    ],
+    "tradeoff": "延遲變長，且前面步驟的錯誤會往後傳；需要檢查中間步驟。"
+   },
+   {
+    "decision": "用一個模型還是多個",
+    "chosen": "多個模型搭配各自的 prompt，依任務選模型；用 A/B test 比較延遲與成本",
+    "rejected": [
+     {
+      "option": "全部用同一個模型",
+      "why": "不同任務適合不同模型的強項"
+     }
+    ],
+    "tradeoff": "要維持多模型間的一致行為，prompt 要各自維護。"
+   },
+   {
+    "decision": "prompt 怎麼寫",
+    "chosen": "簡單精確的規則加 few-shot 範例",
+    "rejected": [
+     {
+      "option": "複雜長 prompt",
+      "why": "會降低模型遵循指令的程度"
+     }
+    ],
+    "tradeoff": "需要反覆迭代並檢查中間步驟輸出。"
+   },
+   {
+    "decision": "延遲變長時怎麼處理體驗",
+    "chosen": "逐步顯示進度，細節用可展開區塊（progressive disclosure）",
+    "rejected": [
+     {
+      "option": "只顯示最終結果",
+      "why": "使用者看到中間進度時更願意等待"
+     },
+     {
+      "option": "一次把所有中間資訊攤開",
+      "why": "資訊過載，使用者有興趣時再展開即可"
+     }
+    ],
+    "tradeoff": "前端要能串流中間狀態；換到使用者對長延遲的容忍度。"
+   }
+  ],
+  "topics": [
+   "orchestration",
+   "planning-reflection",
+   "agent-cost-latency",
+   "retrieval-strategy",
+   "agent-eval"
+  ],
+  "followUps": [
+   "plan-then-execute 的風險？早期步驟錯了會傳下去；要檢查中間步驟，必要時重新規劃。",
+   "怎麼評估？人工和競品並排比較、LLM-as-Judge 大規模排序、A/B test、內部 dogfooding。",
+   "延遲無法再降怎麼辦？顯示進度，讓等待變得可以接受。"
+  ]
+ },
+ {
+  "id": "elastic-context-engine",
+  "title": "Elastic Context Engine（預算好的 agent context）",
+  "kind": "業界實例",
+  "source": "Agent Case Study",
+  "file": "",
+  "origin": "https://www.elastic.co/search-labs/blog/context-engineering-for-agents",
+  "core": "企業 agent 大部分 token 花在每次重新探索資料（欄位意義、來源關係），而不是推理；難在把這些探索提前算好、存成可檢索的小單位，並讓它們不過期也不變成雜訊。",
+  "scaleNumbers": [
+   "同一問題、同一模型比較：tool call 33 → 9（公司自述）",
+   "input tokens 2,279,253 → 653,511，減少 71%（公司自述）",
+   "延遲 213 秒 → 64 秒（公司自述）",
+   "預算成本約 636K input tokens（用 Claude Haiku）",
+   "測試資料產生約 80 個 Knowledge Indicators；來源為 4 個 Elasticsearch index 與約 50 份模擬合約"
+  ],
+  "decisions": [
+   {
+    "decision": "資料探索在什麼時候做",
+    "chosen": "預先計算：用 Elastic Workflows 自動化抽取知識，存成 Knowledge Indicators（KI）",
+    "rejected": [
+     {
+      "option": "每次任務時讓 agent 自己探索 schema 與關係",
+      "why": "每次重複探索，token 消耗巨大"
+     }
+    ],
+    "tradeoff": "前期要付預算成本並維護自動化流程；查詢越多次，攤提越划算。"
+   },
+   {
+    "decision": "知識用什麼形式保存",
+    "chosen": "小而獨立的 KI：實體關係（例如子公司屬於哪個母公司）、資料來源描述、資料怪癖（例如 account_id 不一定有值）、查詢建議，附 provenance 與存取控制 metadata",
+    "rejected": [
+     {
+      "option": "人工維護的 markdown 資料目錄",
+      "why": "會和實際資料脫節"
+     },
+     {
+      "option": "Agentic RAG 檢索原始 chunk",
+      "why": "每次重組知識，且抓不到跨文件的關係（baseline 就漏了母公司關係）"
+     },
+     {
+      "option": "加長 context window 直接塞資料",
+      "why": "context rot、注意力下降，每回合越來越貴"
+     }
+    ],
+    "tradeoff": "KI 太細會漏掉新問題，太粗又會塞滿 context；要靠 metadata 設計與相關性排序調整。"
+   },
+   {
+    "decision": "預算與推理用哪個模型",
+    "chosen": "預算抽取用較便宜的 Claude Haiku，agent 推理用 Claude Sonnet",
+    "rejected": [
+     {
+      "option": "全部用同一個大模型",
+      "why": "抽取是一次性工作，省下的成本會在每次查詢重複放大"
+     }
+    ],
+    "tradeoff": "小模型抽取的品質會限制 KI 品質。"
+   },
+   {
+    "decision": "context 怎麼持續改進",
+    "chosen": "agent trace 自動回流成新的資料來源，由自動化流程分析並更新 KI",
+    "rejected": [
+     {
+      "option": "只靠固定測試集調整",
+      "why": "無法反映真實使用模式，context 會漂移"
+     }
+    ],
+    "tradeoff": "處理沒變動的來源會浪費運算；更新頻率需要權衡新鮮度和成本。"
+   }
+  ],
+  "topics": [
+   "context-memory",
+   "retrieval-strategy",
+   "agent-cost-latency"
+  ],
+  "followUps": [
+   "KI 不相關會怎樣？agent 會忽略它，退回去探索原始資料，省下的成本就消失；要靠 trace 驗證相關性。",
+   "怎麼避免 agent 讀到不該讀的 context？KI 帶 provenance 與存取控制 metadata。",
+   "數字可以全信嗎？只有一個問題的單次比較，而且是廠商部落格，要當作示意。"
+  ]
+ },
+ {
+  "id": "dropbox-dash-agents",
+  "title": "Dropbox Dash（企業搜尋 RAG + agent）",
+  "kind": "業界實例",
+  "source": "Agent Case Study",
+  "file": "",
+  "origin": "https://dropbox.tech/machine-learning/building-dash-rag-multi-step-ai-agents-business-users",
+  "core": "企業資料分散在多個應用與格式，又要求 1–2 秒內回應；難在檢索的延遲、品質、資料新鮮度三者之間取捨，以及讓多步驟 agent 的計畫可以被驗證後才安全執行。",
+  "scaleNumbers": [
+   "目標：超過 95% 的查詢在 1–2 秒內完成；實際在 2 秒內為超過 95% 的查詢產生高品質結果（公司自述）",
+   "即時呼叫第三方 API 會讓延遲遠超過數秒"
+  ],
+  "decisions": [
+   {
+    "decision": "檢索架構",
+    "chosen": "傳統 lexical IR 加上查詢時才切塊（on-the-fly chunking）與 embedding reranking；資料用定期同步加 webhook 維持新鮮",
+    "rejected": [
+     {
+      "option": "全部做成向量索引",
+      "why": "達不到延遲要求"
+     },
+     {
+      "option": "純 lexical 搜尋",
+      "why": "相關性不足"
+     },
+     {
+      "option": "查詢時直接呼叫第三方 API",
+      "why": "延遲遠超過數秒"
+     }
+    ],
+    "tradeoff": "較大的 embedding 模型品質較好但延遲較高；頻繁重建索引會影響 throughput。"
+   },
+   {
+    "decision": "agent 的計畫用什麼形式表達",
+    "chosen": "LLM 產生類 Python 的 DSL 程式；先產生高層程式，靜態檢查找出缺少的部分，再用第二次 LLM 呼叫補齊",
+    "rejected": [
+     {
+      "option": "自然語言計畫或直接 tool calling",
+      "why": "（補充）無法在執行前做靜態驗證，失敗時也很難定位是哪一步"
+     }
+    ],
+    "tradeoff": "需要設計並維護 DSL；換到每一步可確定性測試（例如「明天」是否總是解析成正確時間區間）。"
+   },
+   {
+    "decision": "怎麼安全執行 LLM 產生的程式",
+    "chosen": "自己從頭寫一個只含必要功能的 Python 直譯器，執行前做靜態分析（安全風險、缺少功能、正確性），執行時強制型別檢查",
+    "rejected": [
+     {
+      "option": "用 CPython 直接執行",
+      "why": "功能太多、攻擊面大；刻意不追求與 CPython 相容"
+     }
+    ],
+    "tradeoff": "要自行維護直譯器；換到可控的執行環境與確定性錯誤回報。"
+   },
+   {
+    "decision": "LLM 選擇",
+    "chosen": "model-agnostic 架構，用公開資料集（Natural Questions、MuSiQue、MS MARCO）與自訂指標（LLM judge 判正確與完整、來源 precision/recall/F1）比較開源與閉源模型",
+    "rejected": [
+     {
+      "option": "綁定單一模型並共用 prompt",
+      "why": "同一份 prompt 不能直接套用到不同 LLM"
+     }
+    ],
+    "tradeoff": "每個模型都要各自調 prompt；換到可以依成本與延遲切換供應商。"
+   }
+  ],
+  "topics": [
+   "agent-vs-workflow",
+   "tool-interface",
+   "agent-safety",
+   "retrieval-strategy",
+   "agent-cost-latency"
+  ],
+  "followUps": [
+   "RAG 和 agent 怎麼分工？單純找資料用 RAG；需要拆解多步驟、計算或組合結果時才用 agent。",
+   "為什麼讓 LLM 寫程式而不是直接呼叫工具？程式能在執行前靜態檢查，錯誤可以定位到具體步驟。",
+   "怎麼確保使用者只看到有權限的內容？檢索層做細粒度存取控制。"
+  ]
+ },
+ {
+  "id": "salesforce-agentforce-memory",
+  "title": "Salesforce Agentforce Memory（長期記憶）",
+  "kind": "業界實例",
+  "source": "Agent Case Study",
+  "file": "",
+  "origin": "https://engineering.salesforce.com/ai-agents-need-memory-building-persistent-memory-for-agentforce/",
+  "core": "企業 agent 預設是無狀態的，使用者每次都要重講一次 context；難在大規模下加入長期記憶又不拖慢回應、不讓 context 無限膨脹，並從一開始就讓使用者能控制隱私。",
+  "scaleNumbers": [
+   "Agentforce 每天執行 1,100 萬次呼叫"
+  ],
+  "decisions": [
+   {
+    "decision": "記憶怎麼取回並注入 context",
+    "chosen": "在推理開始前（pre-orchestration）做 keyword search，有 match 才注入記憶，並和其他前置步驟平行執行",
+    "rejected": [
+     {
+      "option": "把所有記憶都注入 context",
+      "why": "context 會無上限成長（原文只說各方案在延遲、context 大小、檢索品質上取捨不同，未逐一說明）"
+     },
+     {
+      "option": "讓 LLM 依需要自行取用記憶",
+      "why": "（補充）多一輪 tool call，增加延遲且模型可能忘記去查"
+     },
+     {
+      "option": "progressive disclosure 逐步揭露 context",
+      "why": "（補充）多輪來回增加延遲"
+     }
+    ],
+    "tradeoff": "keyword match 可能漏掉語意相關但用字不同的記憶；換到 context 有上限、延遲最小。"
+   },
+   {
+    "decision": "記憶功能放在架構的哪一層",
+    "chosen": "整合進 Reasoner 核心，開發者只要在 agentscript 加 context.memory 設定",
+    "rejected": [
+     {
+      "option": "做成外部 action",
+      "why": "每個 sub-agent 都要額外加 action、指令與設定，啟用一次要改幾十處，還怕弄壞既有 agent"
+     }
+    ],
+    "tradeoff": "平台核心變複雜，客製化彈性降低；換到開發者體驗與一致的延遲表現。"
+   },
+   {
+    "decision": "只靠最近對話還是跨時間檢索",
+    "chosen": "加入可跨時間範圍的檢索，不只看最近的對話",
+    "rejected": [
+     {
+      "option": "只用最近的對話歷史",
+      "why": "會漏掉較早但重要的使用者偏好"
+     }
+    ],
+    "tradeoff": "儲存與檢索成本上升。"
+   },
+   {
+    "decision": "隱私控制何時做",
+    "chosen": "上線前就內建：全域開關、每個 agent 的開關、Memory Management Console 可檢視、編輯、刪除，也可以用對話管理記憶",
+    "rejected": [
+     {
+      "option": "上線後再補隱私控制",
+      "why": "隱私與信任應該是一級架構需求"
+     }
+    ],
+    "tradeoff": "上線時程拉長；換到企業客戶的信任。"
+   }
+  ],
+  "topics": [
+   "context-memory",
+   "agent-cost-latency",
+   "agent-permissions"
+  ],
+  "followUps": [
+   "為什麼不讓 LLM 自己決定何時查記憶？（補充）多一輪呼叫增加延遲，且模型不一定會去查；在推理前查比較穩定。",
+   "團隊怎麼對齊 memory 的定義？寫一份共用名詞文件，區分 raw memory 和真正注入 runtime context 的子集。",
+   "keyword search 不夠怎麼辦？可以改成語意檢索，但要付出延遲與成本。"
+  ]
+ },
+ {
+  "id": "salesforce-multi-agent-teams",
+  "title": "Salesforce Agent Designer（自動建立並測試 agent team）",
+  "kind": "業界實例",
+  "source": "Agent Case Study",
+  "file": "",
+  "origin": "https://engineering.salesforce.com/engineering-multi-agent-ai-teams-that-build-and-test-themselves/",
+  "core": "多個 specialist 平行分析時，各自正確的結論合起來可能是做不出來的設計；難在劃清每個 agent 的權限邊界、讓驗證結果可被機器比較，並防止自我修復迴圈越修越糟、燒光預算。",
+  "scaleNumbers": [
+   "建立 agent team 的時間從 2–4 小時降到約 15–30 分鐘（公司自述）",
+   "1 個 orchestrator 加 7 個 specialist，各自有獨立的模型、預算、回合上限",
+   "orchestrator 總預算 500 回合",
+   "self-healing 上限：最多 2 次修復、花費上限 3 美元",
+   "Marketing Cloud 約 200 名工程師採用（公司自述）"
+  ],
+  "decisions": [
+   {
+    "decision": "orchestrator 的權限",
+    "chosen": "orchestrator 只能派工與驗證，不能自己寫 agent 檔案",
+    "rejected": [
+     {
+      "option": "orchestrator 擁有全部寫入權限",
+      "why": "會造成不受控的檔案修改，也破壞治理邊界"
+     }
+    ],
+    "tradeoff": "多一層派工；換到責任分離。寫入範圍只能用 prompt 限制，因為框架沒有原生 write-scope 欄位。"
+   },
+   {
+    "decision": "平行分析的衝突怎麼處理",
+    "chosen": "架構、failure mode、compliance 三個 analyst 平行產出，由 orchestrator 在匯合點偵測衝突並做有限度的修正",
+    "rejected": [
+     {
+      "option": "發現衝突就整個重跑分析",
+      "why": "（補充）浪費回合與成本，也不保證下次不衝突"
+     }
+    ],
+    "tradeoff": "orchestrator 需要能判斷衝突；例如選了超過 compliance 預算的拓撲。"
+   },
+   {
+    "decision": "驗證結果的格式",
+    "chosen": "結構化的 PASS / WARN / FAIL 區塊；不確定時給 WARN；orchestrator 再交叉比對多個 verifier",
+    "rejected": [
+     {
+      "option": "自由格式的文字說明",
+      "why": "orchestrator 無法解析、比較，也無法依規則決策"
+     }
+    ],
+    "tradeoff": "verifier 太寬鬆會放過違規、太嚴格會擋掉正確設計，需要明確規則調整。"
+   },
+   {
+    "decision": "自我修復要做到什麼程度",
+    "chosen": "最多 2 次修復、上限 3 美元，超過就停止並升級給人；test doctor 先把失敗分類（違規、權限阻擋、工具錯誤、boot 錯誤、soft failure、無限迴圈、狀態損毀）",
+    "rejected": [
+     {
+      "option": "不設上限持續修復",
+      "why": "診斷錯誤時會一直消耗回合和錢，系統越修越糟"
+     }
+    ],
+    "tradeoff": "有些可以修好的問題會被提早交給人處理。"
+   },
+   {
+    "decision": "預算怎麼管",
+    "chosen": "依拓撲集中計算：單 agent 看單一預算、swarm 用 items × cost × steps、team 看整體上限；500 回合在分析、人工核准、產生檔案、測試、修復之間分配",
+    "rejected": [
+     {
+      "option": "交給工程師各自手動估算",
+      "why": "設計可能承諾了做不到的資源計畫"
+     }
+    ],
+    "tradeoff": "前段分析花太多會讓後面的驗證沒有預算可用。"
+   }
+  ],
+  "topics": [
+   "orchestration",
+   "agent-comm",
+   "agent-reliability",
+   "agent-cost-latency",
+   "agent-permissions"
+  ],
+  "followUps": [
+   "multi-agent 怎麼避免無限迴圈？每個 agent 有回合上限與預算，修復次數有上限，超過就交給人。",
+   "soft failure 怎麼抓？執行正常但結果錯誤，要逐點比對輸出與預期行為。",
+   "為什麼 verifier 要輸出結構化格式？讓 orchestrator 可以用規則比較多個 verifier 的結論。"
+  ]
+ },
+ {
+  "id": "intercom-operator",
+  "title": "Intercom Operator（客服營運 agent）",
+  "kind": "業界實例",
+  "source": "Agent Case Study",
+  "file": "",
+  "origin": "https://www.intercom.com/blog/operator-a-look-under-the-hood",
+  "core": "agent 不只分析，還要修改正式環境的客服設定，而且要在數千個設定各不相同的 workspace 上都可靠；難在用專用工具封裝領域知識，並讓每個寫入動作都可審核、可還原。",
+  "scaleNumbers": [
+   "50 個以上工具、10 個 skill",
+   "語意搜尋以數百萬筆真實客服對話調校",
+   "服務數千個客戶 workspace",
+   "簡單工具開發要數週，正式系統要數季"
+  ],
+  "decisions": [
+   {
+    "decision": "agent 怎麼存取資料",
+    "chosen": "50 多個內建領域邏輯的專用工具，加上 10 個串接多個工具的 skill",
+    "rejected": [
+     {
+      "option": "給 agent 原始 API 讓它自己摸索",
+      "why": "在設定各不相同的客戶環境下無法達到正式環境的可靠度"
+     }
+    ],
+    "tradeoff": "工具多、維護成本高，模型升級時也要跟著調整；換到正確性與安全性。"
+   },
+   {
+    "decision": "寫入動作怎麼做",
+    "chosen": "proposal 機制：先產生 diff 給人審核，明確核准後才執行，而且可以還原",
+    "rejected": [
+     {
+      "option": "agent 直接修改設定",
+      "why": "錯誤會直接影響正式環境，是不同等級的問題"
+     }
+    ],
+    "tradeoff": "比較慢，而且 proposal 流程本身不容易做對；文章說加入寫入能力讓工程複雜度高了一個數量級。"
+   },
+   {
+    "decision": "避免在稀疏資料上產生幻覺",
+    "chosen": "attribute awareness：先判斷該 workspace 哪些欄位真的有資料、有意義",
+    "rejected": [
+     {
+      "option": "所有 workspace 套同一組指標",
+      "why": "會從空欄位幻想出結論"
+     }
+    ],
+    "tradeoff": "要針對每個 workspace 做額外分析。"
+   },
+   {
+    "decision": "產品形式",
+    "chosen": "原生整合進平台，對話介面加圖形元件（diff、圖表、dashboard）",
+    "rejected": [
+     {
+      "option": "外部工具、Slack bot 或 CLI",
+      "why": "要切換工具，也限制非工程師使用"
+     },
+     {
+      "option": "純文字介面",
+      "why": "結構化 diff 比一大段 LLM 文字清楚"
+     }
+    ],
+    "tradeoff": "需要和整個產品深度整合，開發較困難。"
+   }
+  ],
+  "topics": [
+   "tool-interface",
+   "agent-safety",
+   "agent-permissions"
+  ],
+  "followUps": [
+   "為什麼寫入一定要 proposal？正式設定改錯會直接影響客戶，diff 加核准讓變更可審核、可還原。",
+   "tool 和 skill 差在哪？tool 做單一動作，skill 串多個 tool 完成一個流程。",
+   "多租戶隔離怎麼做？原文沒有細節，面試時要主動補：每個工具呼叫都綁定 workspace 身分。"
+  ]
+ },
+ {
+  "id": "intercom-fin-scale",
+  "title": "Intercom Fin 與平台擴展",
+  "kind": "業界實例",
+  "source": "Agent Case Study",
+  "file": "",
+  "origin": "https://www.intercom.com/blog/ready-for-your-busiest-day-how-we-scale",
+  "core": "AI agent 建立在一個多租戶 SaaS 平台上，尖峰時一個客戶就可能衝出大量對話；難在讓 LLM 層不受單一供應商故障影響，同時確保一個租戶的尖峰不拖垮其他租戶。",
+  "scaleNumbers": [
+   "Fin 每週完整解決超過 200 萬次對話（公司自述）",
+   "向 LLM 供應商保留正常 Fin 流量 2–3 倍的 buffer 容量",
+   "每日尖峰同步請求超過 15 萬 RPS，非同步超過 7 萬 RPS",
+   "最忙的日子超過 500 萬次對話、新增超過 1 億則留言",
+   "單一客戶可衝到每秒數百則留言、約每秒 100 個新對話",
+   "資料庫 128 shards、約 200 萬 RPS，前面有超過 1,000 萬次/秒的 cache read",
+   "Elasticsearch 超過 650TB、超過 1.7 兆份文件、尖峰超過 4 萬 RPS",
+   "每個工作天約 250 次部署，merge 到上線平均不到 10 分鐘（2025 年初約 180 次、12 分鐘）"
+  ],
+  "decisions": [
+   {
+    "decision": "LLM 層的可靠性",
+    "chosen": "跨供應商、跨模型 failover，依延遲路由，跨 region 備援，並保留 2–3 倍的 buffer 容量",
+    "rejected": [
+     {
+      "option": "依賴單一 LLM 供應商",
+      "why": "供應商故障或容量不足時 Fin 就停擺"
+     }
+    ],
+    "tradeoff": "要管理多個供應商、維持行為一致，營運更複雜；預留容量也有成本。"
+   },
+   {
+    "decision": "多租戶公平性",
+    "chosen": "AWS SQS fair queue、應用層資源控制、依客戶歸屬的負載可視化，最大的客戶可以用專屬容量（必要時專屬 shard）",
+    "rejected": [
+     {
+      "option": "靠工程師自律遵守隔離規則",
+      "why": "在大型 Rails 程式碼中，無法保證每條路徑都遵守"
+     }
+    ],
+    "tradeoff": "框架與監控成本較高；換到單一客戶尖峰不影響其他客戶。"
+   },
+   {
+    "decision": "資料庫擴展",
+    "chosen": "遷移到 Vitess（PlanetScale）：原生 sharding、線上 schema change、resharding",
+    "rejected": [
+     {
+      "option": "傳統 MySQL 擴展方式",
+      "why": "每碰到一次上限就要重新設計，還需要停機維護"
+     }
+    ],
+    "tradeoff": "要學習與營運 Vitess；換到不再需要影響客戶的維護窗口。"
+   },
+   {
+    "decision": "怎麼安全地快速部署",
+    "chosen": "小批次頻繁部署，feature flag 把部署和釋出分開，用 heartbeat 指標（客戶工作是否完成）監控並自動 rollback",
+    "rejected": [
+     {
+      "option": "較慢、批次較大的釋出週期",
+      "why": "大批變更較難理解、觀察和 rollback"
+     }
+    ],
+    "tradeoff": "需要有紀律的工程文化，工程師要看著自己的變更上線。"
+   }
+  ],
+  "topics": [
+   "agent-reliability",
+   "agent-cost-latency",
+   "agent-deploy-versioning",
+   "agent-permissions"
+  ],
+  "followUps": [
+   "LLM 供應商掛了怎麼辦？依延遲路由切到另一家或另一個 region，並事先保留 2–3 倍容量。",
+   "為什麼監控 heartbeat 而不是 CPU？要看的是客戶工作有沒有完成，不是 dashboard 顏色。",
+   "跨供應商 failover 的隱藏成本？不同模型行為不同，要分別評估 prompt 與品質。"
+  ]
+ },
+ {
+  "id": "snyk-assist",
+  "title": "Snyk Assist（從內部支援 agent 到客戶功能）",
+  "kind": "業界實例",
+  "source": "Agent Case Study",
+  "file": "",
+  "origin": "https://www.langchain.com/blog/how-snyk-turned-an-internal-support-agent-into-a-customer-feature",
+  "core": "同一個 agent 要同時服務 Slack、web、API 三種介面，且它屬於資安產品，絕不能讓使用者看到自己沒有權限的資料；難在讓小團隊只維護一套 runtime，又能用 eval 擋住退步。",
+  "scaleNumbers": [
+   "60,000 次以上查詢、500 個以上客戶帳號",
+   "85% 以上的 session 不需要開 support ticket（公司自述）",
+   "250 個以上的案例被 agent 自動偵測並升級給對應團隊（公司自述）",
+   "約 1 年只在內部使用；2026 年 4 月上線到支援入口；2026 年 9 月 1 日進入核心產品"
+  ],
+  "decisions": [
+   {
+    "decision": "多個介面怎麼支援",
+    "chosen": "單一 LangGraph agent runtime 同時服務 Slack、web、API",
+    "rejected": [
+     {
+      "option": "每個介面各寫一套",
+      "why": "bug 修正和新功能要做多次，小團隊負擔不起"
+     }
+    ],
+    "tradeoff": "不同介面無法各自最佳化；換到功能只需要上線一次。"
+   },
+   {
+    "decision": "工具權限",
+    "chosen": "工具是有型別的函式，請求時依登入使用者的權限動態註冊",
+    "rejected": [
+     {
+      "option": "固定工具清單，執行時再檢查權限",
+      "why": "較容易漏掉檢查而外洩資料；動態註冊讓 agent 根本看不到無權使用的工具"
+     }
+    ],
+    "tradeoff": "每次請求多一點註冊成本。"
+   },
+   {
+    "decision": "對話狀態存哪",
+    "chosen": "Postgres checkpointer，以 session 為 key 存對話歷史",
+    "rejected": [
+     {
+      "option": "in-memory 或每個 pod 自己保存狀態",
+      "why": "無法水平擴展，也無法恢復對話"
+     }
+    ],
+    "tradeoff": "多一次資料庫存取延遲；換到多輪記憶、跨 pod 擴展與對話恢復。"
+   },
+   {
+    "decision": "context 管理、guardrail、model fallback 放在哪",
+    "chosen": "middleware：在固定的 lifecycle hook 上依序執行",
+    "rejected": [
+     {
+      "option": "在 agent loop 裡手動穿插這些邏輯",
+      "why": "很難維護，middleware 讓修改變成調整清單裡的一行"
+     }
+    ],
+    "tradeoff": "前期要建立抽象。"
+   },
+   {
+    "decision": "怎麼防止退步",
+    "chosen": "offline eval（真實問題加人工標註的好答案、自動 red-teaming）在每個 PR 執行，未達門檻就擋；online eval 定期對正式環境的對話評分並分類",
+    "rejected": [
+     {
+      "option": "只靠上線後的使用者回報",
+      "why": "（補充）錯誤答案與權限外洩在資安產品上代價太高"
+     }
+    ],
+    "tradeoff": "CI 門檻會拖慢上線速度。"
+   }
+  ],
+  "topics": [
+   "tool-interface",
+   "agent-permissions",
+   "agent-eval",
+   "context-memory",
+   "agent-deploy-versioning"
+  ],
+  "followUps": [
+   "為什麼依使用者動態註冊工具？agent 只能看到使用者本來就有權限的資料，降低權限外洩風險。",
+   "壞的 trace 怎麼變成測試？透過 LangSmith MCP server 在 IDE 內直接轉成 dataset。",
+   "為什麼先內部用一年？先在支援團隊驗證正確率，再開放給客戶。"
+  ]
+ },
+ {
+  "id": "numan-eval-first-agent",
+  "title": "Numan Nu（eval-first 健康教練 agent）",
+  "kind": "業界實例",
+  "source": "Agent Case Study",
+  "file": "",
+  "origin": "https://www.langchain.com/blog/how-numan-built-an-eval-first-ai-health-coach-with-langgraph-and-langsmith",
+  "core": "健康教練大多沒有唯一正確答案，回答是否安全取決於前面的對話；還要守住法規邊界（wellness 產品，不是醫療器材）。難在建立能抓到局部安全問題的評估，而且評估標準要由臨床醫師負責。",
+  "scaleNumbers": [
+   "frontier 供應商之間的遷移原本要數週人工測試，現在一天完成（公司自述）",
+   "health coach 每天抽樣審查真實對話"
+  ],
+  "decisions": [
+   {
+    "decision": "agent 的組成",
+    "chosen": "supervisor 加領域 specialist（體重、荷爾蒙、性健康），各自有 prompt 與工具",
+    "rejected": [
+     {
+      "option": "單一大 agent",
+      "why": "新增領域困難，評估範圍也混在同一個 prompt 裡"
+     }
+    ],
+    "tradeoff": "多一層路由，路由準確率本身要評估；換到新增 specialist 成本低、評估一致。"
+   },
+   {
+    "decision": "評估方式",
+    "chosen": "三層：fixture eval（單回覆可判定的項目：路由、用藥安全、安全防護）、模擬病人 persona 的多輪對話 eval、每天人工審查真實對話",
+    "rejected": [
+     {
+      "option": "單一固定資料集",
+      "why": "整體平均分數會掩蓋 Nu 失敗的地方"
+     },
+     {
+      "option": "預先寫好病人回覆的多輪腳本",
+      "why": "病人回覆不會依 agent 上一句的內容改變，對話不真實"
+     }
+    ],
+    "tradeoff": "模擬病人要用另一個較便宜的模型扮演；人工審查很花人力。"
+   },
+   {
+    "decision": "評估跑在哪裡",
+    "chosen": "直接跑正式環境的同一個 LangGraph graph（The thing we ship is the thing we test）",
+    "rejected": [
+     {
+      "option": "另外寫一套 eval harness",
+      "why": "會和正式環境逐漸不一致，產生錯誤的安全感"
+     }
+    ],
+    "tradeoff": "eval 需要能驅動完整的正式 graph，成本較高。"
+   },
+   {
+    "decision": "安全標準誰訂",
+    "chosen": "安全與法規邊界的 rubric 由臨床醫師撰寫並簽核；工程師版本只用於早期原型；安全退步會自動擋下釋出",
+    "rejected": [
+     {
+      "option": "工程師自己訂安全標準",
+      "why": "不足以支撐法規與安全判斷"
+     }
+    ],
+    "tradeoff": "rubric 迭代變慢，受限於醫師的時間；曾發現 rubric 互相矛盾（漏服藥時要拒答轉介還是給一般資訊）。"
+   },
+   {
+    "decision": "分數怎麼呈現",
+    "chosen": "依類別（教練品質、安全、用藥問題、路由、摘要）分別計分",
+    "rejected": [
+     {
+      "option": "整體平均分",
+      "why": "少數壞回覆幾乎不影響平均，對話看起來合規其實不合規"
+     }
+    ],
+    "tradeoff": "指標變多，需要分別設門檻。"
+   }
+  ],
+  "topics": [
+   "agent-eval",
+   "orchestration",
+   "agent-safety",
+   "agent-deploy-versioning"
+  ],
+  "followUps": [
+   "為什麼主張稀缺的是 eval criteria 不是 prompt？有了可靠的評估標準，換模型或 prompt 優化都可以自動驗證（遷移一天完成、offline prompt 優化不用手調）。",
+   "超出範圍的問題怎麼回？用 safe-completion：溫和且有用地引導，而不是直接拒答。",
+   "supervisor 和 specialist 為什麼用不同供應商？依各自的工作類型選模型。"
+  ]
+ },
+ {
+  "id": "honeycomb-hard-stuff-llm",
+  "title": "Honeycomb Query Assistant（早期 LLM 產品心得）",
+  "kind": "業界實例",
+  "source": "Agent Case Study",
+  "file": "",
+  "origin": "https://www.honeycomb.io/blog/hard-stuff-nobody-talks-about-llm",
+  "core": "把自然語言轉成 Honeycomb query：客戶 schema 太大塞不進 context、模糊輸入和正確輸出互相拉扯、prompt injection 沒有解法；難在一個月內上線一個安全、夠快、夠有用的功能，而不是做 demo。",
+  "scaleNumbers": [
+   "回應時間 2–15 秒以上，依模型、輸入與 schema 大小而定",
+   "部分客戶 schema 超過 5,000 個欄位；只納入過去 7 天有資料的欄位",
+   "串接例子：單次 90% 正確，串 5 次只剩約 59%（0.9^5）",
+   "開發期約一個月"
+  ],
+  "decisions": [
+   {
+    "decision": "要不要串多次 LLM（agent chain）",
+    "chosen": "單次 LLM 呼叫加 few-shot prompt",
+    "rejected": [
+     {
+      "option": "LangChain 多步 chain",
+      "why": "延遲累加，錯誤率也連乘（90% 串 5 次剩 59%）"
+     }
+    ],
+    "tradeoff": "單次呼叫的品質上限較低；換到可接受的延遲與穩定性。"
+   },
+   {
+    "decision": "介面形式",
+    "chosen": "文字輸入框，結果直接放進既有的 query UI",
+    "rejected": [
+     {
+      "option": "Chat 介面",
+      "why": "chat 會鼓勵使用者嘗試 prompt injection，攻擊面較大"
+     }
+    ],
+    "tradeoff": "沒辦法多輪澄清。"
+   },
+   {
+    "decision": "模型",
+    "chosen": "GPT-3.5-turbo",
+    "rejected": [
+     {
+      "option": "GPT-4",
+      "why": "較準但慢好幾倍"
+     },
+     {
+      "option": "開源模型或 Claude 100k",
+      "why": "速度與 context window 取捨不划算；安全稽核後也只有 OpenAI 符合要求"
+     }
+    ],
+    "tradeoff": "正確率中等；換到使用者可接受的回應時間。"
+   },
+   {
+    "decision": "schema 太大",
+    "chosen": "只放過去 7 天有收到資料的欄位，之後打算用 embedding 挑相關欄位",
+    "rejected": [
+     {
+      "option": "放完整 schema",
+      "why": "超過 context window"
+     },
+     {
+      "option": "切塊後平行呼叫或串接逐步精煉",
+      "why": "延遲與錯誤累積"
+     }
+    ],
+    "tradeoff": "被裁掉的欄位剛好是相關欄位時就會失敗，體驗時好時壞。"
+   },
+   {
+    "decision": "prompt injection 怎麼防",
+    "chosen": "多層緩解：輸出不具破壞性且可 undo、不接資料庫或其他服務、不用 LLM 結果呼叫值班人員、輸出解析驗證、輸入輸出截斷、每人每日 rate limit、不做 chat UI",
+    "rejected": [
+     {
+      "option": "讓 LLM 連到資料庫、能執行動作的 agent",
+      "why": "prompt injection 沒有解法，可能出現 rogue agent"
+     }
+    ],
+    "tradeoff": "功能受限；上線後觀察到的 injection 嘗試幾乎都無害，但有幾次企圖取得其他客戶的資訊。"
+   }
+  ],
+  "topics": [
+   "agent-vs-workflow",
+   "agent-cost-latency",
+   "agent-safety",
+   "context-memory"
+  ],
+  "followUps": [
+   "為什麼不做 agent？每多一次呼叫延遲就增加，錯誤率也連乘；單次呼叫已經夠用。",
+   "prompt injection 的主要防線？讓輸出不具破壞性、可 undo，並和資料與基礎設施隔離。",
+   "Early access 計畫有用嗎？文章認為小樣本會造成錯誤信心，真實輸入的多樣性只有上線後才看得到。"
+  ]
+ }
+]

@@ -1,9 +1,12 @@
 # Progress — system-design interview prep
 
-**Last updated:** 2026-10-19
-**Branch:** feat/dcard-interview
+**Last updated:** 2026-10-28
+**Branch:** docs/system-design-study-notes
 
 ## Completed
+- [x] 2026-10-28 學習頁新增「Agent 系統設計」區(artifact Version 6):14 個決策主題(64 題自測)、32 篇 agent 上線案例(20 家公司)、18 篇 agent 失敗事件(5 類,含標「實驗環境」的研究實驗)、55 篇論文與指南導讀(#read)。來源清單 sources/agent-sources.json(137 筆)、分類審查 sources/agent-review.json;數字核對:47 筆 not_found 經 reviewer 判定 42 supported / 3 wrong 已改 / 3 unsupported 已刪(含圖表才有的數字);Uber 三篇擋 curl → 標數字未核對
+- [x] 2026-10-28 Wayback / 轉載內容決定保留並加標示(選 A);study-app 10 條加 accessNote、5 篇 Netflix 筆記加檔頭註記(commit 2ac1168)
+- [x] 2026-10-28 Dcard 分支誤推的 commit 以 git revert 抵銷(135af3d,一般 push),檔案內容回到 b16726a
 - [x] Google-related system notes
 - [x] Data-intensive app notes (DDIA)
 - [x] Data-intensive app — Flink notes
@@ -31,7 +34,6 @@
 
 ## Next steps
 - [ ] 每週技術部落格掃描 routine:待使用者 /web-setup 連 GitHub 並確認設定(週一 09:00、Sonnet 5.5、開 PR)
-- [ ] 決定經 Wayback / 轉載讀取的內容保留或改標(清單見 scratchpad blogs/archive-derived.txt,已併入 study-app/sources)
 - [ ] Practice re-deriving the 10 examples from scratch (cover the derivation chain, derive, then check)
 - [ ] 按 study-roadmap.md 的 6 週計畫執行;W3-4 的計時 writeup 必選 Payment(原最大缺口)
 - [ ] Mock 後的弱點記回本檔

@@ -1,0 +1,130 @@
+{
+  "problem": "agent-coordination",
+  "problemName": "Agent：迴圈、成本與協調失敗",
+  "incidents": [
+    {
+      "id": "anthropic-2025-research-subagent-overspawn",
+      "problem": "agent-coordination",
+      "company": "Anthropic",
+      "title": "多 agent 研究系統早期版本（內部開發期）：簡單問題產生 50 個 subagent、無止境搜尋、互相干擾",
+      "date": "2025-06",
+      "kind": "experiment",
+      "symptom": "Claude Research 多 agent 系統開發早期，lead agent 對簡單查詢也產生 50 個 subagent；subagent 不停在網路上搜尋根本不存在的來源、重複彼此的工作，並以過多的進度更新互相干擾。",
+      "rootCause": "Lead agent 不知道該依問題難度投入多少資源，委派時給 subagent 的任務描述太短、太模糊（沒有目標、輸出格式、工具指引、任務邊界），subagent 沒有明確的停止條件。",
+      "whyHard": "多 agent 的效益來自平行探索，所以直覺是「多開幾個比較保險」；但 token 用量本身就與成本強相關，模糊委派不會報錯，只會表現為重複、遺漏與燒錢，在單一 trace 裡不容易看出來。",
+      "fix": "在 prompt 中加入規模規則（簡單事實查詢 1 個 agent、3–10 次 tool call；直接比較 2–4 個 subagent、各 10–15 次 call），每個 subagent 委派必須包含目標、輸出格式、工具與來源指引、明確任務邊界。設計通則：預算上限（subagent 數、tool call 數、token）與終止條件要寫進編排層。",
+      "tradeoff": "硬性規模上限可能讓真正複雜的問題探索不足；詳細委派描述增加 lead agent 的 token 與延遲；多 agent 本身就比 chat 貴很多，只適合高價值任務。",
+      "lessons": [
+        "Effort scaling 要明確寫成規則或預算，不能讓 agent 自己決定開多少平行。",
+        "委派品質決定 subagent 是否重工或留下缺口（也是 coordination-conflict 的根源）。"
+      ],
+      "numbers": [
+        "agent 約比 chat 多用 4× token，多 agent 系統約 15×",
+        "token 用量本身解釋 80% 的效能變異",
+        "Opus 4 lead + Sonnet 4 subagents 在內部研究 eval 上比單一 Opus 4 高 90.2%"
+      ],
+      "interviewUse": "被問「multi-agent 要開幾個 subagent、怎麼避免燒錢」時，用它說明 effort scaling 規則與清楚委派的必要。",
+      "sources": [
+        {
+          "title": "Anthropic: How we built our multi-agent research system",
+          "url": "https://www.anthropic.com/engineering/multi-agent-research-system"
+        }
+      ],
+      "topics": [
+        "orchestration",
+        "agent-cost-latency",
+        "agent-comm"
+      ],
+      "byAgents": true
+    },
+    {
+      "id": "anthropic-2025-claude-code-weekly-limits",
+      "problem": "agent-coordination",
+      "company": "Anthropic",
+      "title": "使用者 24/7 背景執行 Claude Code 造成資源壓力，Anthropic 加上每週用量上限",
+      "date": "2025-07",
+      "kind": "incident-report",
+      "symptom": "部分使用者讓 Claude Code 在背景 24/7 連續執行，另有帳號共用與轉售；公告前一個月 Claude Code 發生至少 7 次部分或重大中斷。",
+      "rootCause": "以訂閱制固定價格提供可長時間自主執行的 agent，原本只有 5 小時用量窗口，無法限制單一使用者長期連續佔用運算；agent 不需人類在場就能一直跑，用量分布出現極端長尾。",
+      "whyHard": "Chat 的用量受人類打字速度限制，agent 沒有這個天然節流；少數重度使用者就能吃掉大量容量，影響所有人的可用性。限制太緊又會傷害最熱心的付費使用者。",
+      "fix": "2025-08-28 起加上每週用量上限（保留原有 5 小時限制），Max 方案可依 API 價格購買額外用量。設計通則：agent 平台要有 per-user / per-task 的長週期預算與 rate limit，並區分互動與背景工作的容量。",
+      "tradeoff": "每週上限會讓重度使用者在週中被卡住；以時數表示的額度不精確（同樣時數的 token 成本差很大），使用者難以預測；需要額外的計量與帳單系統。",
+      "lessons": [
+        "自主 agent 移除了人類節流，容量規劃與定價要以 agent 長尾用量為前提。",
+        "多時間尺度的預算（5 小時 + 每週）比單一窗口更能擋住持續性濫用。"
+      ],
+      "numbers": [
+        "2025-08-28 生效，預估影響不到 5% 訂閱者",
+        "公告前一個月至少 7 次部分或重大中斷",
+        "每週額度：Pro Sonnet 4 為 40–80 小時；Max $100 為 Sonnet 4 140–280、Opus 4 15–35 小時；Max $200 為 Sonnet 4 240–480、Opus 4 24–40 小時"
+      ],
+      "interviewUse": "被問「agent 產品如何定價與限流」時，用它說明 agent 沒有人類節流、需要長週期預算。",
+      "sources": [
+        {
+          "title": "TechCrunch: Anthropic unveils new rate limits to curb Claude Code power users",
+          "url": "https://techcrunch.com/2025/07/28/anthropic-unveils-new-rate-limits-to-curb-claude-code-power-users/"
+        }
+      ],
+      "topics": [
+        "agent-cost-latency",
+        "long-running-async"
+      ],
+      "byAgents": true
+    },
+    {
+      "id": "microsoft-2025-magentic-marketplace",
+      "problem": "agent-coordination",
+      "company": "Microsoft Research",
+      "title": "Magentic Marketplace（模擬環境）：agent 對 agent 交易時接受第一個報價、選項越多決策越差、易被操弄",
+      "date": "2025-11",
+      "kind": "experiment",
+      "symptom": "在 100 個顧客 agent 與 300 個商家 agent 的模擬市場中，各模型都強烈偏好第一個收到的提案，不等其他提案也不比較；把搜尋結果從 3 個擴大到 100 個，顧客福利反而下降；部分模型很容易被 prompt injection 或權威、社會認同等心理操弄導向特定商家。",
+      "rootCause": "Agent 缺少系統化比較與停止條件的策略，面對大量選項時 context 負擔增加、決策品質下降；對手 agent 送來的訊息被當成可信輸入，沒有隔離不可信內容。",
+      "whyHard": "直覺上給 agent 更多選項應該更好，結果相反；agent 之間的訊息看似是正常協商，其實是 untrusted content，跨組織的 agent 協作天然帶有 injection 風險。",
+      "fix": "研究結論：高風險交易仍需人類監督。設計通則：在編排層強制「收集 N 個提案後再決策」與結構化比較、限制候選集大小、把對方 agent 的訊息當不可信輸入處理。",
+      "tradeoff": "強制等待多個提案會增加延遲與 token；縮小候選集可能錯過最佳選項；人類監督降低自動化價值。",
+      "lessons": [
+        "Agent 間通訊要當成不可信輸入，協定與編排層要提供比較與終止規則。",
+        "更多 context / 選項不一定更好，要設計篩選步驟。"
+      ],
+      "numbers": [
+        "100 顧客 agent、300 商家 agent",
+        "接受第一提案比例：Claude Sonnet 4.5 93.3%、Gemini 2.5 Flash 86.7%、GPT-4o 100%",
+        "選項從 3 增到 100：Claude Sonnet 4 福利 1,800 → 600，GPT-5 2,000 → 1,400，Gemini-2.5-Flash 1,700 → 1,350"
+      ],
+      "interviewUse": "被問「agent-to-agent 協作的風險」時，用它說明 first-proposal bias、選項過載與跨 agent injection。",
+      "sources": [
+        {
+          "title": "Microsoft Research: Magentic Marketplace",
+          "url": "https://www.microsoft.com/en-us/research/blog/magentic-marketplace-an-open-source-simulation-environment-for-studying-agentic-markets/"
+        }
+      ],
+      "topics": [
+        "agent-comm",
+        "orchestration",
+        "agent-safety"
+      ],
+      "byAgents": true
+    }
+  ],
+  "quiz": [
+    {
+      "q": "你的 multi-agent 研究系統成本暴增，trace 顯示簡單問題也開了幾十個 subagent。你會怎麼改？代價？",
+      "a": "在編排層加入 effort scaling 規則與預算（依問題類型限定 subagent 數與 tool call 數），每次委派要有目標、輸出格式、工具指引、任務邊界與停止條件。代價是複雜問題可能探索不足，詳細委派增加 lead 的 token 與延遲。",
+      "kind": "情境",
+      "topic": "agent-coordination"
+    },
+    {
+      "q": "為什麼 agent 產品比 chat 產品更需要長週期的用量上限？",
+      "a": "Chat 受人類打字速度天然節流；agent 可在背景 24/7 自主執行，少數使用者就能佔用大量容量（Claude Code 公告前一個月至少 7 次中斷）。需要 per-user 長週期預算（例如每週）並區分互動與背景容量。代價是重度使用者體驗變差、計量系統變複雜。",
+      "kind": "取捨",
+      "topic": "agent-coordination"
+    },
+    {
+      "q": "你要讓公司的採購 agent 與供應商的銷售 agent 自動議價。依 Magentic Marketplace 的發現，你會加哪些機制？",
+      "a": "把對方訊息視為不可信輸入（防 injection 與操弄），編排層強制收集多個報價後結構化比較、限制候選集大小，高金額交易需要人工核准。代價是延遲與 token 增加、自動化程度降低。",
+      "kind": "情境",
+      "topic": "agent-coordination"
+    }
+  ]
+}

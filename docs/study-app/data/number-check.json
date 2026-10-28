@@ -1,5 +1,161 @@
 [
  {
+  "file": "inc-agent-coordination.json",
+  "id": "anthropic-2025-research-subagent-overspawn",
+  "figure": "agent 約比 chat 多用 4× token，多 agent 系統約 15×",
+  "status": "verified"
+ },
+ {
+  "file": "inc-agent-coordination.json",
+  "id": "anthropic-2025-research-subagent-overspawn",
+  "figure": "token 用量本身解釋 80% 的效能變異",
+  "status": "verified"
+ },
+ {
+  "file": "inc-agent-coordination.json",
+  "id": "anthropic-2025-research-subagent-overspawn",
+  "figure": "Opus 4 lead + Sonnet 4 subagents 在內部研究 eval 上比單一 Opus 4 高 90.2%",
+  "status": "verified"
+ },
+ {
+  "file": "inc-agent-coordination.json",
+  "id": "anthropic-2025-claude-code-weekly-limits",
+  "figure": "2025-08-28 生效，預估影響不到 5% 訂閱者",
+  "status": "not_found"
+ },
+ {
+  "file": "inc-agent-coordination.json",
+  "id": "anthropic-2025-claude-code-weekly-limits",
+  "figure": "公告前一個月至少 7 次部分或重大中斷",
+  "status": "verified"
+ },
+ {
+  "file": "inc-agent-coordination.json",
+  "id": "anthropic-2025-claude-code-weekly-limits",
+  "figure": "每週額度：Pro Sonnet 4 為 40–80 小時；Max $100 為 Sonnet 4 140–280、Opus 4 15–35 小時；Max $200 為 Sonnet 4 240–480、Opus 4 24–40 小時",
+  "status": "verified"
+ },
+ {
+  "file": "inc-agent-coordination.json",
+  "id": "microsoft-2025-magentic-marketplace",
+  "figure": "100 顧客 agent、300 商家 agent",
+  "status": "verified"
+ },
+ {
+  "file": "inc-agent-coordination.json",
+  "id": "microsoft-2025-magentic-marketplace",
+  "figure": "接受第一提案比例：Claude Sonnet 4.5 93.3%、Gemini 2.5 Flash 86.7%、GPT-4o 100%",
+  "status": "not_found"
+ },
+ {
+  "file": "inc-agent-coordination.json",
+  "id": "microsoft-2025-magentic-marketplace",
+  "figure": "選項從 3 增到 100：Claude Sonnet 4 福利 1,800 → 600，GPT-5 2,000 → 1,400，Gemini-2.5-Flash 1,700 → 1,350",
+  "status": "verified"
+ },
+ {
+  "file": "inc-agent-destructive.json",
+  "id": "replit-2025-prod-db-deletion",
+  "figure": "AI Incident Database：事件日期 2025-07-18，捏造 4,000 筆以上假使用者",
+  "status": "verified"
+ },
+ {
+  "file": "inc-agent-destructive.json",
+  "id": "replit-2025-prod-db-deletion",
+  "figure": "Fortune：影響 1,200 多位高階主管與 1,190 多家公司的資料",
+  "status": "verified"
+ },
+ {
+  "file": "inc-agent-destructive.json",
+  "id": "klarna-2025-ai-customer-service-reversal",
+  "figure": "Klarna 新聞稿：首月 2.3 million 次對話、相當於 700 名全職客服，解決時間從 11 分鐘降到不到 2 分鐘，重複詢問下降 25%，預估 2024 年增加 4,000 萬美元利潤",
+  "status": "not_found"
+ },
+ {
+  "file": "inc-agent-destructive.json",
+  "id": "klarna-2025-ai-customer-service-reversal",
+  "figure": "Fortune：一年不招聘、員工減少 1,000 人以上；彈性客服起薪 400 瑞典克朗（41.17 美元）",
+  "status": "not_found"
+ },
+ {
+  "file": "inc-agent-hallucination.json",
+  "id": "air-canada-2024-chatbot-bereavement",
+  "figure": "賠償與費用共 $812.02",
+  "status": "verified"
+ },
+ {
+  "file": "inc-agent-hallucination.json",
+  "id": "air-canada-2024-chatbot-bereavement",
+  "figure": "事件發生 2022-11-11，判決於 2024-02 公布",
+  "status": "verified"
+ },
+ {
+  "file": "inc-agent-hallucination.json",
+  "id": "chevrolet-watsonville-2023-1-dollar-tahoe",
+  "figure": "2024 Chevy Tahoe 原價 $58,195，bot 同意 $1",
+  "status": "unreadable"
+ },
+ {
+  "file": "inc-agent-hallucination.json",
+  "id": "anthropic-2025-project-vend",
+  "figure": "約一個月，2025-03-31 起",
+  "status": "verified"
+ },
+ {
+  "file": "inc-agent-injection.json",
+  "id": "invariant-2025-github-mcp-exfil",
+  "figure": "實驗使用 Claude 4 Opus + Claude Desktop；研究者指出不限於特定 agent 或 MCP client",
+  "status": "verified"
+ },
+ {
+  "file": "inc-agent-injection.json",
+  "id": "aim-2025-echoleak-m365-copilot",
+  "figure": "CVE-2025-32711；Aim Labs 於 2025 年 1 月回報",
+  "status": "verified"
+ },
+ {
+  "file": "inc-agent-injection.json",
+  "id": "embracethered-2023-bard-doc-exfil",
+  "figure": "2023-09-19 回報 Google VRP，2023-10-19 確認修補",
+  "status": "not_found"
+ },
+ {
+  "file": "inc-agent-injection.json",
+  "id": "aws-2025-amazon-q-extension-compromise",
+  "figure": "受影響版本 1.84.0，修正版 1.85.0；CVE-2025-8217；公告 2025-07-23、更新 2025-07-25",
+  "status": "verified"
+ },
+ {
+  "file": "inc-agent-injection.json",
+  "id": "embracethered-2024-chatgpt-spaiware-memory",
+  "figure": "2023-04 首次回報外洩向量；2023-12 url_safe 上線（僅 web）；2024-05~06 示範記憶注入；2024-09 macOS 1.2024.247 修補",
+  "status": "not_found"
+ },
+ {
+  "file": "inc-agent-regression.json",
+  "id": "anthropic-2026-claude-code-quality-postmortem",
+  "figure": "Effort 變更 2026-03-04 上線、04-07 還原",
+  "status": "not_found"
+ },
+ {
+  "file": "inc-agent-regression.json",
+  "id": "anthropic-2026-claude-code-quality-postmortem",
+  "figure": "Caching bug 2026-03-26 上線、04-10 修復",
+  "status": "not_found"
+ },
+ {
+  "file": "inc-agent-regression.json",
+  "id": "anthropic-2026-claude-code-quality-postmortem",
+  "figure": "Verbosity prompt 2026-04-16 上線、04-20 還原；Opus 4.6 與 4.7 皆下降 3%",
+  "status": "not_found"
+ },
+ {
+  "file": "inc-agent-regression.json",
+  "id": "dpd-2024-chatbot-update-swearing",
+  "figure": "事件日 2024-01-18；貼文達 1.3 million 次瀏覽、20,000 以上按讚（TIME 報導時）",
+  "status": "unreadable"
+ },
+ {
   "file": "inc-cache-hotspot.json",
   "id": "meta-2013-memcache-lease-gutter",
   "figure": "lease token 預設每個 key 10 秒發一次",
@@ -315,7 +471,7 @@
   "file": "inc-capacity-peaks.json",
   "id": "swiggy-2022-nye-war-room",
   "figure": "23 個團隊、7 個 dashboard、46 個指標",
-  "status": "verified"
+  "status": "not_found"
  },
  {
   "file": "inc-capacity-peaks.json",
@@ -1755,25 +1911,25 @@
   "file": "inc-resource-exhaustion.json",
   "id": "pagerduty-2025-08-kafka-producer-per-request",
   "figure": "尖峰每小時約 4.2 million 個額外 producer，為正常新 producer 數的 84 倍",
-  "status": "verified"
+  "status": "unreadable"
  },
  {
   "file": "inc-resource-exhaustion.json",
   "id": "pagerduty-2025-08-kafka-producer-per-request",
   "figure": "18.87% create event 請求回 5xx",
-  "status": "verified"
+  "status": "unreadable"
  },
  {
   "file": "inc-resource-exhaustion.json",
   "id": "pagerduty-2025-08-kafka-producer-per-request",
   "figure": "約 95% 事件被拒絕（尖峰）",
-  "status": "verified"
+  "status": "unreadable"
  },
  {
   "file": "inc-resource-exhaustion.json",
   "id": "pagerduty-2025-08-kafka-producer-per-request",
   "figure": "第一次 03:53–10:10 UTC，第二次 16:38–20:24 UTC",
-  "status": "verified"
+  "status": "unreadable"
  },
  {
   "file": "inc-resource-exhaustion.json",
@@ -2907,7 +3063,7 @@
   "file": "mech-collab.json",
   "id": "tombstone-growth-and-gc",
   "figure": "Yjs B4 benchmark：182k inserts、77k deleted characters，snapshot 的 delete set 僅 4.5Kb",
-  "status": "not_found"
+  "status": "verified"
  },
  {
   "file": "mech-collab.json",
@@ -3849,7 +4005,7 @@
   "file": "mech-maps.json",
   "id": "batched-dispatch",
   "figure": "Uber 官方頁面稱此技術每天『節省 10 年的人們時間』",
-  "status": "verified"
+  "status": "unreadable"
  },
  {
   "file": "mech-maps.json",
@@ -3921,13 +4077,13 @@
   "file": "mech-matching-engine.json",
   "id": "market-data-incremental-snapshot",
   "figure": "ITCH FPGA feed 要求 10 Gb 或 40 Gb 連線到 Carteret 資料中心（ITCH spec）",
-  "status": "verified"
+  "status": "unreadable"
  },
  {
   "file": "mech-matching-engine.json",
   "id": "market-data-incremental-snapshot",
   "figure": "MoldUDP64 單一訊息理論上可到 64KB（MoldUDP64 spec）",
-  "status": "verified"
+  "status": "unreadable"
  },
  {
   "file": "mech-matching-engine.json",
@@ -4809,6 +4965,1182 @@
   "file": "mech-web-search.json",
   "id": "trustrank-link-spam",
   "figure": "範例演算法使用 decay αB = 0.85",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "anthropic-multi-agent-research",
+  "figure": "Opus 4 lead + Sonnet 4 subagents 比 single-agent Opus 4 內部評測高 90.2%",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "anthropic-multi-agent-research",
+  "figure": "token 用量單獨解釋 80% 的效能差異；三個因素合計解釋 95%",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "anthropic-multi-agent-research",
+  "figure": "agent 約用 chat 的 4× token，multi-agent 約 15×",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "anthropic-multi-agent-research",
+  "figure": "複雜查詢研究時間最多縮短 90%（平行派 3–5 個 subagent、每個平行呼叫 3+ 工具）",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "anthropic-multi-agent-research",
+  "figure": "改寫 tool description 後後續 agent 任務完成時間減少 40%",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "anthropic-multi-agent-research",
+  "figure": "scaling 規則：簡單查詢 1 個 agent 3–10 次 tool call；比較題 2–4 個 subagent 各 10–15 次",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "anthropic-multi-agent-research",
+  "figure": "context 超過 200,000 tokens 時把計畫存到外部 memory",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "anthropic-multi-agent-research",
+  "figure": "早期 eval 只用約 20 個真實查詢",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "anthropic-sandboxing",
+  "figure": "內部使用中 sandboxing 讓 permission prompt 減少 84%",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "anthropic-auto-mode",
+  "figure": "使用者接受 93% 的 permission prompt",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "anthropic-auto-mode",
+  "figure": "評測集：10,000 筆真實內部流量、52 筆真實 overeager 行為、1,000 筆合成資料外洩",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "anthropic-auto-mode",
+  "figure": "Stage 1 單獨：FPR 8.5%、overeager FNR 6.6%、合成外洩 FNR 1.8%",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "anthropic-auto-mode",
+  "figure": "完整 pipeline：FPR 0.4%、overeager FNR 17%、合成外洩 FNR 5.7%",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "anthropic-auto-mode",
+  "figure": "連續 3 次或累計 20 次被擋即升級給人（headless 則終止）",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "anthropic-auto-mode",
+  "figure": "預設 20+ 條 block rules",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "anthropic-managed-agents",
+  "figure": "改為按需 provision container 後，p50 TTFT 約降 60%、p95 降超過 90%",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "anthropic-c-compiler",
+  "figure": "16 個 agent、近 2,000 個 Claude Code session、兩週",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "anthropic-c-compiler",
+  "figure": "總成本略低於 $20,000",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "anthropic-c-compiler",
+  "figure": "2 billion input tokens、140 million output tokens",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "anthropic-c-compiler",
+  "figure": "產出 100,000 行的 compiler，可編 Linux 6.9（x86、ARM、RISC-V）",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "anthropic-c-compiler",
+  "figure": "多數 compiler test suite 99% 通過",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "anthropic-c-compiler",
+  "figure": "16-bit x86 輸出超過 60kb，超出 32k 上限（未解）",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "anthropic-harness-long-running-apps",
+  "figure": "復古遊戲 maker：solo 20 分鐘 $9 vs 完整 harness 6 小時 $200（貴 20 倍以上）",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "anthropic-harness-long-running-apps",
+  "figure": "DAW（V2 harness）：總計 3 小時 50 分、$124.70；第一輪 build 2 小時 7 分 $71.08",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "anthropic-harness-long-running-apps",
+  "figure": "前端設計每次生成 5–15 輪迭代，完整跑最長約 4 小時",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "anthropic-harness-long-running-apps",
+  "figure": "Sprint 3 的 contract 有 27 條驗收條件",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "anthropic-harness-long-running-apps",
+  "figure": "V2 在 Opus 4.6 上連續跑超過兩小時不需 sprint 拆分",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "cursor-scaling-agents",
+  "figure": "瀏覽器專案近一週、超過 1M 行、1,000 個檔案",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "cursor-scaling-agents",
+  "figure": "React 遷移超過三週，+266K / -193K",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "cursor-scaling-agents",
+  "figure": "影片渲染 25 倍快",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "cursor-scaling-agents",
+  "figure": "其他：Java LSP 7.4K commits 550K LoC；Windows 7 emulator 14.6K commits 1.2M LoC；Excel 12K commits 1.6M LoC",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "cursor-scaling-agents",
+  "figure": "用 lock 時 20 個 agent 只剩 2–3 個的有效吞吐",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "cursor-token-efficiency",
+  "figure": "整體使用者 token 成本降 7%，品質不降",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "cursor-token-efficiency",
+  "figure": "system prompt 約砍掉 66%",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "cursor-token-efficiency",
+  "figure": "呼叫過 MCP 工具的 session 總 token 降 46.9%",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "cursor-token-efficiency",
+  "figure": "工具改動態載入後，靜態 tool description token 降 60%；這些工具在不到 20% 的對話中會用到",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "cursor-token-efficiency",
+  "figure": "cold cache miss 降 20%",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "cursor-token-efficiency",
+  "figure": "讀檔改成每 10 行標一次行號，cache-read token 降 1.6%；一個行號約 3–5 tokens",
+  "status": "not_found"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "cursor-semantic-search",
+  "figure": "回答問題準確度平均高 12.5%（依模型 6.5%–23.5%）",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "cursor-semantic-search",
+  "figure": "線上 A/B：code retention +0.3%；1,000+ 檔案的大 codebase +2.6%",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "cursor-semantic-search",
+  "figure": "沒有 semantic search 時，不滿意的追問增加 2.2%",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "github-copilot-coding-agent",
+  "figure": "GitHub Marketplace 有 25,000 個 actions",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "github-copilot-coding-agent",
+  "figure": "runner 每天執行 40 million jobs",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "github-copilot-coding-agent",
+  "figure": "計費：每次 model request 算一個 premium request（2025-06-04 起）",
+  "status": "not_found"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "langchain-replit-agent",
+  "figure": "30+ 個工具",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "langchain-replit-agent",
+  "figure": "alpha 測試約 15 位 AI-first 開發者與 influencer",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "vercel-removed-80-percent-tools",
+  "figure": "工具從 15 個減到 2 個（bash、SQL 執行），砍掉 80%",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "vercel-removed-80-percent-tools",
+  "figure": "執行時間 274.8s → 77.4s（3.5× 快）",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "vercel-removed-80-percent-tools",
+  "figure": "成功率 4/5（80%）→ 5/5（100%）",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "vercel-removed-80-percent-tools",
+  "figure": "token ~102k → ~61k（少 37%）；步驟 ~12 → ~7（少 42%）",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "vercel-removed-80-percent-tools",
+  "figure": "最差案例：舊架構 724 秒、100 步、145,463 tokens 後失敗；新架構 141 秒、19 步、67,483 tokens 成功",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "manus-context-engineering",
+  "figure": "input:output token 比約 100:1",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "manus-context-engineering",
+  "figure": "平均每個任務約 50 次 tool call",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "manus-context-engineering",
+  "figure": "Claude Sonnet：cached input $0.30/MTok vs uncached $3/MTok（10 倍差）",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "spotify-honk-part1",
+  "figure": "1,500+ 個 AI 產生的 PR 已合併進 production",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "spotify-honk-part1",
+  "figure": "2024 年中，Fleet Management 已自動化約一半的 PR",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "spotify-honk-part1",
+  "figure": "遷移時間比手寫省 60–90%",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "spotify-honk-part1",
+  "figure": "Maven dependency updater 腳本超過 20,000 行",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "spotify-honk-part1",
+  "figure": "Part 2：已用 Claude Code 做約 50 個遷移；自製 loop 限 10 turns / session、最多重試 3 次 session",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "stripe-minions",
+  "figure": "每週超過 1,000 個 PR 完全由 minion 產生並合併",
+  "status": "not_found"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "stripe-minions",
+  "figure": "數億行程式碼、少數幾個大 repo；超過 $1 trillion / 年 支付量",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "stripe-minions",
+  "figure": "devbox 預熱，10 秒內啟動",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "stripe-minions",
+  "figure": "Toolshed 中央 MCP server 有 400+ 個工具",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "stripe-minions",
+  "figure": "本地 lint 少於 5 秒",
+  "status": "not_found"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "stripe-payment-method-factory",
+  "figure": "支援超過 125 種支付方式",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "stripe-payment-method-factory",
+  "figure": "建立超過 100 個可重用 prompt",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "stripe-payment-method-factory",
+  "figure": "同一前端 API 任務：原生 Claude Code 約 20 天工程量 vs 用可重用 prompt 4 天",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "stripe-payment-method-factory",
+  "figure": "scaffolding 一步超過 5,000 行、改動超過 100 個檔案、需依序跑 15 個指令；從最多一週縮到一天",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "stripe-payment-method-factory",
+  "figure": "factory 已做 3 個新整合、遷移 10 個既有整合",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "stripe-payment-method-factory",
+  "figure": "整合時間從最長 6 個月縮短到 2–6 週",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "shopify-sidekick",
+  "figure": "工具數經驗法則：0–20 個邊界清楚；20–50 個邊界開始模糊、工具組合出現意外結果；50 個以上同一件事有多種做法，很難推理",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "shopify-sidekick",
+  "figure": "LLM judge 與人類的 Cohen's Kappa 從 0.02 調到 0.61，人類彼此一致性基準 0.69（公司自述）",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "shopify-sidekick",
+  "figure": "judge 與人類的平均相關性從 0.66 提升到 0.75（公司自述）",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "shopify-sidekick",
+  "figure": "處理 reward hacking 後，syntax 驗證正確率從約 93% 提升到約 99%（公司自述）",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "uber-enhanced-agentic-rag",
+  "figure": "可接受答案比例相對提升 27%（公司自述）",
+  "status": "unreadable"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "uber-enhanced-agentic-rag",
+  "figure": "錯誤建議相對減少 60%（公司自述）",
+  "status": "unreadable"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "uber-enhanced-agentic-rag",
+  "figure": "golden test set 100+ 個問題；原本的資料來源是 40+ 份資安與隱私政策文件",
+  "status": "unreadable"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "uber-enhanced-agentic-rag",
+  "figure": "LLM-as-Judge 以 0–5 分評分；實驗評估時間從數週降到數分鐘（公司自述）",
+  "status": "unreadable"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "uber-querygpt",
+  "figure": "資料平台每月約 120 萬次 interactive query，其中 Operations 約佔 36%",
+  "status": "unreadable"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "uber-querygpt",
+  "figure": "人工寫一個 query 約 10 分鐘，QueryGPT 約 3 分鐘（公司自述）",
+  "status": "unreadable"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "uber-querygpt",
+  "figure": "限量釋出階段 300 DAU，約 78% 使用者表示比從頭寫省時間（公司自述）",
+  "status": "unreadable"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "uber-querygpt",
+  "figure": "單張大表 200+ 欄位、schema 約 40–60K tokens；GPT-4 Turbo 上限 128K tokens（早期模型 32K）",
+  "status": "unreadable"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "uber-querygpt",
+  "figure": "Hackdayz 原型：7 張 tier 1 表、20 個 SQL 範例；每次檢索 3 張表、7 個 SQL 範例",
+  "status": "unreadable"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "uber-querygpt",
+  "figure": "評估的 run-to-run 雜訊約 5%",
+  "status": "unreadable"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "uber-redlining-agent",
+  "figure": "平均合約審閱時間減少 20% 以上（公司自述）",
+  "status": "unreadable"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "uber-redlining-agent",
+  "figure": "AI 決策準確率 91%（公司自述）",
+  "status": "unreadable"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "uber-redlining-agent",
+  "figure": "feedback 檢索先用相似度縮到約 20 個候選，再由 LLM 過濾",
+  "status": "unreadable"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "uber-redlining-agent",
+  "figure": "feedback 時間衰減 half-life 365 天",
+  "status": "unreadable"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "klarna-ai-assistant",
+  "figure": "上線第一個月 230 萬次對話，佔客服對話的三分之二（公司自述）",
+  "status": "not_found"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "klarna-ai-assistant",
+  "figure": "工作量相當於 700 名全職客服（公司自述）",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "klarna-ai-assistant",
+  "figure": "重複詢問減少 25%（公司自述）",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "klarna-ai-assistant",
+  "figure": "解決時間從 11 分鐘降到 2 分鐘以內（公司自述）",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "klarna-ai-assistant",
+  "figure": "23 個市場、24/7、35 種以上語言",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "klarna-ai-assistant",
+  "figure": "預估 2024 年帶來 4,000 萬美元獲利改善（公司自述）",
+  "status": "not_found"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "langchain-perplexity-agent",
+  "figure": "Pro Search 的查詢量在過去幾個月成長超過 50%（公司自述）",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "elastic-context-engine",
+  "figure": "同一問題、同一模型比較：tool call 33 → 9（公司自述）",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "elastic-context-engine",
+  "figure": "input tokens 2,279,253 → 653,511，減少 71%（公司自述）",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "elastic-context-engine",
+  "figure": "延遲 213 秒 → 64 秒（公司自述）",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "elastic-context-engine",
+  "figure": "預算成本約 636K input tokens（用 Claude Haiku）",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "elastic-context-engine",
+  "figure": "測試資料產生約 80 個 Knowledge Indicators；來源為 4 個 Elasticsearch index 與約 50 份模擬合約",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "dropbox-dash-agents",
+  "figure": "目標：超過 95% 的查詢在 1–2 秒內完成；實際在 2 秒內為超過 95% 的查詢產生高品質結果（公司自述）",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "salesforce-agentforce-memory",
+  "figure": "Agentforce 每天執行 1,100 萬次呼叫",
+  "status": "not_found"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "salesforce-multi-agent-teams",
+  "figure": "建立 agent team 的時間從 2–4 小時降到約 15–30 分鐘（公司自述）",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "salesforce-multi-agent-teams",
+  "figure": "1 個 orchestrator 加 7 個 specialist，各自有獨立的模型、預算、回合上限",
+  "status": "not_found"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "salesforce-multi-agent-teams",
+  "figure": "orchestrator 總預算 500 回合",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "salesforce-multi-agent-teams",
+  "figure": "self-healing 上限：最多 2 次修復、花費上限 3 美元",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "salesforce-multi-agent-teams",
+  "figure": "Marketing Cloud 約 200 名工程師採用（公司自述）",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "intercom-operator",
+  "figure": "50 個以上工具、10 個 skill",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "intercom-fin-scale",
+  "figure": "Fin 每週完整解決超過 200 萬次對話（公司自述）",
+  "status": "not_found"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "intercom-fin-scale",
+  "figure": "向 LLM 供應商保留正常 Fin 流量 2–3 倍的 buffer 容量",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "intercom-fin-scale",
+  "figure": "每日尖峰同步請求超過 15 萬 RPS，非同步超過 7 萬 RPS",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "intercom-fin-scale",
+  "figure": "最忙的日子超過 500 萬次對話、新增超過 1 億則留言",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "intercom-fin-scale",
+  "figure": "單一客戶可衝到每秒數百則留言、約每秒 100 個新對話",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "intercom-fin-scale",
+  "figure": "資料庫 128 shards、約 200 萬 RPS，前面有超過 1,000 萬次/秒的 cache read",
+  "status": "not_found"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "intercom-fin-scale",
+  "figure": "Elasticsearch 超過 650TB、超過 1.7 兆份文件、尖峰超過 4 萬 RPS",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "intercom-fin-scale",
+  "figure": "每個工作天約 250 次部署，merge 到上線平均不到 10 分鐘（2025 年初約 180 次、12 分鐘）",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "snyk-assist",
+  "figure": "60,000 次以上查詢、500 個以上客戶帳號",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "snyk-assist",
+  "figure": "85% 以上的 session 不需要開 support ticket（公司自述）",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "snyk-assist",
+  "figure": "250 個以上的案例被 agent 自動偵測並升級給對應團隊（公司自述）",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "snyk-assist",
+  "figure": "約 1 年只在內部使用；2026 年 4 月上線到支援入口；2026 年 9 月 1 日進入核心產品",
+  "status": "not_found"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "honeycomb-hard-stuff-llm",
+  "figure": "回應時間 2–15 秒以上，依模型、輸入與 schema 大小而定",
+  "status": "verified"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "honeycomb-hard-stuff-llm",
+  "figure": "部分客戶 schema 超過 5,000 個欄位；只納入過去 7 天有資料的欄位",
+  "status": "not_found"
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "honeycomb-hard-stuff-llm",
+  "figure": "串接例子：單次 90% 正確，串 5 次只剩約 59%（0.9^5）",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "anthropic-writing-tools",
+  "figure": "Claude Code 預設把工具回應上限設為 25,000 tokens。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "anthropic-writing-tools",
+  "figure": "Slack thread 範例：detailed 回應 206 tokens，concise 回應 72 tokens。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "anthropic-code-execution-mcp",
+  "figure": "Google Drive → Salesforce 範例：從 150,000 tokens 降到 2,000 tokens，節省 98.7%。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "anthropic-long-running-harness",
+  "figure": "claude.ai clone 範例的 feature list 超過 200 項。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "anthropic-think-tool",
+  "figure": "τ-bench airline：think tool + 優化 prompt pass^1 0.584，baseline 0.332。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "anthropic-think-tool",
+  "figure": "τ-bench retail：只加 think tool 0.812，baseline 0.783。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "anthropic-think-tool",
+  "figure": "SWE-bench：think tool 單獨效果平均提升 1.6%（p < .001）。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "anthropic-contain-claude",
+  "figure": "使用者批准約 93% 的 permission prompt（approval fatigue）。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "anthropic-contain-claude",
+  "figure": "導入 sandbox 後 permission prompt 減少 84%。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "anthropic-contain-claude",
+  "figure": "Claude Code auto mode 約能在執行前攔下 83% 的 overeager 行為。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "anthropic-contain-claude",
+  "figure": "Claude Opus 4.7 單次嘗試的 prompt injection 攻擊成功率約 0.1%。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "anthropic-demystifying-evals",
+  "figure": "SWE-bench Verified：一年內 LLM 從 40% 進步到 >80%。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "anthropic-demystifying-evals",
+  "figure": "早期開發 20–50 個簡單任務的 eval 就足夠起步。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "anthropic-demystifying-evals",
+  "figure": "Opus 4.5 在 CORE-Bench 修正 eval bug 後分數從 42% 變成 95%。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "anthropic-infra-noise",
+  "figure": "Terminal-Bench 2.0：資源最多與最少的設定差 6 個百分點（p < 0.01）。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "anthropic-infra-noise",
+  "figure": "Infra 錯誤率：嚴格限制 5.8%，不設上限 0.5%；給 3x headroom 降到 2.1%（p < 0.001）。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "anthropic-infra-noise",
+  "figure": "1x → 3x 規格的成功率提升在雜訊內（p=0.40）；3x → 不設上限約再升 4 個百分點。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "anthropic-infra-noise",
+  "figure": "SWE-bench：5x vs 1x RAM 差 1.54 個百分點。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "anthropic-infra-noise",
+  "figure": "排行榜差距小於 3 個百分點時，在 eval 設定未公開且對齊前應存疑。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "anthropic-prompt-injection-browser",
+  "figure": "加強防護後攻擊成功率：Opus 4.5 1.4%、Sonnet 4.5 1.9%、Haiku 4.5 2.4%、Sonnet 4 2.0%（內部 best-of-N 攻擊者）。",
+  "status": "not_found"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "openai-practical-guide-agents",
+  "figure": "工具數不是唯一問題：有些實作能管理超過 15 個定義清楚的工具，有些在少於 10 個重疊工具時就出錯。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "langchain-context-engineering",
+  "figure": "引述 Anthropic：多 agent research 用的 token 最多可達一般 chat 的 15 倍。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "langchain-context-engineering",
+  "figure": "引述研究：對工具描述做 RAG 讓工具選擇準確率提升約 3 倍。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "langchain-context-engineering",
+  "figure": "Claude Code 在 context 使用超過 95% 時自動 compact。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "azure-agent-orchestration-patterns",
+  "figure": "Group chat orchestration 建議限制在 3 個或更少 agent。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "inngest-spend-money-once",
+  "figure": "範例中付款步驟設定 5 次重試；整個改動約 40 行程式碼。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "chroma-context-rot",
+  "figure": "測試 18 個 LLM（含 GPT-4.1、Claude 4、Gemini 2.5、Qwen3）。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "chroma-context-rot",
+  "figure": "LongMemEval focused 約 300 tokens vs full 約 113k tokens，focused 顯著較佳。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "simonw-lethal-trifecta",
+  "figure": "作者認為宣稱 95% 偵測率的 guardrail 在資安語境是不及格。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-mast-why-mas-fail",
+  "figure": "MAST-Data：1600+ 條標註 trace，涵蓋 7 個 MAS 框架；分類由 150 條 trace 建立，人工標註一致性 kappa = 0.88。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-mast-why-mas-fail",
+  "figure": "類別占比：system design issues 43.9%、inter-agent misalignment 31.95%、task verification 23.5%。",
+  "status": "not_found"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-mast-why-mas-fail",
+  "figure": "單一模式：step repetition 15.7%、reasoning-action mismatch 13.2%、unaware of termination conditions 12.4%、disobey task specification 11.8%。",
+  "status": "not_found"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-mast-why-mas-fail",
+  "figure": "ChatDev 介入：workflow 調整（CEO 有最終決定權）成功率 +9.4%；加入高層目標驗證步驟在 ProgramDev +15.6%。",
+  "status": "not_found"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-mast-why-mas-fail",
+  "figure": "LLM 標註器對人類專家：accuracy 94%、Cohen's kappa 0.77。",
+  "status": "not_found"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-who-and-when",
+  "figure": "資料集涵蓋 127 個 LLM 多 agent 系統的失敗 log。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-who-and-when",
+  "figure": "最佳方法：agent 層級歸因準確率 53.5%、step 層級僅 14.2%。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-metagpt",
+  "figure": "GPT-4 下 HumanEval Pass@1 85.9%、MBPP 87.7%。",
+  "status": "not_found"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-metagpt",
+  "figure": "SoftwareDev：executability 3.75/4（ChatDev 2.25）、執行時間 541s（ChatDev 762s）、token 31,255（ChatDev 19,292）、人工修正 0.83 次（ChatDev 2.5）。",
+  "status": "not_found"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-metagpt",
+  "figure": "Executable feedback 讓 HumanEval 提升 4.2%、MBPP 提升 5.4%。",
+  "status": "not_found"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-chatdev",
+  "figure": "SRDD 資料集 1,200 個軟體需求。",
+  "status": "not_found"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-chatdev",
+  "figure": "ChatDev / GPT-Engineer / MetaGPT：executability 0.8800 / 0.3583 / 0.4145；quality 0.3953 / 0.1419 / 0.1523。",
+  "status": "not_found"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-chatdev",
+  "figure": "人工評估對 GPT-Engineer 勝率 90.16%。",
+  "status": "not_found"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-camel",
+  "figure": "訊息數上限 40 則。",
+  "status": "not_found"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-camel",
+  "figure": "AI Society 人工評估：CAMEL 勝 76.3%、單次 gpt-3.5-turbo 勝 10.4%、平手 13.3%。",
+  "status": "not_found"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-camel",
+  "figure": "GPT-4 評估：AI Society 73.0% vs 23.0%；Code 76.0% vs 24.0%。",
+  "status": "not_found"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-multiagent-debate",
+  "figure": "（3 agents、2 rounds）Arithmetic：single 67.0% / reflection 72.1% / debate 81.8%。",
+  "status": "not_found"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-multiagent-debate",
+  "figure": "GSM8K：77.0% / 75.0% / 85.0%；MMLU：63.9% / 57.7% / 71.1%；Biographies：66.0% / 68.3% / 73.8%。",
+  "status": "not_found"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-more-agents",
+  "figure": "GSM8K：Llama2-13B ensemble size 15 達 59%，超過 Llama2-70B 單次 54%。",
+  "status": "not_found"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-more-agents",
+  "figure": "MATH 上相對提升 Llama2-13B 達 200%，GPT-3.5-Turbo 為 34%。",
+  "status": "not_found"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-swe-agent",
+  "figure": "SWE-bench pass@1 12.5%、HumanEvalFix pass@1 87.7%（論文摘要）。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-swe-agent",
+  "figure": "SWE-bench Lite（GPT-4 Turbo）消融：完整 SWE-agent 18.0%；shell-only 11.0%；拿掉 edit 指令 10.3%；拿掉 linter 15.0%；顯示全檔 12.7%、30 行 14.3%；保留完整歷史 15.0%；搜尋改為逐筆迭代 12.0%。",
+  "status": "not_found"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-agentless",
+  "figure": "SWE-bench Lite 解題率 32.00%（96 題），摘要列出成本 $0.70。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-react",
+  "figure": "ALFWorld 絕對成功率比 imitation / RL 方法高 34%；WebShop 高 10%（few-shot prompting，只用 1–2 個範例）。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-reflexion",
+  "figure": "HumanEval pass@1 91%，當時 GPT-4 為 80%。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-magentic-one",
+  "figure": "GAIA：GPT-4o 版 32.33%，GPT-4o + o1 版 38.00%（與當時 SOTA 統計上相當）。",
+  "status": "not_found"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-magentic-one",
+  "figure": "AssistantBench（EM）：11.0% / 13.3%；WebArena：32.8%。",
+  "status": "not_found"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-magentic-one",
+  "figure": "o1 拒絕 26% 的 GitLab 任務，因此 WebArena 未比較 o1 版本。",
+  "status": "not_found"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-lost-in-the-middle",
+  "figure": "GPT-3.5-Turbo、20 份文件：相關文件在第一位 75.8%、中間位置 53.8–57.3%、最後一位 63.2%；closed-book（不給文件）56.1%。",
+  "status": "not_found"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-lost-in-the-middle",
+  "figure": "超過 20 份文件後，GPT-3.5-Turbo 僅再提升約 1.5%。",
+  "status": "not_found"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-rag-mcp",
+  "figure": "Prompt token 減少超過 50%。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-rag-mcp",
+  "figure": "工具選擇準確率 43.13%，baseline（全部工具放入）13.62%。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-routellm",
+  "figure": "在部分情境下成本降低超過 2 倍，回應品質不受影響。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-frugalgpt",
+  "figure": "可在達到最佳單一模型（如 GPT-4）表現下降低最多 98% 成本，或在同成本下比 GPT-4 準確率高 4%。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-llm-compiler",
+  "figure": "相較 ReAct：延遲最多加速 3.7 倍、成本最多節省 6.7 倍、準確率最多提升約 9%。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-overthinking",
+  "figure": "分析 4,018 條 trajectory。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-overthinking",
+  "figure": "選擇 overthinking score 較低的解，表現提升近 30%，計算成本降低 43%。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-tau-bench",
+  "figure": "gpt-4o 等 SOTA function-calling agent 成功率 <50%。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-tau-bench",
+  "figure": "retail 領域 pass^8 <25%。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-agentdojo",
+  "figure": "97 個任務、629 個安全測試案例。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-agentdojo",
+  "figure": "GPT-4o、「important message」攻擊：無防禦 benign utility 69.0%、targeted ASR 57.69%。",
+  "status": "not_found"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-agentdojo",
+  "figure": "Tool filter：utility 73.13%、ASR 6.84%；PI detector：utility 降到 41.49%、ASR 7.95%；Data delimiting：ASR 41.65%；Repeat prompt：ASR 27.82%。",
+  "status": "not_found"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-camel-defense",
+  "figure": "AgentDojo 上以可證明的安全性解出 77% 任務，無防禦時為 84%。",
+  "status": "verified"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-llm-as-judge",
+  "figure": "GPT-4 judge 與受控及群眾人類偏好一致率超過 80%，與人類之間的一致率相當。",
   "status": "verified"
  }
 ]

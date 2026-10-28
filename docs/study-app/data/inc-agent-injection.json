@@ -1,0 +1,233 @@
+{
+  "problem": "agent-injection",
+  "problemName": "Agent：Prompt injection 與供應鏈",
+  "incidents": [
+    {
+      "id": "invariant-2025-github-mcp-exfil",
+      "problem": "agent-injection",
+      "company": "GitHub MCP（Invariant Labs 揭露）",
+      "title": "公開 repo 的惡意 issue 劫持 agent，把私有 repo 資料寫進公開 PR",
+      "date": "2025-05",
+      "kind": "incident-report",
+      "symptom": "使用者只是請 agent 看看自己公開 repo 的 issue；agent 讀到攻擊者開的 issue 後，自行把私有 repo 的資訊（repo 名稱、搬家計畫、薪資）拉進 context，並自動開一個公開 PR 把資料寫出去。",
+      "rootCause": "Agent 的 GitHub token 同時能讀公開與私有 repo，又會讀取攻擊者可控的內容（公開 issue），還能對外寫出（開公開 PR）：private data + untrusted content + external communication 三者同時成立。",
+      "whyHard": "GitHub MCP server 本身沒有 bug，無法在 server 端修補；模型再怎麼 alignment 也擋不住所有 injection；使用者常設定「always allow」讓工具呼叫不需確認，惡意動作就無人看見。",
+      "fix": "Invariant 建議：細粒度權限（agent 只拿到當前任務所需的 repo）、一個 session 只能碰一個 repo 的 policy（防跨 repo 洩漏）、用 runtime guardrail / MCP proxy 持續監控工具呼叫。",
+      "tradeoff": "一 session 一 repo 會讓跨 repo 的合法任務（例如同時改 library 與使用它的服務）變麻煩；細粒度 token 增加設定成本；runtime 監控有誤判與延遲，且本質上是機率性防禦。",
+      "lessons": [
+        "Lethal trifecta：私有資料、不可信內容、對外通訊三者不要同時給同一個 agent session。",
+        "可信工具 + 不可信資料 = 不可信行為；安全邊界要在 agent 系統層而不是單一工具。"
+      ],
+      "numbers": [
+        "實驗使用 Claude 4 Opus + Claude Desktop；研究者指出不限於特定 agent 或 MCP client"
+      ],
+      "interviewUse": "被問「MCP 工具都是官方的，為什麼還有風險」時，用它說明 lethal trifecta 與 per-session 權限收斂。",
+      "sources": [
+        {
+          "title": "Invariant Labs: GitHub MCP Exploited",
+          "url": "https://invariantlabs.ai/blog/mcp-github-vulnerability"
+        },
+        {
+          "title": "Simon Willison: The lethal trifecta for AI agents",
+          "url": "https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/"
+        }
+      ],
+      "topics": [
+        "agent-safety",
+        "agent-permissions",
+        "tool-interface"
+      ],
+      "byAgents": true
+    },
+    {
+      "id": "generalanalysis-2025-supabase-mcp-leak",
+      "problem": "agent-injection",
+      "company": "Supabase MCP + Cursor（General Analysis 揭露）",
+      "title": "Support ticket 裡的指令讓 agent 用 service_role 繞過 RLS，把 token 表寫回 ticket",
+      "date": "2025-07",
+      "kind": "incident-report",
+      "symptom": "攻擊者以一般客戶身分送出 support ticket，內含給 AI 助理的指令；開發者在 Cursor 用 Supabase MCP 查看 ticket 時，助理執行了 SQL，讀出 integration_tokens 表（OAuth token、session credential），並把結果寫回 ticket 討論串，攻擊者直接看得到。",
+      "rootCause": "應用層的角色（anon、support）都受 RLS 限制，但開發者 MCP 連線用的是會繞過 RLS 的 service_role；agent 把資料欄位裡的文字當成指令，又擁有寫回攻擊者可見位置的能力。",
+      "whyHard": "應用本身的權限設計是對的，漏洞出在「開發工具這條旁路」權限最大；資料與指令在 LLM context 裡沒有區隔，注入內容看起來就是一般 ticket 文字，靠過濾抓不完。",
+      "fix": "Supabase MCP 的 read_only 模式（以唯讀 Postgres user 執行）、用 project_ref 與 features 限制可碰的專案與工具群組、互動式工作時人工審查每個 tool call，再加 prompt injection 過濾（作者承認不完全可靠）。",
+      "tradeoff": "唯讀模式讓 agent 不能幫忙做 migration 或修資料；人工審查每個 tool call 降低效率，久了容易變成無腦按 approve；過濾器有漏網之魚。",
+      "lessons": [
+        "Agent 的有效權限 = 它用的憑證權限，而不是應用層使用者的權限；開發工具常是最高權限旁路。",
+        "能寫回攻擊者可見位置（ticket、PR、留言）的工具就是外洩通道。"
+      ],
+      "numbers": [],
+      "interviewUse": "被問「DB 有 RLS 是否就安全」時，用它說明 agent 的憑證與寫回通道才是真正的權限邊界。",
+      "sources": [
+        {
+          "title": "General Analysis: Supabase MCP can leak your entire SQL database",
+          "url": "https://www.generalanalysis.com/blog/supabase-mcp-blog"
+        }
+      ],
+      "topics": [
+        "agent-permissions",
+        "agent-safety",
+        "tool-interface"
+      ],
+      "byAgents": true
+    },
+    {
+      "id": "aim-2025-echoleak-m365-copilot",
+      "problem": "agent-injection",
+      "company": "Microsoft 365 Copilot（Aim Labs 揭露）",
+      "title": "EchoLeak（CVE-2025-32711）：一封 email 造成 zero-click 資料外洩",
+      "date": "2025-06",
+      "kind": "incident-report",
+      "symptom": "攻擊者寄一封 email 給受害者，不需受害者點開；之後使用者問 Copilot 相關問題時，RAG 撈到該 email，Copilot 照著藏在裡面的指令把 context 中的敏感資料塞進圖片 URL 送到攻擊者伺服器。",
+      "rootCause": "多個防線各有缺口串在一起：XPIA prompt injection classifier 被「寫成給收件人看的指令」繞過；連結過濾只擋 [text](URL)，沒擋 markdown reference 語法；CSP 白名單內的 *.teams.microsoft.com 有 open redirect，讓圖片請求帶出資料。",
+      "whyHard": "每一層防線（分類器、markdown 過濾、CSP）單獨看都合理，但攻擊者只要找到每層的一個縫就能串成完整鏈；RAG 讓任何寄進信箱的內容都可能進 context，攻擊者還在信中埋多段指令提高被檢索機率。",
+      "fix": "Microsoft 於 2025 年 1 月接獲回報後修補。設計通則：模型輸出中的 URL / 圖片一律視為外洩通道（只允許可信網域且不可帶任意參數）、CSP 白名單審查 open redirect、不要把 injection classifier 當主要防線。",
+      "tradeoff": "嚴格限制輸出中的連結與圖片會降低回答的豐富度（不能引用外部連結、不能顯示圖片）；縮小 RAG 可讀的來源（例如排除外部寄件者郵件）會降低助理的有用程度。",
+      "lessons": [
+        "Markdown 圖片自動載入是 LLM 產品最常見的外洩通道，要在 render 層封住。",
+        "Defense in depth 的每一層都要假設前一層會被繞過；機率型分類器不能當安全邊界。"
+      ],
+      "numbers": [
+        "CVE-2025-32711；Aim Labs 於 2025 年 1 月回報"
+      ],
+      "interviewUse": "被問「企業 RAG 助理的安全風險」時，用 EchoLeak 說明 untrusted content 進 RAG + 輸出可帶 URL 就構成 zero-click 外洩。",
+      "sources": [
+        {
+          "title": "Simon Willison: Breaking down EchoLeak",
+          "url": "https://simonwillison.net/2025/Jun/11/echoleak/"
+        },
+        {
+          "title": "Simon Willison: The lethal trifecta for AI agents",
+          "url": "https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/"
+        }
+      ],
+      "topics": [
+        "agent-safety",
+        "retrieval-strategy"
+      ],
+      "byAgents": true
+    },
+    {
+      "id": "embracethered-2023-bard-doc-exfil",
+      "problem": "agent-injection",
+      "company": "Google Bard（Johann Rehberger 揭露）",
+      "title": "共享 Google Doc 裡的 injection + markdown 圖片 + Apps Script 繞過 CSP，外洩對話紀錄",
+      "date": "2023-09",
+      "kind": "incident-report",
+      "symptom": "攻擊者把含指令的 Google Doc 分享給受害者；受害者透過 Bard Extensions 操作該文件時，Bard 產生一個 markdown 圖片，URL 帶著對話紀錄，送到攻擊者用 Apps Script 架的端點並記錄下來。",
+      "rootCause": "Bard 新增 Extensions 讓它能讀 Docs / Drive（不可信內容進 context），又會把 markdown 圖片 render 成 HTML；CSP 雖擋任意網域，但允許 script.google.com / googleusercontent.com，攻擊者用 Apps Script 架在這些網域上。",
+      "whyHard": "CSP 白名單只信任「自家網域」，但自家網域上允許使用者部署程式碼，等於白名單形同開放；分享文件是正常協作行為，無法禁止。",
+      "fix": "2023-09-19 回報，2023-10-19 Google 確認修補；CSP 未改、圖片仍會 render，推測加上了過濾以防資料塞進 URL。設計通則：render 前檢查輸出 URL，禁止動態參數或只允許靜態資源。",
+      "tradeoff": "過濾 URL 參數會影響合法的動態圖片或連結；收緊 CSP 可能破壞自家服務整合。",
+      "lessons": [
+        "新增工具（Extensions）等於擴大 untrusted content 的入口，每加一個資料來源都要重新評估外洩通道。",
+        "白名單網域若允許使用者託管內容，就不是可信網域。"
+      ],
+      "numbers": [
+        "2023-09-19 回報 Google VRP，2023-10-19 確認修補"
+      ],
+      "interviewUse": "說明「為什麼 LLM 輸出也要做輸出端的安全控制（URL / 圖片）」時的經典早期案例。",
+      "sources": [
+        {
+          "title": "Embrace The Red: Hacking Google Bard - From Prompt Injection to Data Exfiltration",
+          "url": "https://embracethered.com/blog/posts/2023/google-bard-data-exfiltration/"
+        }
+      ],
+      "topics": [
+        "agent-safety",
+        "tool-interface"
+      ],
+      "byAgents": true
+    },
+    {
+      "id": "aws-2025-amazon-q-extension-compromise",
+      "problem": "agent-injection",
+      "company": "AWS（Amazon Q Developer）",
+      "title": "權限過寬的 GitHub token 讓攻擊者把惡意程式碼塞進 Amazon Q VS Code 擴充套件 1.84.0 發行版",
+      "date": "2025-07",
+      "kind": "postmortem",
+      "symptom": "Amazon Q Developer for VS Code 1.84.0 發行時夾帶攻擊者植入的惡意程式碼，經正常更新管道送到使用者；因語法錯誤，惡意程式碼沒有成功執行。",
+      "rootCause": "CodeBuild 設定中使用了 scope 不當的 GitHub token，攻擊者藉此直接 commit 到擴充套件的開源 repo，該 commit 被自動納入 release。",
+      "whyHard": "Coding agent 擴充套件本身就有在使用者機器執行指令的高權限，供應鏈一被污染，攻擊等同直接拿到所有使用者的 agent；自動化 release pipeline 缺少人工審核時，惡意 commit 會被無聲打包。",
+      "fix": "AWS 撤銷並更換憑證、移除惡意程式碼、發布 1.85.0、從發行管道下架 1.84.0，並建議使用者移除 1.84.0。設計通則：CI token 最小權限、release 需經 review 與簽章、agent 預設在 sandbox 中執行危險指令以降低被植入時的爆炸半徑。",
+      "tradeoff": "更嚴格的 release 審核與簽章流程讓發版變慢；sandbox 執行限制 agent 對本機環境的能力。",
+      "lessons": [
+        "Agent 工具的供應鏈（擴充套件、MCP server）和它的權限一樣大，要用同等標準管理。",
+        "CI/CD 憑證範圍是 agent 安全的一部分。"
+      ],
+      "numbers": [
+        "受影響版本 1.84.0，修正版 1.85.0；CVE-2025-8217；公告 2025-07-23、更新 2025-07-25"
+      ],
+      "interviewUse": "被問「第三方 MCP server / agent plugin 的風險」時，用它說明供應鏈污染與 release pipeline 權限控制。",
+      "sources": [
+        {
+          "title": "AWS Security Bulletin AWS-2025-015",
+          "url": "https://aws.amazon.com/security/security-bulletins/AWS-2025-015/"
+        }
+      ],
+      "topics": [
+        "agent-permissions",
+        "tool-interface",
+        "agent-deploy-versioning"
+      ],
+      "byAgents": true
+    },
+    {
+      "id": "embracethered-2024-chatgpt-spaiware-memory",
+      "problem": "agent-injection",
+      "company": "OpenAI ChatGPT（Johann Rehberger 揭露）",
+      "title": "SpAIware：injection 寫入 ChatGPT 長期記憶，之後每個對話都持續外洩",
+      "date": "2024-09",
+      "kind": "incident-report",
+      "symptom": "使用者瀏覽或讓 ChatGPT 讀取攻擊者控制的網頁，其中的 prompt injection 把惡意指令寫進 memory；之後所有新對話都帶著這段指令，持續把使用者輸入與回應透過不可見圖片送到攻擊者伺服器。",
+      "rootCause": "Memory 寫入工具可被不可信內容觸發，寫入後的記憶在每個新 session 被當成可信 context 讀出；加上 macOS app 會 render 圖片，構成跨 session 的持久外洩通道。",
+      "whyHard": "一般 injection 只影響單一對話，記憶讓攻擊變成持久化；使用者很難察覺記憶被改，且 url_safe 的修補只部分有效、仍有繞過方式。",
+      "fix": "OpenAI 2023-12 在 web 部署 url_safe 檢查要顯示的 URL / 圖片；2024-09 發布修補後的 ChatGPT macOS 1.2024.247。設計通則：記憶寫入需要使用者確認或只接受使用者本人的直接輸入、記憶可檢視與刪除、輸出 URL 一律檢查。",
+      "tradeoff": "記憶寫入需確認會降低個人化的自動程度；嚴格的 URL 檢查會擋掉部分合法圖片連結。",
+      "lessons": [
+        "長期記憶是 context 的持久化，寫入路徑要像 DB 寫入一樣做權限控制。",
+        "對應 memory-poisoning：被污染的記憶在之後的 session 會被當成可信資料。"
+      ],
+      "numbers": [
+        "2023-04 首次回報外洩向量；2023-12 url_safe 上線（僅 web）；2024-05~06 示範記憶注入；2024-09 macOS 1.2024.247 修補"
+      ],
+      "interviewUse": "被問「agent 的長期記憶要注意什麼」時，用它說明記憶寫入的信任邊界與持久化攻擊。",
+      "sources": [
+        {
+          "title": "Embrace The Red: Spyware Injection Into Your ChatGPT's Long-Term Memory (SpAIware)",
+          "url": "https://embracethered.com/blog/posts/2024/chatgpt-macos-app-persistent-data-exfiltration/"
+        }
+      ],
+      "topics": [
+        "context-memory",
+        "agent-safety"
+      ],
+      "byAgents": true
+    }
+  ],
+  "quiz": [
+    {
+      "q": "什麼是 lethal trifecta？以 GitHub MCP 事件說明三個條件各是什麼。",
+      "a": "私有資料存取（token 可讀私有 repo）、暴露於不可信內容（讀公開 issue）、對外通訊能力（開公開 PR）。三者同時成立時，injection 就能把私有資料送出。對策是讓同一 session 不同時具備三者，例如一 session 一 repo。",
+      "kind": "概念",
+      "topic": "agent-injection"
+    },
+    {
+      "q": "你的公司有 RLS 保護的 DB，工程師想讓 Cursor 透過 MCP 協助處理 support ticket。你會怎麼設定？代價？",
+      "a": "不用 service_role；用唯讀、限定專案與工具群組的憑證，互動時人工審查 tool call；不讓 agent 寫回客戶可見的欄位。代價是 agent 不能做 migration 或修資料，人工審查降低效率。Supabase MCP 事件就是 service_role 繞過 RLS 再寫回 ticket。",
+      "kind": "情境",
+      "topic": "agent-injection"
+    },
+    {
+      "q": "有廠商說他們的 injection classifier 可以擋 95% 攻擊，所以可以放心讓 agent 讀外部 email。你怎麼回應？",
+      "a": "安全情境下 5% 失敗率不可接受；EchoLeak 正是繞過了 Microsoft 的 XPIA classifier。應從架構上切斷外洩通道（限制輸出 URL / 圖片、限制 RAG 來源、拆分權限），classifier 只當額外一層。",
+      "kind": "取捨",
+      "topic": "agent-injection"
+    },
+    {
+      "q": "ChatGPT memory 被注入後，為什麼比一般 prompt injection 更危險？設計上如何降低風險？",
+      "a": "記憶在每個新 session 被當成可信 context，攻擊從單次變成持久、跨對話持續外洩。對策：記憶寫入需使用者確認或只接受使用者直接輸入、可檢視刪除、輸出 URL 檢查。代價是個人化變得不自動。",
+      "kind": "情境",
+      "topic": "agent-injection"
+    }
+  ]
+}

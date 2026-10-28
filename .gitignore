@@ -27,3 +27,4 @@ npm-debug.log*
 # Claude Code auto-generated logs
 .claude/session-progress.log
 .claude/command-audit.log
+docs/study-app/.pagecache/

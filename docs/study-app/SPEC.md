@@ -160,3 +160,44 @@ decisions 3–5 個。topics 只用上面的主題 ID。
 - company 必須是事故 / 文章的主角；不要把通用做法掛在示意性公司名下。
 - 同一個事件只寫一次（若跨類型，放最主要的類型，lessons 裡提另一類）。
 - topics 用 22 個主題 ID 中相關的 1–3 個。
+
+## Agent 系統設計區（2026-10-28 起）
+來源：`sources/agent-sources.json`（137 筆，已驗證可開）與 `sources/agent-review.json`（主題、失敗分類、面試題）。寫作時**必須自己再用 WebFetch 打開**你引用的頁面，數字只取你讀到的原文；搜尋摘要、二手轉述的數字不放。擋自動讀取的網站不要繞過（不用 Wayback / 鏡像 / 轉載站）。
+
+### 主題 ID（14 個，group 一律填 "Agent 系統設計"）
+agent-vs-workflow, orchestration, planning-reflection, agent-comm, context-memory, tool-interface, retrieval-strategy, long-running-async, agent-reliability, agent-eval, agent-safety, agent-permissions, agent-cost-latency, agent-deploy-versioning
+- 邊界：orchestration = 控制流（誰決定下一步）；agent-comm = 資料流（傳什麼、怎麼傳、共享狀態、平行 agent 衝突）；agent-safety = prompt injection / guardrails / human-in-the-loop；agent-permissions = 身分、最小權限、sandbox、多租戶；agent-cost-latency 含模型選擇與 fallback。
+
+### 主題檔：Schema A，檔案格式 `{"topics": [...], "quiz": [...]}`
+- topics 照 Schema A；`cases[].ref` 填 `"agent-case:<案例 id>"`（案例 id = agent-sources.json 裡 type 為 case-study 的 id），`sources` 填 URL。
+- options 3–6 個，每個都要寫 cost 與 failure；`scale` 沒有原文數字就寫定性描述。
+- quiz：每個主題至少 3 題 Schema D，「取捨」「情境」類佔一半以上，topic 填主題 ID。
+- byAgents 一律 true（內容由 agents 整理自外部來源）。
+
+### 案例檔：Schema B，檔案格式 `[...]`
+- `id` = agent-sources.json 的 source id；`kind` = "業界實例"；`source` = "Agent Case Study"；`file` = ""；`origin` = 原文 URL（必填）。
+- decisions 3–5 個，每個要寫被否決的選項與理由；文章沒講否決理由時，rejected 可寫業界常見替代方案，但 why 要標「（補充）」。
+- topics 用上面 14 個 agent 主題 ID（也可加原本 22 個主題 ID）。
+
+### 失敗事件：Schema F，檔名 `data/inc-agent-*.json`
+- problem id 用 agent- 開頭，檔案加 `"problemName": "Agent：<中文名>"`。
+- 研究型失敗分析（如 MAST）不是事故，不放這裡，放 readings。
+- 只收真實發生、有可讀一手或可信二手來源（官方 postmortem、AI Incident Database、資安研究者原文）的事件；kind 用 "postmortem"、"incident-report"，研究或內部實驗用 "experiment"（頁面標「實驗環境」）。
+
+### Schema G — readings（論文 / 指南導讀），檔案 `data/agent-readings.json` = `[...]`
+```json
+{
+  "id": "mast-why-mas-fail",
+  "type": "paper | guide | blog",
+  "org": "UC Berkeley",
+  "title": "Why Do Multi-Agent LLM Systems Fail?",
+  "url": "https://arxiv.org/abs/...",
+  "date": "2025-03",
+  "claim": "一句話：這篇最重要的主張",
+  "keyPoints": ["2–4 條重點，含它的方法或分類"],
+  "numbers": ["只放原文讀到的數字"],
+  "designTakeaway": "對設計 agent 系統的具體啟示（要寫成取捨或決策）",
+  "caveat": "限制 / 不該過度引用的地方（例：只測某個 benchmark、廠商自評）",
+  "topics": ["orchestration"]
+}
+```

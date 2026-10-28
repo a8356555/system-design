@@ -1,0 +1,506 @@
+{
+  "topics": [
+    {
+      "id": "tool-interface",
+      "title": "工具介面設計（Tool / MCP 介面）",
+      "group": "Agent 系統設計",
+      "oneLiner": "決定 agent 能看到哪些工具、每個工具的粒度與回傳格式，以及工具怎麼接上（直接 function call、MCP、code execution），在選擇正確率、token 成本與安全面之間取捨。",
+      "question": "你的 agent 要接 50 個內部系統、上百個 API，工具怎麼設計？全部丟給模型嗎？",
+      "signals": [
+        "工具數量破幾十個、多個 MCP server",
+        "system prompt 還沒開始對話就吃掉大量 token",
+        "agent 常選錯工具或參數填錯",
+        "工具回傳大量資料（log、整份文件、整張表）",
+        "要把同一組內部工具給多種 agent 共用",
+        "面試官問 MCP 和 A2A 差在哪"
+      ],
+      "options": [
+        {
+          "name": "少量通用工具（bash / 檔案系統 + 一兩個核心 API）",
+          "how": "不替每個操作包工具，只給 agent 執行指令與讀檔的能力，讓模型自己 grep / cat / ls 找資訊；Vercel d0 從十多個專用工具砍到 ExecuteCommand + ExecuteSQL 兩個。",
+          "bestWhen": "底層資料本身是結構清楚、命名一致的文件或程式碼，且模型夠強、能自己規劃步驟。",
+          "cost": "需要 sandbox 跑指令（隔離、資源限制、監控）；行為較不可預測，難用工具層強制商業規則。",
+          "failure": "資料源本身雜亂時模型會迷路；Vercel 明說這招「只因為 semantic layer 已經是好文件才有效」。bash 權限過大時一個錯誤指令就有破壞性後果。",
+          "scale": "Vercel d0：成功率 80% → 100%（5 題）、274.8s → 77.4s、~102k → ~61k tokens、~12 → ~7 步；樣本很小，視為方向性證據。"
+        },
+        {
+          "name": "高階整併工具（task-shaped tools）",
+          "how": "依任務而非依 API 端點設計工具：用 schedule_event 取代 list_users + list_events + create_event；回傳支援 response_format（concise / detailed）、分頁與截斷，錯誤訊息寫成可行動的指示。",
+          "bestWhen": "寫入型、有商業規則的操作（退款、排程、改訂單），希望規則在工具層強制、而不是寄望模型照 prompt 做。",
+          "cost": "要為每個任務設計與維護工具，等於把部分邏輯從模型搬回程式；工具覆蓋不到的需求就做不了。",
+          "failure": "整併過頭變成「替模型想好」，限制推理（Vercel 拿掉工具的原因）；回傳太長塞爆 context——Claude Code 預設把工具回應限制在 25,000 tokens。",
+          "scale": "數十個以內的工具最好管理；Shopify 經驗：0–20 個邊界清楚，20–50 個開始互相干擾，50+ 個同一件事有多種做法、難以推理。"
+        },
+        {
+          "name": "MCP server（標準化工具協定）＋ 中央工具註冊",
+          "how": "把內部系統包成 MCP server，agent 用標準協定取得工具清單與呼叫；Stripe 的 Toolshed 是一個中央 MCP server，掛 400+ 工具，每種 agent 只拿到經過挑選的子集。MCP 是 agent↔工具（垂直），A2A 才是 agent↔agent（水平）。",
+          "bestWhen": "多種 agent、多個團隊要共用同一批工具，需要一處做權限、稽核與版本管理。",
+          "cost": "多一層協定與服務要維運；工具定義全塞進 context 很貴——Anthropic 例子中 GitHub/Slack/Sentry/Grafana/Splunk 五個 server 對話前就吃約 55K tokens。",
+          "failure": "全部工具都暴露給每個 agent → context 膨脹、選錯工具；第三方 MCP server 回傳的內容可能夾帶 prompt injection（見 agent-safety）。",
+          "scale": "工具數小時直接 function calling 就夠；到數百個工具時必須搭配子集挑選或 tool search。"
+        },
+        {
+          "name": "Tool search / progressive disclosure（按需載入工具定義）",
+          "how": "一開始只給 agent 一個搜尋工具的能力，需要時才把相關工具定義載入 context，而不是把所有定義預先塞進去。",
+          "bestWhen": "工具定義超過 10K tokens、接了多個 MCP server、10+ 個工具，或已經觀察到選錯工具（Anthropic 給的條件）。",
+          "cost": "多一次搜尋往返；工具描述要寫得能被搜到，否則等於不存在。",
+          "failure": "搜尋沒召回正確工具時 agent 會用錯工具硬做；動態增減工具定義會讓 KV cache 失效（Manus 因此改用 logits masking 而不是移除工具）。",
+          "scale": "Anthropic 數據：前置 token 從 ~77K 降到 ~8.7K；Opus 4 工具選擇正確率 49% → 74%。少於 10 個工具或每輪都會用到全部工具時不要用。"
+        },
+        {
+          "name": "Code execution / programmatic tool calling（讓模型寫程式呼叫工具）",
+          "how": "工具以程式 API 形式暴露，模型寫一段程式在 sandbox 裡串多個工具、過濾中間結果，只把最後結果回到 context。",
+          "bestWhen": "大量資料只需要彙總、3 個以上有依賴的工具呼叫、要對很多項目做同樣操作，或敏感資料不該流經模型。",
+          "cost": "必須有安全的執行環境（sandbox、資源上限、監控），維運與資安成本都比直接 tool call 高。",
+          "failure": "模型產生的程式出錯或越權；需要模型看每一步中間結果再判斷的任務反而不適合，會漏掉細節。",
+          "scale": "Anthropic 例子：150,000 → 2,000 tokens（省 98.7%）；programmatic tool calling 平均 43,588 → 27,297 tokens（-37%）。"
+        }
+      ],
+      "decisionGuide": [
+        {"if": "工具 < 10 個、每輪都會用到", "then": "直接 function calling，工具依任務整併", "why": "最簡單；tool search 的額外往返不划算。"},
+        {"if": "寫入型操作、規則必須被遵守（退款上限、權限）", "then": "高階整併工具，把規則寫在工具實作裡", "why": "prompt 裡的規則模型可能不照做，工具層才能強制。"},
+        {"if": "資料是結構良好的文件 / 程式碼，以讀取探索為主", "then": "少量通用工具（bash + 檔案系統）", "why": "Vercel 證明專用工具會限制推理；但前提是資料本身品質好。"},
+        {"if": "多團隊、多 agent 共用數百個內部工具", "then": "中央 MCP server + 每個 agent 一個精選子集，必要時加 tool search", "why": "一處管權限與稽核，又不讓每個 agent 的 context 被全部工具塞滿。"},
+        {"if": "大量中間資料、多步依賴呼叫", "then": "Code execution / programmatic tool calling", "why": "中間結果留在 sandbox，不流經模型，token 與延遲都大降。"}
+      ],
+      "defaultAnswer": "先給少量、依任務整併的工具，回傳加分頁與截斷；工具多到數十個以上才引入 MCP 註冊與 tool search，資料量大的多步流程才上 code execution。",
+      "interviewScript": "我不會把每個 API 都包成一個工具，因為工具數一過 20–50 個，模型就開始選錯、context 也被定義吃掉。寫入型操作我做成像 schedule_event 這種高階工具，把規則寫死在工具裡；讀取探索則盡量給通用的搜尋 / 讀檔能力。代價是工具要自己維護，而且通用工具需要 sandbox。如果工具成長到上百個、多個團隊共用，我會改成中央 MCP server 加每個 agent 的子集與 tool search。",
+      "pitfalls": [
+        "把 REST API 一對一包成工具，讓模型自己串 list → get → create，步驟多又容易錯",
+        "工具回傳整份 JSON / log，不分頁不截斷，幾輪後 context 爆掉",
+        "錯誤只回 stack trace 或錯誤碼，模型不知道怎麼修正",
+        "以為 MCP 解決了工具過多的問題——它只標準化接法，不減少 context 成本",
+        "對話中動態增刪工具定義，導致 KV cache 失效、成本暴增",
+        "混淆 MCP（agent↔工具）與 A2A（agent↔agent）"
+      ],
+      "cases": [
+        {"name": "Vercel d0", "ref": "agent-case:vercel-removed-80-percent-tools", "note": "text-to-SQL agent 從十多個專用工具砍到 bash + SQL 兩個，讓模型 grep 語意層文件；成功率與速度都變好，但明說前提是文件品質好。"},
+        {"name": "Stripe Minions", "ref": "agent-case:stripe-minions", "note": "中央 MCP server Toolshed 掛 400+ 工具，每種 agent 只拿精選子集；git、lint、測試等固定步驟用確定性程式碼而不是工具。"},
+        {"name": "Shopify Sidekick", "ref": "agent-case:shopify-sidekick", "note": "觀察到工具數 20–50 開始互相干擾、50+ 難以推理，改用 just-in-time instructions 只在相關時注入說明。"},
+        {"name": "Manus", "ref": "agent-case:manus-context-engineering", "note": "不動態增刪工具（會打掉 KV cache），改用 browser_ / shell_ 前綴命名加 logits masking 限制當下可選工具。"}
+      ],
+      "sources": [
+        "https://vercel.com/blog/we-removed-80-percent-of-our-agents-tools",
+        "https://www.anthropic.com/engineering/writing-tools-for-agents",
+        "https://www.anthropic.com/engineering/code-execution-with-mcp",
+        "https://www.anthropic.com/engineering/advanced-tool-use",
+        "https://stripe.dev/blog/minions-stripes-one-shot-end-to-end-coding-agents",
+        "https://shopify.engineering/building-production-ready-agentic-systems",
+        "https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus",
+        "https://a2a-protocol.org/latest/topics/a2a-and-mcp/"
+      ],
+      "byAgents": true
+    },
+    {
+      "id": "retrieval-strategy",
+      "title": "知識取得：RAG vs agentic search",
+      "group": "Agent 系統設計",
+      "oneLiner": "決定 agent 取得知識的方式：預先建索引做檢索（RAG）、讓 agent 用工具即時探索，或兩者混合，在延遲、新鮮度、準確度與安全面之間取捨。",
+      "question": "要不要為這個 agent 建 vector index？還是讓它自己 grep / 搜尋？",
+      "signals": [
+        "企業知識庫、政策文件、wiki、Slack 問答",
+        "coding agent 要理解大型 codebase",
+        "資料更新頻繁、索引跟不上",
+        "回答錯了代價高（法規、資安、醫療）",
+        "有延遲要求（例如 1–2 秒內回）",
+        "資料有存取權限，不同使用者能看的不一樣"
+      ],
+      "options": [
+        {
+          "name": "整份塞進長 context",
+          "how": "資料量小時直接把文件全文放進 prompt，不做檢索。",
+          "bestWhen": "知識量小、穩定，且每次問題都可能用到大部分內容（例如一份產品規則）。",
+          "cost": "每次請求都付全量 input token；可搭配 prompt caching 降成本。",
+          "failure": "資料一長就超過 context 或稀釋注意力；資料成長後成本線性上升。",
+          "scale": "只適合小而穩定的知識；Claude Code 對 CLAUDE.md 就是這樣做（固定前置載入）。"
+        },
+        {
+          "name": "預先建索引的 RAG（embedding + vector DB，常加 BM25 混合）",
+          "how": "離線把文件切 chunk、算 embedding 存進向量庫；查詢時取 top-k 片段塞進 context。實務多半混合 BM25 與 rerank。",
+          "bestWhen": "大量非結構文件、延遲要求緊、問題多是單步查詢（客服、FAQ、政策問答）。",
+          "cost": "要維護切 chunk、embedding、重建索引的 pipeline；高品質 embedding、rerank、大 chunk 都要更多算力（Dropbox）；索引是敏感資料的另一份副本。",
+          "failure": "chunk 切斷邏輯（程式、表格）；索引過期與實際資料不一致；語意相近但不相關的片段被撈回來，答案錯而且有信心——Uber 的資安政策文件就有這個問題。",
+          "scale": "Dropbox Dash 以 95% 以上查詢在 1–2 秒內為目標；頻繁重建索引會拖慢吞吐或拉高延遲。"
+        },
+        {
+          "name": "Agentic RAG（在 RAG 前後加 agent 步驟）",
+          "how": "檢索前用 agent 改寫 / 拆解問題、依 metadata 先挑文件範圍；檢索後再用 agent 去重、依文件順序整理 context。",
+          "bestWhen": "領域文件之間差異細微、單純語意相似度撈錯的情況多，且能接受多幾次 LLM 呼叫的延遲。",
+          "cost": "每次查詢多 2–3 次 LLM 呼叫，延遲與成本上升；還要投資文件前處理（Uber 為了保留表格改用 Google Docs 自訂 loader、用 LLM 補 metadata）。",
+          "failure": "query optimizer 改寫錯問題，後面全錯；文件解析不好（表格被打散）時加再多 agent 也救不回。",
+          "scale": "Uber EAg-RAG：可接受答案相對 +27%、錯誤建議相對 -60%（用 LLM-as-judge 對照 SME 參考答案評分）。"
+        },
+        {
+          "name": "Agentic search（不建索引，用工具即時探索）",
+          "how": "agent 用 glob / grep / 讀檔 / 搜尋 API 即時找資料，跟著 import 與引用一路追；只保留檔案路徑等輕量參照，需要時才載入。",
+          "bestWhen": "資料是程式碼或結構清楚的文件、變動頻繁、不想複製一份敏感資料到索引（Cline、Claude Code 的選擇）。",
+          "cost": "比讀預先算好的索引慢（Anthropic 直說 runtime exploration 較慢）；多步探索耗 token；需要給 agent 好的工具與找資料的 heuristic。",
+          "failure": "大型 codebase 裡 grep 關鍵字對不上概念（「驗證邏輯在哪」）時找不到；探索路徑長，容易在 context 裡堆滿無關檔案。",
+          "scale": "中小型 repo 表現好；Cursor 數據顯示 1,000 檔以上的大型 codebase 加 semantic search 才有明顯差異。"
+        },
+        {
+          "name": "Hybrid：索引粗召回 + agent 深入讀",
+          "how": "agent 同時有 semantic search 與 grep / 讀檔工具，自己決定什麼時候用哪個；或固定前置載入一部分，其餘交給 agent 探索。",
+          "bestWhen": "大型 codebase 或大型知識庫，又需要精確追蹤細節。",
+          "cost": "同時維護索引與探索工具兩套；索引的成本與安全面問題都還在。",
+          "failure": "索引過期時 semantic search 撈到舊內容，agent 若不再讀原檔確認就會用錯資訊。",
+          "scale": "Cursor：semantic search 讓回答正確率平均高 12.5%（依模型 6.5%–23.5%），1,000 檔以上 codebase 的 code retention +2.6%；grep 仍大量使用。"
+        },
+        {
+          "name": "結構化查詢（SQL / API / 語意層）",
+          "how": "知識本來就在資料庫或有 API 時，讓 agent 直接下查詢，不轉成文字再檢索。",
+          "bestWhen": "數字、訂單、帳戶狀態這類結構化事實，需要即時且精確。",
+          "cost": "需要 schema / 語意層文件讓 agent 寫對查詢；查詢權限要控管。",
+          "failure": "模型寫出語法對但語意錯的查詢（join 錯、指標定義誤解）；沒有權限過濾時可能查到別人的資料。",
+          "scale": "Vercel d0 讓 agent 讀語意層文件再寫 SQL；前提是語意層文件品質好。"
+        }
+      ],
+      "decisionGuide": [
+        {"if": "知識量小且穩定", "then": "直接塞進 context（配 prompt caching）", "why": "不需要任何檢索基礎設施，失效點最少。"},
+        {"if": "程式碼或結構良好的文件、變動頻繁、敏感", "then": "Agentic search（grep / 讀檔）", "why": "永遠讀到最新版本、不複製一份資料；代價是較慢。"},
+        {"if": "大量非結構文件、延遲要求 1–2 秒、單步問答", "then": "RAG（BM25 + 向量混合 + rerank）", "why": "預先算好的索引最快；多步 agent 探索在這個延遲預算內做不完。"},
+        {"if": "文件之間差異細微、答錯代價高", "then": "Agentic RAG：查詢改寫 + 來源篩選 + 後處理", "why": "用多幾次 LLM 呼叫換正確率（Uber 錯誤建議 -60%）。"},
+        {"if": "大型 codebase（1,000 檔以上）", "then": "Hybrid：semantic search + grep", "why": "Cursor 數據顯示大 repo 才看得出 semantic search 的效益。"},
+        {"if": "事實存在資料庫", "then": "結構化查詢工具", "why": "比把資料轉成文字再檢索更精確、更新鮮。"}
+      ],
+      "defaultAnswer": "企業知識庫問答預設用 hybrid RAG（BM25 + 向量 + rerank，檢索時依使用者權限過濾）；coding agent 預設 agentic search，大 repo 再加 semantic search。",
+      "interviewScript": "我先看資料型態和延遲預算。如果是大量文件、要 1–2 秒內回答，我選 RAG，混合 BM25 和向量再 rerank，代價是要維護索引、而且 chunk 會切斷表格和程式邏輯。如果是程式碼或常變動的資料，我讓 agent 直接 grep 和讀檔，資料永遠是最新、也不用多複製一份敏感資料，代價是較慢、較耗 token。答錯代價高時，我會在檢索前後加 agent 做查詢改寫與去重，像 Uber 這樣用多幾次 LLM 呼叫換正確率。",
+      "pitfalls": [
+        "預設一定要建 vector DB，沒考慮資料是否常變、是否敏感",
+        "只用向量相似度，不加 BM25，專有名詞與代號撈不到",
+        "用通用 PDF parser 把表格打散，再怎麼調檢索都救不回",
+        "檢索時沒依使用者權限過濾，RAG 變成越權讀取的管道",
+        "索引沒有更新機制（webhook / 週期同步），答案是過期資料",
+        "沒有評估就換 embedding 或 chunk 大小，不知道變好還是變壞"
+      ],
+      "cases": [
+        {"name": "Cursor", "ref": "agent-case:cursor-semantic-search", "note": "不在 RAG 和 grep 之間二選一：agent 兩個都有，自訓 embedding；A/B 顯示大型 codebase 效益最明顯。"},
+        {"name": "Uber EAg-RAG", "ref": "agent-case:uber-enhanced-agentic-rag", "note": "資安政策問答用 agentic RAG：查詢改寫、依 metadata 挑來源、向量 + BM25、後處理去重；用 LLM-as-judge 對照 SME 答案評估。"},
+        {"name": "Dropbox Dash", "ref": "agent-case:dropbox-dash-agents", "note": "以詞彙檢索為主、embedding rerank、查詢時才切 chunk，守住 1–2 秒延遲；簡單查詢走 RAG，多步驟業務查詢才用 agent。"},
+        {"name": "Vercel d0", "ref": "agent-case:vercel-removed-80-percent-tools", "note": "不做檢索 pipeline，讓 agent 用 grep / cat 讀語意層文件再寫 SQL。"}
+      ],
+      "sources": [
+        "https://cursor.com/blog/semsearch",
+        "https://www.uber.com/blog/enhanced-agentic-rag/",
+        "https://cline.bot/blog/why-cline-doesnt-index-your-codebase-and-why-thats-a-good-thing",
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents",
+        "https://dropbox.tech/machine-learning/building-dash-rag-multi-step-ai-agents-business-users",
+        "https://vercel.com/blog/we-removed-80-percent-of-our-agents-tools"
+      ],
+      "byAgents": true
+    },
+    {
+      "id": "long-running-async",
+      "title": "長時間任務與非同步執行",
+      "group": "Agent 系統設計",
+      "oneLiner": "agent 任務要跑幾十分鐘到幾小時、跨多個 context window 時，決定執行模型（同步、佇列、durable workflow）、進度怎麼交接，以及結果怎麼通知使用者。",
+      "question": "這個 coding / research agent 一個任務要跑兩小時，中間還會部署新版本、機器重啟，你怎麼設計？",
+      "signals": [
+        "背景 agent、「丟出去等通知」",
+        "任務時間超過一般 HTTP timeout",
+        "跨多個 context window 才做得完",
+        "需要等人核准再繼續",
+        "部署時不能中斷正在跑的 agent",
+        "從 Slack / issue 觸發，結果回成 PR 或訊息"
+      ],
+      "options": [
+        {
+          "name": "同步 request-response（串流回應）",
+          "how": "使用者在介面上等，agent 在同一個 request 裡跑完迴圈，邊跑邊串流。",
+          "bestWhen": "互動式任務、幾十秒到一兩分鐘內能完成。",
+          "cost": "最簡單；但連線佔住整個執行期間，伺服器重啟或部署就中斷。",
+          "failure": "跑太久撞到 timeout、使用者關掉頁面任務就沒了；所有進度都在記憶體，crash 就從頭來。",
+          "scale": "只適合短任務；長任務必須改成非同步。"
+        },
+        {
+          "name": "工作佇列 + 背景 worker + 完成通知",
+          "how": "觸發時建立 job 放進佇列，worker 在隔離環境跑 agent，進度與結果寫回外部系統（draft PR、Slack），完成時通知人審查。",
+          "bestWhen": "任務可以「丟出去等」，產出是 PR、報告這類可以事後審查的成品。",
+          "cost": "要有 job 狀態管理、隔離執行環境與通知機制；使用者看不到即時過程，需另外提供 session log。",
+          "failure": "worker crash 時若沒存中間狀態只能整個重跑；重跑時已執行的副作用（push、發訊息）可能重複。",
+          "scale": "Spotify 背景 coding agent 已合併 1,500+ 個 PR；GitHub Copilot coding agent 在 GitHub Actions 裡跑、持續把 commit 推到 draft PR。"
+        },
+        {
+          "name": "Durable workflow engine（Temporal / Restate 等）",
+          "how": "把每次 LLM 呼叫與工具呼叫包成 activity / durable step 記進 event history；crash 後重播紀錄，已完成的步驟不再執行，從斷點繼續。",
+          "bestWhen": "任務長、步驟有副作用、需要等人核准數小時或數天、要扛部署與機器重啟。",
+          "cost": "多一個基礎設施；workflow 程式必須 deterministic，非確定性的東西（LLM、API）都要搬進 activity。",
+          "failure": "把 LLM 呼叫寫在 workflow 程式裡 → 重播時結果不同，狀態錯亂；改了 workflow 程式碼但舊執行還在跑，重播不相容。",
+          "scale": "Temporal 指出 OpenAI Codex 與 Replit Agent 3 建在它上面；Restate 可在等人核准時把 agent 暫停，只付實際運算時間。"
+        },
+        {
+          "name": "Session 與 harness / sandbox 分離（event log 當真相）",
+          "how": "把 agent 拆成 brain（harness + 模型）、hands（sandbox）、session（append-only event log）；harness 無狀態，掛了就由新實例 wake(sessionId) 讀 log 接續。",
+          "bestWhen": "平台型產品，要同時跑大量 agent session，且容器或 harness 隨時可能壞。",
+          "cost": "要設計 event log 的介面與儲存；每次恢復都要重建 context。",
+          "failure": "全部塞在一個容器裡時，容器一掛 session 就沒了，只能手動救（Anthropic 早期的 pets 問題）。",
+          "scale": "Anthropic Managed Agents 拆開後 p50 TTFT 約降 60%、p95 降超過 90%。"
+        },
+        {
+          "name": "跨 context window 交接（initializer + 進度檔 + 功能清單 + git）",
+          "how": "第一個 session 建 init.sh、進度檔、JSON 功能清單（全部 passes:false）並 commit；之後每個 session 讀 git log 與進度檔，一次做一個功能、測過才標記、commit 後更新進度。",
+          "bestWhen": "任務大到單一 context window 一定做不完（建整個 app、大型 migration）。",
+          "cost": "要設計 harness 與交接格式；每個新 session 都要花 token 重新讀進度。",
+          "failure": "沒有交接機制時 agent 會想一次做完然後 context 用光、留下半成品，或看到有進度就宣布完成。",
+          "scale": "Anthropic 的 claude.ai clone 例子功能清單超過 200 項。"
+        }
+      ],
+      "decisionGuide": [
+        {"if": "一兩分鐘內完成、使用者在等", "then": "同步 + 串流", "why": "最簡單，沒有狀態管理成本。"},
+        {"if": "產出是 PR / 報告，可以事後審查", "then": "佇列 + 背景 worker + 完成通知", "why": "使用者不用等；把結果放進既有的審查流程（PR review）。"},
+        {"if": "有付費或不可逆副作用、要等人核准、要扛部署重啟", "then": "Durable workflow（Temporal / Restate）", "why": "重播已記錄結果，不會重複執行已完成的步驟。"},
+        {"if": "單一 context window 做不完", "then": "initializer agent + 進度檔 + 功能清單 + git commit", "why": "把狀態放在外部檔案，新 session 能接手，防止提早宣布完成。"},
+        {"if": "平台要跑大量 session、容器會掛", "then": "harness 無狀態 + event log 當 session 真相", "why": "任何一層壞掉都能換新的接續，不用救特定機器。"}
+      ],
+      "defaultAnswer": "超過一兩分鐘的 agent 任務一律非同步：佇列 + 隔離 worker，每個步驟寫進 durable log，結果以 draft PR 或訊息通知；有不可逆副作用時用 durable workflow。",
+      "interviewScript": "兩小時的任務不能綁在一個 request 上，我會在觸發時建 job 丟進佇列，worker 在 sandbox 裡跑。每次 LLM 和工具呼叫都記進 durable log，像 Temporal 一樣 crash 後重播已完成的步驟、不重做；代價是多一套基礎設施，而且 orchestration 程式要 deterministic。跨 context window 的進度放在外部的進度檔和 git commit，結果以 draft PR 交給人審查。部署時用 rainbow deployment，讓舊的執行跑完再收掉舊版。",
+      "pitfalls": [
+        "把整個 agent 迴圈綁在一個 HTTP request，部署一次全部斷",
+        "只存最終結果，不存中間步驟，crash 後整個重跑又重複副作用",
+        "在 Temporal workflow 程式裡直接呼叫 LLM，重播時得到不同結果",
+        "等人核准時讓 worker 一直空轉佔資源",
+        "部署新版直接砍掉跑到一半的 agent（應用 rainbow deployment）",
+        "沒有完成標準（功能清單 / 測試），agent 看到一點進度就宣布完成"
+      ],
+      "cases": [
+        {"name": "Spotify 背景 coding agent", "ref": "agent-case:spotify-honk-part1", "note": "從 Slack / GitHub 觸發，在容器裡跑、自動開 PR；diff 用 LLM-as-judge 檢查，log 上傳 GCP、trace 進 MLflow。"},
+        {"name": "GitHub Copilot coding agent", "ref": "agent-case:github-copilot-coding-agent", "note": "指派 issue 即觸發，在 GitHub Actions VM 中跑，持續 push 到 draft PR；CI 要人核准才跑，只能 push 自己建的 branch。"},
+        {"name": "Anthropic Managed Agents", "ref": "agent-case:anthropic-managed-agents", "note": "把 harness、sandbox、session log 拆開，harness 掛了用 wake(sessionId) 讀 log 接續，容器從 pets 變 cattle。"},
+        {"name": "Anthropic Research", "ref": "agent-case:anthropic-multi-agent-research", "note": "出錯時從斷點恢復而不是重跑；用 rainbow deployment 避免部署打斷正在跑的 agent；lead 目前同步等 subagent，承認是瓶頸。"}
+      ],
+      "sources": [
+        "https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents",
+        "https://temporal.io/blog/of-course-you-can-build-dynamic-ai-agents-with-temporal",
+        "https://www.restate.dev/blog/durable-ai-loops-fault-tolerance-across-frameworks-and-without-handcuffs",
+        "https://www.anthropic.com/engineering/managed-agents",
+        "https://engineering.atspotify.com/2025/11/spotifys-background-coding-agent-part-1",
+        "https://github.blog/news-insights/product-news/github-copilot-meet-the-new-coding-agent/",
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://developers.cloudflare.com/agents/"
+      ],
+      "byAgents": true
+    },
+    {
+      "id": "agent-reliability",
+      "title": "Agent 可靠性（終止、重試、冪等、恢復）",
+      "group": "Agent 系統設計",
+      "oneLiner": "決定 agent 迴圈怎麼停、出錯怎麼重試與恢復、有副作用的工具怎麼不被重複執行，以及模型供應商掛掉時怎麼辦。",
+      "question": "agent 一直重複同一個步驟停不下來、或重試時把信用卡扣了兩次，你的設計怎麼防？",
+      "signals": [
+        "agent 卡在迴圈、token 燒不停",
+        "工具有副作用（付款、寄信、push code）",
+        "LLM API 偶發 timeout / 429",
+        "多步驟任務中途失敗",
+        "供應商故障時服務不能停",
+        "agent 自稱完成但其實沒做完"
+      ],
+      "options": [
+        {
+          "name": "硬性預算與終止條件（max steps / token / wall-clock / CI 輪數）",
+          "how": "在 harness 層設步數、token、時間上限，以及明確的完成判準；超過就停下並回報，而不是靠模型自己決定何時停。",
+          "bestWhen": "所有 agent 都該有，這是最低成本的保護。",
+          "cost": "上限太緊會截斷本來能完成的任務；要依任務類型調參。",
+          "failure": "只靠模型判斷終止 → 無限迴圈或提早放棄；MAST 研究中 step repetition 佔 15.7%、不知道終止條件佔 12.4%。",
+          "scale": "Stripe Minions 最多跑兩輪 CI，理由是多輪 CI 的邊際效益遞減。"
+        },
+        {
+          "name": "簡單 retry（exponential backoff 重試整個請求或迴圈）",
+          "how": "LLM 或工具呼叫失敗就 backoff 後重試；最壞情況從頭重跑整個 agent 迴圈。",
+          "bestWhen": "工具都是唯讀、或本身就冪等，且任務短。",
+          "cost": "實作最簡單；但重跑整個迴圈會重付所有 LLM 呼叫的錢與時間。",
+          "failure": "最危險的是「已經扣款、回應在回來路上丟了」——從頭重跑會把已成功的扣款再執行一次（Inngest）。重跑時 LLM 可能做出不同決策，狀態不一致。",
+          "scale": "只適合短、唯讀任務；有副作用就不夠。"
+        },
+        {
+          "name": "副作用工具冪等化（idempotency key）",
+          "how": "每次工具呼叫帶唯一 ID（例如 toolCallId），傳給下游當 idempotency key，下游看到重複的 key 就回傳上次結果。",
+          "bestWhen": "付款、寄信、建立資源等不可重複的動作；不論有沒有 durable execution 都要做。",
+          "cost": "下游 API 要支援 idempotency key（Stripe 等付款 API 有）；自家服務要存 key 與結果。",
+          "failure": "key 每次重試重新產生就沒用；下游不支援冪等時，只能靠查詢狀態再決定要不要重做。",
+          "scale": "Inngest 指出 durable step 只保證 at-least-once，step 執行成功但還沒記錄就 crash 的窗口只有 idempotency key 能擋。"
+        },
+        {
+          "name": "Durable execution / checkpoint-resume（記錄每一步，重播恢復）",
+          "how": "每個 LLM 決策與工具結果記進 journal / event history；失敗後重播紀錄，已完成的步驟直接回傳存好的結果，從最後完成的步驟繼續。",
+          "bestWhen": "多步驟、有副作用、執行時間長，錯誤會累積的 stateful agent。",
+          "cost": "要引入 Temporal / Restate / Inngest 等基礎設施；orchestration 程式要 deterministic，所有非確定性操作都要包成 step。",
+          "failure": "忘了把某個副作用包成 step → 重播時再執行一次；只做到 at-least-once，仍要搭配冪等。",
+          "scale": "Anthropic Research 系統選擇從出錯處恢復而不是重跑，因為 agent 有狀態、錯誤會累積。"
+        },
+        {
+          "name": "驗證與自我檢查（測試、guard node、確定性檢查）",
+          "how": "在 agent 宣告完成前跑確定性檢查（lint、測試、schema 驗證），或用 guard 節點檢查輸出，不通過就要求修正或走安全 fallback。",
+          "bestWhen": "產出可以被機器驗證（程式碼、結構化資料），或有固定安全規則。",
+          "cost": "多花執行時間與 LLM 呼叫；驗證本身要維護。",
+          "failure": "沒有驗證時 agent 會自稱完成；MAST 中 no / incomplete verification 8.2%、incorrect verification 9.1%。",
+          "scale": "Stripe 每次 push 前先跑不到 5 秒的本地 lint，再進較貴的 CI。"
+        },
+        {
+          "name": "模型 / 供應商 failover 與容量餘裕",
+          "how": "跨供應商、跨模型 failover，依延遲路由，並預留容量；把 LLM 當作會壞的外部依賴處理。",
+          "bestWhen": "客戶直接依賴 agent 回應的線上服務（客服），不能因單一供應商故障停擺。",
+          "cost": "要對多個模型做 prompt 與 eval 對齊，換模型後行為可能不同；預留容量要付錢。",
+          "failure": "failover 到沒評估過的模型，品質悄悄下降；只看基礎設施指標，看不到客戶端結果變差。",
+          "scale": "Intercom Fin 每週完整解決 200 萬以上對話，對主要供應商保留可承受 2–3 倍正常流量的容量。"
+        }
+      ],
+      "decisionGuide": [
+        {"if": "任何 agent", "then": "先設 max steps / token / 時間上限與明確完成判準", "why": "最便宜，直接擋掉 step repetition 與不知何時停的失效。"},
+        {"if": "短任務、工具唯讀", "then": "簡單 retry + backoff", "why": "重跑沒有副作用，不值得引入基礎設施。"},
+        {"if": "工具有付款或不可逆副作用", "then": "idempotency key + durable step", "why": "durable 只保證 at-least-once，最後一道防線是下游冪等。"},
+        {"if": "長流程、stateful、錯誤會累積", "then": "Durable execution / checkpoint-resume", "why": "從斷點接續，不重付已完成步驟、不讓 LLM 重做不同決策。"},
+        {"if": "產出可機器驗證", "then": "確定性驗證（測試 / lint / schema）當完成門檻", "why": "不信任 agent 自報完成。"},
+        {"if": "線上客服等高可用服務", "then": "跨供應商 / 模型 failover + 容量餘裕", "why": "單一供應商故障不能讓整個服務停。"}
+      ],
+      "defaultAnswer": "harness 層強制步數 / token / 時間預算與驗證門檻；有副作用的工具一律帶 idempotency key；多步驟長流程用 durable execution 從斷點恢復，而不是整個重試。",
+      "interviewScript": "我不讓模型自己決定何時停：harness 設步數、token 和時間上限，完成要通過測試或 schema 驗證，因為研究顯示重複步驟和不知何時終止是最常見的失效。重試方面，唯讀工具用簡單 backoff 就好；但付款這種工具，從頭重跑會在「扣款成功但回應丟失」時扣兩次，所以每個工具呼叫帶 idempotency key，長流程再用 durable execution 記錄每一步、crash 後重播。代價是多一套基礎設施，而且 durable 只到 at-least-once，冪等不能省。",
+      "pitfalls": [
+        "沒有任何步數或預算上限，靠 prompt 叫模型「做完就停」",
+        "失敗就從頭重跑整個 agent 迴圈，重複執行已成功的副作用",
+        "以為 durable execution 就是 exactly-once，省掉 idempotency key",
+        "每次重試重新產生 idempotency key",
+        "信任 agent 自報「完成」而不做獨立驗證",
+        "fallback 模型沒經過 eval，故障時品質悄悄變差"
+      ],
+      "cases": [
+        {"name": "Stripe Minions", "ref": "agent-case:stripe-minions", "note": "最多兩輪 CI 就停；每次 push 前先跑不到 5 秒的本地 lint；git / 測試等用確定性程式碼而不是交給 agent。"},
+        {"name": "Intercom Fin", "ref": "agent-case:intercom-fin-scale", "note": "跨供應商 / 跨模型 failover、依延遲路由、容量隔離，預留 2–3 倍流量餘裕。"},
+        {"name": "Anthropic Research", "ref": "agent-case:anthropic-multi-agent-research", "note": "stateful agent 錯誤會累積，因此從出錯處恢復而不是重跑，並用 rainbow deployment 保護執行中的 agent。"},
+        {"name": "Anthropic Managed Agents", "ref": "agent-case:anthropic-managed-agents", "note": "容器掛掉被當成工具錯誤回給模型重試；harness 無狀態、從 session log 恢復。"}
+      ],
+      "sources": [
+        "https://arxiv.org/abs/2503.13657",
+        "https://www.inngest.com/blog/your-agent-just-learned-to-spend-money",
+        "https://temporal.io/blog/of-course-you-can-build-dynamic-ai-agents-with-temporal",
+        "https://www.restate.dev/blog/durable-ai-loops-fault-tolerance-across-frameworks-and-without-handcuffs",
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://www.anthropic.com/engineering/managed-agents",
+        "https://stripe.dev/blog/minions-stripes-one-shot-end-to-end-coding-agents",
+        "https://www.intercom.com/blog/ready-for-your-busiest-day-how-we-scale"
+      ],
+      "byAgents": true
+    },
+    {
+      "id": "agent-eval",
+      "title": "Agent 評估與監控（Eval / Observability）",
+      "group": "Agent 系統設計",
+      "oneLiner": "決定用什麼 grader（程式、LLM、人）判斷 agent 做得對不對、eval 資料從哪來、指標看 pass@k 還是 pass^k，以及離線 eval 與線上監控怎麼分工。",
+      "question": "你怎麼知道改了 prompt 或換了模型之後 agent 變好還是變壞？上線後怎麼監控？",
+      "signals": [
+        "改 prompt / 換模型不知道有沒有退步",
+        "輸出是開放式文字，沒有唯一正解",
+        "客服、醫療、資安等答錯代價高的領域",
+        "需要一致性（同一題每次都要對）",
+        "要當上線門檻（release gate）",
+        "要比較 benchmark 分數"
+      ],
+      "options": [
+        {
+          "name": "Code-based grader（確定性檢查：測試、schema、最終狀態比對）",
+          "how": "用程式檢查結果：單元測試、JSON schema、DB 最終狀態是否等於預期（τ-bench 的做法）。",
+          "bestWhen": "產出可機器驗證：程式碼、結構化資料、交易後的資料庫狀態。",
+          "cost": "快、便宜、客觀、可重現；但要為每個任務寫檢查與預期狀態。",
+          "failure": "對「合理但格式不同」的正確解太嚴格而誤判失敗；只看最終結果時，過程中的違規（越權、多餘動作）看不到。",
+          "scale": "可以每次 commit 都跑；Hamel 建議最便宜的這層持續跑。"
+        },
+        {
+          "name": "LLM-as-judge（model-based grader）",
+          "how": "用 LLM 依 rubric 打分或 pass/fail，可對照參考答案或做 pairwise 比較。",
+          "bestWhen": "開放式輸出（研究報告、客服回覆語氣、引用正確性），規模大到人看不完。",
+          "cost": "比程式貴、非確定性；必須先用人工標註校準，否則分數沒有意義。",
+          "failure": "位置偏誤、偏好較長回答、偏好同家模型輸出；沒校準時跟人幾乎不一致——Shopify 一開始 Cohen's kappa 只有 0.02。",
+          "scale": "Shopify 校準後 kappa 0.61（人與人之間 0.69）；Anthropic Research 用單一 LLM 呼叫依 5 個面向給 0.0–1.0 分與 pass/fail。"
+        },
+        {
+          "name": "人工評估與讀 transcript",
+          "how": "領域專家看 trace、標註失敗原因，產出 rubric 與 judge 的校準資料。",
+          "bestWhen": "初期找失效模式、校準 LLM judge、安全或法規相關的 rubric。",
+          "cost": "貴、慢、需要專家；無法跑每次 commit。",
+          "failure": "不讀 transcript 只看分數 → 分不清是 agent 真的錯，還是 grader 把正確解判錯。",
+          "scale": "Anthropic Research 靠人工測試發現 agent 偏好 SEO 內容農場而非權威來源；Numan 的安全 rubric 必須由臨床人員撰寫與核准。"
+        },
+        {
+          "name": "使用者模擬器 + 多輪 eval",
+          "how": "用 LLM 扮演使用者，依 agent 的實際回應動態回話，跑完整多輪對話後再評分。",
+          "bestWhen": "多輪對話型 agent（客服、教練），固定腳本無法反映 agent 真實回應。",
+          "cost": "每題要跑整段對話，成本是單輪的數倍；模擬器本身的行為要驗證。",
+          "failure": "固定腳本的多輪 eval 會失真——Numan 發現下一輪輸入沒考慮 agent 實際回應；模擬器太配合時測不到真實刁難使用者。",
+          "scale": "τ-bench：gpt-4o 成功率 < 50%，零售場景 pass^8 < 25%，顯示單次成功不代表穩定。"
+        },
+        {
+          "name": "線上監控與 A/B（production traces、真實分佈抽樣）",
+          "how": "上線後收 trace，從真實流量抽樣建 ground truth set，用 judge 持續打分，重大改動用 A/B 驗證。",
+          "bestWhen": "產品已有使用者，要知道真實分佈下的表現與長尾失效。",
+          "cost": "要有 trace 儲存、抽樣、標註流程；A/B 需要流量與時間。",
+          "failure": "只用精選 golden dataset，跟真實流量分佈不同，離線分數好看但線上變差；A/B 的整體效果會被不需要該功能的請求稀釋（Cursor 提到的限制）。",
+          "scale": "Shopify 從 golden dataset 改成依真實對話分佈抽樣的 ground truth set；Hamel：A/B 成本最高，只在重大改動時做。"
+        }
+      ],
+      "decisionGuide": [
+        {"if": "剛開始、還沒有 eval", "then": "從 20–50 個真實失敗案例做起，並讀 transcript", "why": "早期改動效果大，小樣本就看得出來；不必等幾百題。"},
+        {"if": "產出可機器驗證", "then": "Code-based grader 為主，當 regression gate", "why": "快、便宜、可重現，能每次 commit 跑。"},
+        {"if": "開放式輸出", "then": "LLM-as-judge，先用人工標註校準（看 Cohen's kappa）", "why": "沒校準的 judge 可能跟人幾乎無關（kappa 0.02）。"},
+        {"if": "客服等需要每次都對的流程", "then": "看 pass^k，不只 pass@k", "why": "pass@k 隨 k 變高會掩蓋不穩定；pass^k 才反映一致性。"},
+        {"if": "多輪對話 agent", "then": "使用者模擬器 + 分類別指標", "why": "固定腳本無法反映 agent 實際回應；分類指標避免少數壞回覆被平均掩蓋。"},
+        {"if": "已上線", "then": "trace 抽樣 + 線上 judge + 重大改動 A/B", "why": "離線資料分佈和真實流量不同。"}
+      ],
+      "defaultAnswer": "先用 20–50 題真實失敗案例做離線 eval：能機器驗證就用 code grader，開放式輸出用經人工校準的 LLM judge；上線後從真實 trace 抽樣持續評估，安全類 regression 直接擋 release。",
+      "interviewScript": "我會分三層：能機器驗證的用程式檢查最終狀態，每次 commit 跑；開放式輸出用 LLM-as-judge，但先拿人工標註算 Cohen's kappa 校準，因為 Shopify 一開始的 judge kappa 只有 0.02；最後是人讀 transcript 找新失效模式。指標上，客服這類流程我看 pass^k 而不只 pass@k，τ-bench 顯示 gpt-4o 零售場景 pass^8 不到 25%。代價是 judge 要持續校準、多輪模擬很貴，所以上線後改用真實流量抽樣補足。",
+      "pitfalls": [
+        "沒有 eval 就上線，靠「感覺變好了」改 prompt",
+        "用未經人工校準的 LLM judge 分數做決策",
+        "只報 pass@k，忽略一致性（pass^k）",
+        "只看總分，不分類別，安全類失敗被平均掩蓋",
+        "只用精選 golden dataset，和真實流量分佈脫節",
+        "評估時資源配置不一致就比較分數——Anthropic 發現 Terminal-Bench 2.0 只因資源設定就差 6 個百分點，3 個百分點以內的排行榜差距要存疑"
+      ],
+      "cases": [
+        {"name": "Shopify Sidekick", "ref": "agent-case:shopify-sidekick", "note": "改用依真實分佈抽樣的 ground truth set；LLM judge 從 kappa 0.02 校準到 0.61；上線前用商家模擬器測試。"},
+        {"name": "Numan", "ref": "agent-case:numan-eval-first-agent", "note": "eval-first：用正式上線的同一個 agent 跑 eval，五個主題資料集分開計分，安全 regression 自動擋 release，rubric 由臨床人員核准。"},
+        {"name": "Uber EAg-RAG", "ref": "agent-case:uber-enhanced-agentic-rag", "note": "SME 提供參考答案，LLM-as-judge 以 0–5 分評估回答，用來衡量 agentic RAG 改動。"},
+        {"name": "Anthropic Research", "ref": "agent-case:anthropic-multi-agent-research", "note": "從約 20 題開始；單一 LLM judge 依 5 個面向評分；人工測試補抓自動評估漏掉的來源品質問題。"}
+      ],
+      "sources": [
+        "https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents",
+        "https://arxiv.org/abs/2406.12045",
+        "https://hamel.dev/blog/posts/evals/",
+        "https://eugeneyan.com/writing/llm-evaluators/",
+        "https://shopify.engineering/building-production-ready-agentic-systems",
+        "https://www.langchain.com/blog/how-numan-built-an-eval-first-ai-health-coach-with-langgraph-and-langsmith",
+        "https://www.anthropic.com/engineering/infrastructure-noise",
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://www.uber.com/blog/enhanced-agentic-rag/",
+        "https://cursor.com/blog/semsearch"
+      ],
+      "byAgents": true
+    }
+  ],
+  "quiz": [
+    {"q": "你的 agent 接了 5 個 MCP server、上百個工具，對話還沒開始就吃掉大量 context，選錯工具的情況也變多。怎麼改？", "a": "改用 tool search / progressive disclosure：只在需要時載入相關工具定義，並讓每個 agent 只拿精選子集。Anthropic 例子前置 token ~77K → ~8.7K、Opus 4 選擇正確率 49% → 74%；代價是多一次搜尋往返，工具 < 10 個時不划算。", "topic": "tool-interface", "kind": "情境"},
+    {"q": "退款上限這種商業規則，該寫在 system prompt 還是工具實作裡？為什麼？", "a": "寫在工具實作裡（高階整併工具，例如 issue_refund 內部檢查上限）。prompt 規則模型可能不照做，工具層才能強制；代價是規則邏輯要自己維護。", "topic": "tool-interface", "kind": "取捨"},
+    {"q": "MCP 和 A2A 的分工是什麼？", "a": "MCP 定義 agent 怎麼使用工具與資源（agent↔工具，垂直擴充單一 agent 能力）；A2A 讓不同 agent 以對等身分協作（agent↔agent，水平）。", "topic": "tool-interface", "kind": "概念"},
+    {"q": "什麼情況下「砍掉專用工具、只給 bash + 檔案系統」會失敗？", "a": "底層資料雜亂、命名不一致時模型會迷路；Vercel 明說這招只因語意層本來就是好文件才有效。另外 bash 需要 sandbox，權限過大有破壞性風險。", "topic": "tool-interface", "kind": "取捨"},
+    {"q": "要從 10MB log 算出錯誤統計，用一般 tool call 和 code execution 有什麼差別？", "a": "一般 tool call 會把大量中間結果塞回 context；code execution 讓模型寫程式在 sandbox 裡過濾彙總，只回最終結果（Anthropic 例子 150,000 → 2,000 tokens）。代價是要維運安全的執行環境。", "topic": "tool-interface", "kind": "取捨"},
+    {"q": "企業內部資安政策問答，文件之間差異很細微，單純向量 RAG 常撈錯段落。怎麼改？", "a": "做 agentic RAG：檢索前改寫 / 拆解問題並依 metadata 縮小文件範圍，向量 + BM25 混合檢索，檢索後去重排序；文件前處理要保留表格。Uber 做完可接受答案相對 +27%、錯誤建議相對 -60%，代價是多幾次 LLM 呼叫的延遲。", "topic": "retrieval-strategy", "kind": "情境"},
+    {"q": "為什麼 Cline / Claude Code 這類 coding agent 選擇不建 vector index？代價是什麼？", "a": "chunk 會切斷程式邏輯、索引會過期、索引是敏感程式碼的另一份副本；改用 grep / 讀檔即時探索。代價是比讀預先算好的索引慢、耗 token。", "topic": "retrieval-strategy", "kind": "取捨"},
+    {"q": "延遲預算是 95% 查詢 1–2 秒內，該用 RAG 還是 agentic search？", "a": "RAG（詞彙 + embedding rerank 混合）。多步 agent 探索在這個預算內做不完；Dropbox Dash 就是用這個目標選擇傳統 IR 混合方案，多步驟複雜查詢才交給 agent。", "topic": "retrieval-strategy", "kind": "取捨"},
+    {"q": "Cursor 的 A/B 測試顯示 semantic search 的效益在什麼條件下最明顯？", "a": "大型 codebase（1,000 檔以上），code retention +2.6%（全體只 +0.3%，因為很多請求不需要搜尋）；而且是 semantic search 與 grep 一起用效果最好。", "topic": "retrieval-strategy", "kind": "數字"},
+    {"q": "RAG 系統多租戶時最容易漏掉的安全問題是什麼？", "a": "檢索時沒依使用者權限過濾，使用者透過問答讀到無權看的文件；索引本身也是敏感資料的另一份副本，要一樣做存取控制。", "topic": "retrieval-strategy", "kind": "概念"},
+    {"q": "背景 coding agent 一個任務跑兩小時，中途會部署新版本。你怎麼設計執行模型？", "a": "觸發時建 job 進佇列，worker 在 sandbox 跑；每次 LLM / 工具呼叫記進 durable log，crash 後從斷點接續；部署用 rainbow deployment 讓舊執行跑完；結果以 draft PR 通知人審查。", "topic": "long-running-async", "kind": "情境"},
+    {"q": "用 Temporal 跑 agent 時，LLM 呼叫可以直接寫在 workflow 程式裡嗎？", "a": "不行。workflow 程式必須 deterministic，LLM 呼叫要放進 activity；crash 後重播時直接用已記錄的結果，agent 不會做出不同決策。", "topic": "long-running-async", "kind": "概念"},
+    {"q": "agent 要建整個 web app，單一 context window 一定做不完。怎麼避免它做到一半 context 用光或提早宣布完成？", "a": "initializer agent 先建 init.sh、進度檔與 JSON 功能清單（全部 passes:false）並 commit；之後每個 session 讀 git log 與進度、一次做一個功能、端對端測過才標記。代價是每個新 session 都要花 token 重讀進度。", "topic": "long-running-async", "kind": "情境"},
+    {"q": "agent 需要等主管核准才能繼續，可能等一天。worker 要一直掛著等嗎？", "a": "不要。用 durable execution 讓 agent 在等待時暫停、核准到了再恢復（Restate：只付實際運算時間），避免空轉佔資源，也不怕期間部署或重啟。", "topic": "long-running-async", "kind": "取捨"},
+    {"q": "Anthropic Managed Agents 把 harness、sandbox、session log 拆開，解決了什麼問題？", "a": "原本都在同一容器，容器掛了 session 就沒了，只能手動救（pets）。拆開後 harness 無狀態，掛了用 wake(sessionId) 讀 event log 接續，容器掛了當成工具錯誤重試；p50 TTFT 約降 60%、p95 降超過 90%。", "topic": "long-running-async", "kind": "概念"},
+    {"q": "agent 呼叫付款 API，扣款成功但回應在網路上丟了，你的 retry 會怎樣？怎麼防？", "a": "從頭重跑迴圈會把已成功的扣款再執行一次。要用 durable step 記錄已完成步驟，並把 toolCallId 當 idempotency key 傳給付款 API；durable 只保證 at-least-once，冪等 key 才是最後一道防線。", "topic": "agent-reliability", "kind": "情境"},
+    {"q": "MAST 研究中，哪兩種系統設計類失效最常見？各佔多少？對設計有什麼啟示？", "a": "step repetition 15.7%、不知道終止條件 12.4%。啟示：在 harness 設步數 / token / 時間上限與明確完成判準，不靠模型自己決定何時停。", "topic": "agent-reliability", "kind": "數字"},
+    {"q": "簡單 retry 和 durable execution 怎麼選？", "a": "短任務、工具唯讀或已冪等 → 簡單 backoff retry，不值得引入基礎設施。多步驟、有副作用、會累積錯誤的長流程 → durable execution 從斷點接續，代價是多一套系統且 orchestration 要 deterministic。", "topic": "agent-reliability", "kind": "取捨"},
+    {"q": "Stripe 為什麼限制 coding agent 最多兩輪 CI？", "a": "多輪 CI 對 LLM 的邊際效益遞減；第一次失敗讓 agent 修一次再 push，之後就停、交給人。這是用硬性預算換成本可控，代價是部分本可修好的任務被放棄。", "topic": "agent-reliability", "kind": "取捨"},
+    {"q": "線上客服 agent 依賴單一 LLM 供應商，供應商故障怎麼辦？failover 有什麼隱藏風險？", "a": "跨供應商 / 跨模型 failover、依延遲路由並預留容量（Intercom 預留 2–3 倍流量）。風險是 failover 到沒 eval 過的模型品質悄悄下降，要用客戶結果指標監控。", "topic": "agent-reliability", "kind": "情境"},
+    {"q": "客服退款 agent 在 eval 上 pass@1 看起來不錯，為什麼還要看 pass^k？", "a": "pass^k 是 k 次全部成功的機率，反映一致性；客服每個客人都要對。τ-bench 中 gpt-4o 成功率 < 50%，零售場景 pass^8 < 25%。pass@k 隨 k 上升反而會掩蓋不穩定。", "topic": "agent-eval", "kind": "取捨"},
+    {"q": "你用 LLM-as-judge 評估客服回覆，怎麼知道 judge 可信？", "a": "拿人工標註當基準算 Cohen's kappa，反覆調 judge prompt。Shopify 一開始 kappa 只有 0.02，校準後 0.61（人與人 0.69）。盡量用 binary 判斷，才能算 precision / recall。", "topic": "agent-eval", "kind": "情境"},
+    {"q": "Code-based、model-based、human 三種 grader 各自的代價？", "a": "Code：快、便宜、可重現，但對格式不同的正確解太嚴格。Model：彈性、可擴展，但非確定、較貴、要校準。Human：品質最高，但貴、慢、需專家，主要用來找失效模式與校準 judge。", "topic": "agent-eval", "kind": "概念"},
+    {"q": "剛開始做 agent，還沒有任何 eval，第一步做什麼？", "a": "從 20–50 個真實失敗案例建小型 eval set，並讀 transcript 確認失敗是 agent 錯還是 grader 錯；早期改動效果大，小樣本就看得出差異，不必等幾百題。", "topic": "agent-eval", "kind": "情境"},
+    {"q": "兩個 agent 在 Terminal-Bench 上差 2 個百分點，可以說 A 比 B 好嗎？", "a": "不一定。Anthropic 發現只改資源設定就能讓 Terminal-Bench 2.0 差 6 個百分點，建議 3 個百分點以下的差距在 eval 配置對齊前都要存疑。", "topic": "agent-eval", "kind": "數字"},
+    {"q": "為什麼 Shopify 從 golden dataset 改成 ground truth set？", "a": "精選的 golden dataset 跟真實流量分佈不同，離線分數好看不代表線上好；改成依真實商家對話分佈抽樣，eval 才反映實際表現。代價是要持續抽樣與標註。", "topic": "agent-eval", "kind": "取捨"}
+  ]
+}

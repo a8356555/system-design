@@ -11,6 +11,10 @@ DOCS = "/Users/a8356555/Projects/alan/interview/system-design/docs"
 TOPIC_IDS = ("contention consistency multistep idempotency caching scaling-reads sharding scaling-writes realtime "
              "fanout async-jobs streaming blobs search geo counting rate-limiting reliability api-networking auth "
              "storage-choice id-generation").split()
+AGENT_TOPIC_IDS = ("agent-vs-workflow orchestration planning-reflection agent-comm context-memory tool-interface "
+                   "retrieval-strategy long-running-async agent-reliability agent-eval agent-safety agent-permissions "
+                   "agent-cost-latency agent-deploy-versioning").split()
+TOPIC_IDS += AGENT_TOPIC_IDS
 # Numbers must come from a page actually read; agents sometimes keep snippet-only figures with a label.
 SECOND_HAND = re.compile(r"搜尋摘要|二手|未查證|未提供|摘要所述|vendor 報告|轉述|未給出|沒有給出|無具體")
 DOMAINS = ("video maps connections recsys moderation data-pipeline deploy-migration observability "
@@ -60,6 +64,18 @@ def load_incidents(data, problems):
     return incidents, names
 
 
+def load_agent_section(data):
+    """Agent 系統設計區: topics-agent-*.json ({topics, quiz}), cases-agent-*.json, agent-readings.json."""
+    for path in sorted(glob.glob(os.path.join(HERE, "data", "topics-agent-*.json"))):
+        part = load(os.path.basename(path))
+        data["topics"] += part["topics"]
+        data["quiz"] += part.get("quiz", [])
+    for path in sorted(glob.glob(os.path.join(HERE, "data", "cases-agent-*.json"))):
+        data["cases"] += load(os.path.basename(path))
+    path = os.path.join(HERE, "data", "agent-readings.json")
+    data["readings"] = load("agent-readings.json") if os.path.exists(path) else []
+
+
 def apply_number_checks(items, problems):
     """Use verify_numbers.py output (+ manual review) to drop unsupported figures and flag unreadable ones."""
     check_path = os.path.join(HERE, "data", "number-check.json")
@@ -73,7 +89,8 @@ def apply_number_checks(items, problems):
     by_id = {x["id"]: x for x in items}
     for (iid, fig), st in status.items():
         x = by_id.get(iid)
-        if not x or fig not in x.get("numbers", []):
+        key = "scaleNumbers" if x and "scaleNumbers" in x else "numbers"
+        if not x or fig not in x.get(key, []):
             continue
         if st == "unreadable":
             x["numbersUnverified"] = True
@@ -81,9 +98,9 @@ def apply_number_checks(items, problems):
             r = review.get((iid, fig))
             verdict = r["verdict"] if r else "unsupported"
             if verdict == "wrong" and r.get("fix"):
-                x["numbers"] = [r["fix"] if n == fig else n for n in x["numbers"]]
+                x[key] = [r["fix"] if n == fig else n for n in x[key]]
             elif verdict not in ("supported", "derived"):
-                x["numbers"] = [n for n in x["numbers"] if n != fig]
+                x[key] = [n for n in x[key] if n != fig]
                 problems.append(f"{iid}: removed unsupported figure {fig[:50]}")
 
 
@@ -91,6 +108,7 @@ def main():
     topics = [t for i in range(1, 5) for t in load(f"topics-{i}.json")]
     cases = load("cases-1.json") + load("cases-2.json")
     data = {"topics": topics, "cases": cases, "components": load("components.json"), "quiz": load("quiz.json")}
+    load_agent_section(data)
 
     problems = []
     mechanisms = []
@@ -117,7 +135,14 @@ def main():
     dup = [k for k, v in collections.Counter(m["id"] for m in mechanisms).items() if v > 1]
     problems += [f"duplicate mechanism id {k}" for k in dup]
     data["mechanisms"] = mechanisms
-    apply_number_checks(mechanisms + incidents, problems)
+    for r in data["readings"]:
+        flagged = [n for n in r.get("numbers", []) if SECOND_HAND.search(n)]
+        if flagged:
+            problems.append(f"reading {r['id']}: dropped second-hand numbers {flagged}")
+            r["numbers"] = [n for n in r["numbers"] if n not in flagged]
+        r["topics"] = [x for x in r.get("topics", []) if x in TOPIC_IDS]
+    agent_cases = [c for c in cases if c.get("source") == "Agent Case Study"]
+    apply_number_checks(mechanisms + incidents + data["readings"] + agent_cases, problems)
     got = {t["id"] for t in topics}
     problems += [f"missing topic {t}" for t in TOPIC_IDS if t not in got]
     problems += [f"unknown topic id {t}" for t in got - set(TOPIC_IDS)]
@@ -125,7 +150,10 @@ def main():
         if len(t.get("options", [])) < 3:
             problems.append(f"{t['id']}: only {len(t.get('options', []))} options")
         for c in t.get("cases", []):
-            if not os.path.exists(os.path.join(DOCS, c["ref"])):
+            if c["ref"].startswith("agent-case:"):
+                if c["ref"][11:] not in {x["id"] for x in cases}:
+                    problems.append(f"{t['id']}: agent case not found {c['ref']}")
+            elif not os.path.exists(os.path.join(DOCS, c["ref"])):
                 problems.append(f"{t['id']}: case ref not found {c['ref']}")
     ids = collections.Counter(c["id"] for c in cases)
     problems += [f"duplicate case id {k}" for k, v in ids.items() if v > 1]
@@ -134,7 +162,10 @@ def main():
         if bad:
             problems.append(f"case {c['id']}: bad topics {bad}")
             c["topics"] = [x for x in c["topics"] if x in TOPIC_IDS]
-        if not os.path.exists(os.path.join(DOCS, c.get("file", ""))):
+        if c.get("source") == "Agent Case Study":
+            if not c.get("origin"):
+                problems.append(f"case {c['id']}: agent case without origin")
+        elif not os.path.exists(os.path.join(DOCS, c.get("file", ""))):
             problems.append(f"case {c['id']}: file not found {c.get('file')}")
     qt = collections.Counter(q.get("topic") for q in data["quiz"])
     problems += [f"quiz: topic {t} has {qt[t]} questions" for t in TOPIC_IDS if qt[t] < 2]

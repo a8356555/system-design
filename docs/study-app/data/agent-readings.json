@@ -1,0 +1,1330 @@
+[
+  {
+    "id": "anthropic-building-effective-agents",
+    "type": "guide",
+    "org": "Anthropic",
+    "title": "Building Effective AI Agents",
+    "url": "https://www.anthropic.com/engineering/building-effective-agents",
+    "date": "2024-12",
+    "claim": "成功的 agent 系統靠簡單、可組合的 pattern，而不是複雜框架；先找最簡單的解法，只在需要時才加複雜度。",
+    "keyPoints": [
+      "區分 workflow（程式碼預先定義路徑）與 agent（LLM 動態決定流程與工具使用）。",
+      "列出 augmented LLM、prompt chaining、routing、parallelization、orchestrator-workers、evaluator-optimizer 等 workflow pattern，最後才是 autonomous agent。",
+      "三原則：設計保持簡單、把 agent 的規劃步驟透明化、像設計 HCI 一樣用心設計 agent-computer interface（工具文件與測試）。",
+      "明講 agentic 系統是「用 latency 與 cost 換 task performance」，且錯誤會累積。"
+    ],
+    "numbers": [],
+    "designTakeaway": "面試時先問「單次 LLM call + retrieval + few-shot 是否夠用」；路徑可預先列舉就用 workflow（可測、可預估成本），只有步驟數與分支無法事先決定時才上 agent loop，並同時加 stopping condition 與 sandbox。",
+    "caveat": "沒有任何量化數據，屬經驗性指南；原文已加註 2024-12 之後工具生態已變（指向 Claude Managed Agents）。",
+    "topics": [
+      "agent-vs-workflow",
+      "orchestration",
+      "tool-interface"
+    ]
+  },
+  {
+    "id": "anthropic-context-engineering",
+    "type": "guide",
+    "org": "Anthropic",
+    "title": "Effective context engineering for AI agents",
+    "url": "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents",
+    "date": "2025-09",
+    "claim": "Context 是有限的 attention budget，會隨長度劣化；agent 的核心問題已從 prompt engineering 轉為「每一步該放哪些 token」。",
+    "keyPoints": [
+      "Just-in-time retrieval：只放輕量識別子（檔名、查詢、連結），需要時用工具載入，而不是預先全部塞進 context。",
+      "Compaction：接近上限時摘要歷史並開新 context，保留架構決策、未解 bug、實作細節。",
+      "Structured note-taking：agent 把筆記寫到 context 之外，長任務時再讀回。",
+      "Sub-agent 架構：子 agent 在乾淨 context 深入探索，只回傳濃縮摘要給主 agent。"
+    ],
+    "numbers": [],
+    "designTakeaway": "Retrieval 策略是取捨：runtime 探索比預先算好的索引慢，但避免索引過期；資料變動頻繁（code repo）偏 just-in-time，靜態知識庫可預先載入，實務上用 hybrid。長任務必須事先決定 compaction 保留什麼，否則摘要會丟掉關鍵決策。",
+    "caveat": "廠商經驗文，無對照實驗數據；範例多來自 Claude Code 與 Claude 玩 Pokémon，未必適用低延遲對話場景。",
+    "topics": [
+      "context-memory",
+      "retrieval-strategy",
+      "orchestration"
+    ]
+  },
+  {
+    "id": "anthropic-writing-tools",
+    "type": "guide",
+    "org": "Anthropic",
+    "title": "Writing effective tools for agents — with agents",
+    "url": "https://www.anthropic.com/engineering/writing-tools-for-agents",
+    "date": "2025-09",
+    "claim": "工具是給非確定性 agent 用的介面，不能把 API endpoint 一對一包裝；要用 eval 驅動、讓 agent 協助迭代工具設計。",
+    "keyPoints": [
+      "只做對應真實工作流程的高價值工具，把多步操作合併（例如 schedule_event 取代 list_users + list_events + create_event）。",
+      "用一致的 namespace 前綴（如 asana_projects_search）降低工具混淆。",
+      "回傳語意化識別子而非 UUID；只回傳高訊號資訊，提供 concise / detailed 回應格式。",
+      "預設做 pagination、filtering、truncation；錯誤訊息要能引導 agent 修正呼叫。"
+    ],
+    "numbers": [
+      "Claude Code 預設把工具回應上限設為 25,000 tokens。",
+      "Slack thread 範例：detailed 回應 206 tokens，concise 回應 72 tokens。"
+    ],
+    "designTakeaway": "工具粒度是取捨：合併成高階工具省 context 與步數，但工具邏輯更複雜、彈性較低；工具數一多就要做 namespace 與回應格式參數，並把「工具描述」納入版本控管與 eval，而不是當成文件。",
+    "caveat": "改善幅度只以 Anthropic 內部 Slack / Asana held-out test set 呈現，屬廠商自評。",
+    "topics": [
+      "tool-interface",
+      "agent-eval",
+      "agent-cost-latency"
+    ]
+  },
+  {
+    "id": "anthropic-code-execution-mcp",
+    "type": "blog",
+    "org": "Anthropic",
+    "title": "Code execution with MCP: Building more efficient agents",
+    "url": "https://www.anthropic.com/engineering/code-execution-with-mcp",
+    "date": "2025-11",
+    "claim": "把 MCP server 以程式碼 API（檔案樹）呈現給 agent，讓它按需載入工具定義、在執行環境內過濾資料，可大幅降低 token 消耗。",
+    "keyPoints": [
+      "直接 tool call 的兩個成本：所有工具定義預先塞進 context、每個中間結果都經過模型。",
+      "改成 agent 寫程式呼叫工具：只讀需要的工具定義，大量資料在 sandbox 內處理後只回傳摘要。",
+      "附帶好處：中間資料可不進模型 context（隱私）、可在檔案系統保存狀態與可重用技能。"
+    ],
+    "numbers": [
+      "Google Drive → Salesforce 範例：從 150,000 tokens 降到 2,000 tokens，節省 98.7%。"
+    ],
+    "designTakeaway": "工具很多或中間資料很大時，把「工具呼叫」從 model-in-the-loop 改為 code-in-the-loop 可省一到兩個數量級 token；代價是必須有 sandbox、資源限制與監控，等於把成本從 token 轉成基礎設施與安全面。",
+    "caveat": "98.7% 是單一示意情境的估算，不是 benchmark；原文明說 code execution 帶來額外的運維與安全負擔。",
+    "topics": [
+      "tool-interface",
+      "agent-cost-latency",
+      "retrieval-strategy",
+      "context-memory"
+    ]
+  },
+  {
+    "id": "anthropic-long-running-harness",
+    "type": "blog",
+    "org": "Anthropic",
+    "title": "Effective harnesses for long-running agents",
+    "url": "https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents",
+    "date": "2025-11",
+    "claim": "跨多個 context window 的長任務，需要 initializer agent 建立環境 + 每次 session 增量推進並留下可接手的狀態。",
+    "keyPoints": [
+      "Initializer agent 第一次執行時建立 init.sh、claude-progress.txt、初始 git commit。",
+      "用 JSON feature list（範例 200+ 項，標 passing/failing）防止 agent 過早宣告完成。",
+      "每個 session 只做一個 feature、以 git commit 與進度檔記錄，下一個 session 先讀這些恢復狀態。",
+      "要求用瀏覽器自動化（Puppeteer MCP）以使用者角度做端到端驗證。"
+    ],
+    "numbers": [
+      "claude.ai clone 範例的 feature list 超過 200 項。"
+    ],
+    "designTakeaway": "長任務的狀態要外部化成「機器可讀的待辦清單 + 版本控制 + 啟動腳本」，而不是依賴 compaction 摘要；完成條件要由外部測試判定，不能讓 agent 自己說完成。",
+    "caveat": "只在 web app 開發驗證；作者自承單 agent vs 多 agent 何者較好仍未知，且視覺限制讓部分 bug（如 modal）難以被測到。",
+    "topics": [
+      "long-running-async",
+      "context-memory",
+      "agent-reliability"
+    ]
+  },
+  {
+    "id": "anthropic-think-tool",
+    "type": "blog",
+    "org": "Anthropic",
+    "title": "The \"think\" tool: Enabling Claude to stop and think in complex tool use situations",
+    "url": "https://www.anthropic.com/engineering/claude-think-tool",
+    "date": "2025-03",
+    "claim": "提供一個不產生外部副作用的 think 工具，讓模型在工具呼叫之間停下來推理，可改善政策密集、多步決策的任務。",
+    "keyPoints": [
+      "適用：需分析工具輸出、政策規則多、每步錯誤代價高的循序決策。",
+      "不適用：非循序或平行的工具呼叫、簡單指令遵循。",
+      "困難領域需搭配範例 prompt 說明怎麼想；簡單領域只給工具就有效。"
+    ],
+    "numbers": [
+      "τ-bench airline：think tool + 優化 prompt pass^1 0.584，baseline 0.332。",
+      "τ-bench retail：只加 think tool 0.812，baseline 0.783。",
+      "SWE-bench：think tool 單獨效果平均提升 1.6%（p < .001）。"
+    ],
+    "designTakeaway": "在高風險、規則多的步驟前插入顯式的推理檢查點，是成本最低的可靠度手段之一；代價是更多輸出 token 與延遲，所以只在政策密集的節點啟用，而非全域開啟。",
+    "caveat": "只測 Claude 3.7 Sonnet 時代的模型與 τ-bench / SWE-bench；後續 extended thinking 與 interleaved thinking 已部分取代這個做法。",
+    "topics": [
+      "planning-reflection",
+      "agent-reliability",
+      "tool-interface"
+    ]
+  },
+  {
+    "id": "anthropic-agent-skills",
+    "type": "blog",
+    "org": "Anthropic",
+    "title": "Equipping agents for the real world with Agent Skills",
+    "url": "https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills",
+    "date": "2025-10",
+    "claim": "用可動態載入的 Skill 目錄（SKILL.md + 腳本 + 參考檔）把通用 agent 特化，而不是為每個用途另建 agent。",
+    "keyPoints": [
+      "Progressive disclosure 三層：啟動時只載 name/description；判定相關才載完整 SKILL.md；再按需讀附帶檔案與腳本。",
+      "腳本可由 agent 執行而不必讀進 context，適合確定性操作。",
+      "安全：只裝可信來源、安裝前審查程式碼與對外網路的指示。"
+    ],
+    "numbers": [],
+    "designTakeaway": "領域知識的載入可以做成分層索引（metadata → 主文件 → 附件），讓 context 成本與「實際用到的知識」成正比；但 skill 等同可執行程式碼，要當作供應鏈依賴審查。",
+    "caveat": "沒有量化評估；Skill 的觸發依賴模型判斷 description 相關性，可能漏觸發或誤觸發。",
+    "topics": [
+      "context-memory",
+      "retrieval-strategy",
+      "tool-interface"
+    ]
+  },
+  {
+    "id": "anthropic-contain-claude",
+    "type": "blog",
+    "org": "Anthropic",
+    "title": "How we contain Claude across products",
+    "url": "https://www.anthropic.com/engineering/how-we-contain-claude",
+    "date": "2026-05",
+    "claim": "Agent 安全以「環境隔離」為主防線，模型層防禦是機率性的補充；能力越強 blast radius 越大，containment 要隨之加強。",
+    "keyPoints": [
+      "三層：environment containment（gVisor 容器、OS sandbox、VM）、model-level safeguards（system prompt、classifier、probe）、external content controls（proxy 檢查工具輸出、API allowlist、唯讀/讀寫分級授權）。",
+      "Claude Code sandbox：工作目錄內可讀寫，網路預設拒絕。",
+      "發現使用者對 permission prompt 幾乎都按同意，改用 sandbox 減少詢問；非技術使用者無法可靠判斷 bash 指令。",
+      "自製元件比久經考驗的 hypervisor 弱；VM 隔離會造成端點可視性缺口。"
+    ],
+    "numbers": [
+      "使用者批准約 93% 的 permission prompt（approval fatigue）。",
+      "導入 sandbox 後 permission prompt 減少 84%。",
+      "Claude Code auto mode 約能在執行前攔下 83% 的 overeager 行為。",
+      "Claude Opus 4.7 單次嘗試的 prompt injection 攻擊成功率約 0.1%。"
+    ],
+    "designTakeaway": "不要把人工核准當主要防線：93% 同意率代表 permission prompt 會退化成橡皮圖章。先用確定性的隔離（檔案系統邊界、網路預設拒絕）縮小 blast radius，再只對隔離外的動作要求核准。",
+    "caveat": "廠商自評數字，測量方法與攻擊集未公開；作者明說任何機率性防禦都有非零漏網率。",
+    "topics": [
+      "agent-permissions",
+      "agent-safety"
+    ]
+  },
+  {
+    "id": "anthropic-demystifying-evals",
+    "type": "guide",
+    "org": "Anthropic",
+    "title": "Demystifying evals for AI agents",
+    "url": "https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents",
+    "date": "2026-01",
+    "claim": "Agent 要能放心迭代與上線，需要自動化 eval：區分 capability 與 regression eval、組合多種 grader、並持續讀 transcript。",
+    "keyPoints": [
+      "Grader 三類：code-based（快、可重現）、model-based（彈性但需人工校準）、human（金標準但慢且貴）。",
+      "pass@k（k 次至少一次成功）適合只需一個解的工具；pass^k（k 次全成功）適合要求一致性的客服型 agent。",
+      "Capability eval 針對還做不好的任務；飽和後「畢業」成 regression eval，維持接近 100%。",
+      "讀 transcript 才能確認 grader 正確、失敗是「公平的」。"
+    ],
+    "numbers": [
+      "SWE-bench Verified：一年內 LLM 從 40% 進步到 >80%。",
+      "早期開發 20–50 個簡單任務的 eval 就足夠起步。",
+      "Opus 4.5 在 CORE-Bench 修正 eval bug 後分數從 42% 變成 95%。"
+    ],
+    "designTakeaway": "模型或 prompt 版本升級要有 regression eval 當上線閘門，capability eval 當進度指標；選 pass@k 還是 pass^k 取決於產品是「重試一次可接受」還是「每次都要對」。",
+    "caveat": "CORE-Bench 例子說明 eval 本身的 bug 可以讓分數差一倍以上，引用任何 agent 分數前要先確認 harness；文章為方法論，無對照實驗。",
+    "topics": [
+      "agent-eval",
+      "agent-deploy-versioning",
+      "agent-reliability"
+    ]
+  },
+  {
+    "id": "anthropic-infra-noise",
+    "type": "blog",
+    "org": "Anthropic",
+    "title": "Quantifying infrastructure noise in agentic coding evals",
+    "url": "https://www.anthropic.com/engineering/infrastructure-noise",
+    "date": "2026-02",
+    "claim": "Agentic coding benchmark 的分數會被基礎設施設定（CPU/RAM 上限、kill 門檻）顯著影響，混淆了模型能力的量測。",
+    "keyPoints": [
+      "資源限制會決定哪些解題策略能成功（例如裝大型相依、跑完整測試）。",
+      "建議每個任務設定兩個參數：保證配額與硬性 kill 門檻，而非單一固定值。",
+      "把資源設定當成需記錄的實驗變數。"
+    ],
+    "numbers": [
+      "Terminal-Bench 2.0：資源最多與最少的設定差 6 個百分點（p < 0.01）。",
+      "Infra 錯誤率：嚴格限制 5.8%，不設上限 0.5%；給 3x headroom 降到 2.1%（p < 0.001）。",
+      "1x → 3x 規格的成功率提升在雜訊內（p=0.40）；3x → 不設上限約再升 4 個百分點。",
+      "SWE-bench：5x vs 1x RAM 差 1.54 個百分點。",
+      "排行榜差距小於 3 個百分點時，在 eval 設定未公開且對齊前應存疑。"
+    ],
+    "designTakeaway": "比較兩個模型或兩版 agent 時，要固定並記錄執行環境；上線前的 A/B 若跑在不同機器規格上，3 個百分點以內的差異不能當作決策依據。",
+    "caveat": "主要只測 Claude 模型；時段效應只有觀察未量化；外部評測者難以複製專用硬體條件。",
+    "topics": [
+      "agent-eval",
+      "agent-deploy-versioning"
+    ]
+  },
+  {
+    "id": "anthropic-prompt-injection-browser",
+    "type": "blog",
+    "org": "Anthropic",
+    "title": "Mitigating the risk of prompt injections in browser use",
+    "url": "https://www.anthropic.com/research/prompt-injection-defenses",
+    "date": "2025-11",
+    "claim": "瀏覽器 agent 的 prompt injection 風險可透過訓練 + classifier + red teaming 大幅降低，但仍未解決。",
+    "keyPoints": [
+      "三層防禦：RL 訓練模型辨識並拒絕注入、classifier 偵測不可信內容中的指令、人工 red teaming。",
+      "評估用內部 best-of-N 攻擊者，每個條件 2,200–3,200 次嘗試。",
+      "作者明言沒有任何 browser agent 對 prompt injection 免疫。"
+    ],
+    "numbers": [
+      "加強防護後攻擊成功率：Opus 4.5 1.4%、Sonnet 4.5 1.9%、Haiku 4.5 2.4%、Sonnet 4 2.0%（內部 best-of-N 攻擊者）。"
+    ],
+    "designTakeaway": "1% 攻擊成功率在高頻操作下仍是確定會發生的事件；瀏覽器 agent 若同時有私人資料與對外傳送能力，必須在架構層切斷（例如敏感動作需確認、限制可造訪網域），不能只靠模型穩健度。",
+    "caveat": "廠商自評、攻擊者為內部自建，數字無法與其他廠商直接比較；屬模型版本快照，會隨模型更新過時。",
+    "topics": [
+      "agent-safety"
+    ]
+  },
+  {
+    "id": "cognition-dont-build-multi-agents",
+    "type": "blog",
+    "org": "Cognition",
+    "title": "Don't Build Multi-Agents",
+    "url": "https://cognition.com/blog/dont-build-multi-agents",
+    "date": "2025-06",
+    "claim": "現階段多 agent 平行架構很脆弱；單執行緒、完整共享 context 的線性 agent 較可靠。",
+    "keyPoints": [
+      "原則一：共享 context，而且要共享完整 agent trace，不只是單則訊息。",
+      "原則二：行動隱含決策，平行 agent 互相看不到彼此的決策，會產生衝突結果。",
+      "Flappy Bird 例：子 agent 1 做出 Super Mario 風格背景、子 agent 2 做出不像遊戲的鳥，coordinator 無法整合。",
+      "長任務改用「線性 agent + 壓縮模型」摘要歷史與決策，而非拆平行 agent。"
+    ],
+    "numbers": [],
+    "designTakeaway": "拆子 agent 前先問：子任務之間是否有隱含的共同決策（風格、介面、假設）？有就不要平行寫入，改成單一 agent 循序做，或只讓子 agent 做唯讀調查並回傳摘要。",
+    "caveat": "觀點文，無量化實驗；作者承認模型改進後多 agent 可能可行；Cognition 自家產品是單 agent，有立場偏向。",
+    "topics": [
+      "agent-vs-workflow",
+      "agent-comm",
+      "context-memory",
+      "orchestration"
+    ]
+  },
+  {
+    "id": "openai-practical-guide-agents",
+    "type": "guide",
+    "org": "OpenAI",
+    "title": "A practical guide to building agents",
+    "url": "https://cdn.openai.com/business-guides-and-resources/a-practical-guide-to-building-agents.pdf",
+    "date": "2025-04",
+    "claim": "Agent 適合複雜判斷、非結構化資料、難維護的規則系統；建議先把單一 agent 能力用到極限，再視需要拆成多 agent，並以分層 guardrail 保護。",
+    "keyPoints": [
+      "適用情境：complex decision-making、difficult-to-maintain rules、heavy reliance on unstructured data。",
+      "模型選擇：先用最強模型建立 eval baseline，再換小模型看是否仍可接受。",
+      "多 agent 兩種模式：manager（agents as tools，中央 LLM 調度）與 decentralized（agent 之間 handoff）。",
+      "人工介入觸發：超過失敗門檻（重試或動作次數上限）、高風險/不可逆動作。"
+    ],
+    "numbers": [
+      "工具數不是唯一問題：有些實作能管理超過 15 個定義清楚的工具，有些在少於 10 個重疊工具時就出錯。"
+    ],
+    "designTakeaway": "拆分 agent 的觸發條件是「prompt 裡 if-else 分支過多」或「工具重疊導致選錯」，而不是工具數量本身；先改善工具命名與描述，無效再拆。模型降級要有 eval baseline 作比較基準。",
+    "caveat": "廠商白皮書，範例以 OpenAI Agents SDK 撰寫；無 benchmark 數據，15/10 工具數是經驗描述而非實驗。",
+    "topics": [
+      "agent-vs-workflow",
+      "orchestration",
+      "agent-safety",
+      "agent-cost-latency",
+      "agent-deploy-versioning"
+    ]
+  },
+  {
+    "id": "openai-agents-sdk-guardrails",
+    "type": "guide",
+    "org": "OpenAI",
+    "title": "Guardrails (Agents SDK)",
+    "url": "https://openai.github.io/openai-agents-python/guardrails/",
+    "date": "2025",
+    "claim": "Guardrail 分 input / output / tool 三種，透過 tripwire 立即中止執行；input guardrail 可選平行或阻斷執行，代表延遲與成本的取捨。",
+    "keyPoints": [
+      "Input guardrail 檢查使用者輸入、output guardrail 檢查最終輸出、tool guardrail 包住每次工具呼叫的前後。",
+      "Tripwire 觸發即丟例外、停止 agent。",
+      "平行模式延遲最低，但 tripwire 觸發前 agent 可能已花掉 token；阻斷模式先檢查完才開始，省 token 也避免工具副作用。",
+      "多 agent 鏈中 input guardrail 只跑在第一個 agent、output 只跑在最後一個；tool guardrail 每次呼叫都跑。"
+    ],
+    "numbers": [],
+    "designTakeaway": "Guardrail 放在哪裡是架構決策：會產生副作用的流程用 blocking input guardrail；純讀取對話可用平行模式換延遲。manager-specialist 架構中要靠 tool guardrail，因為中間 agent 不會經過 input/output guardrail。",
+    "caveat": "SDK 文件，描述機制不含效果評估；guardrail 本身多半是 LLM 分類器，同樣有漏判。",
+    "topics": [
+      "agent-safety",
+      "agent-cost-latency"
+    ]
+  },
+  {
+    "id": "openai-cookbook-routines-handoffs",
+    "type": "guide",
+    "org": "OpenAI",
+    "title": "Orchestrating Agents: Routines and Handoffs",
+    "url": "https://developers.openai.com/cookbook/examples/orchestrating_agents",
+    "date": "2024-10",
+    "claim": "用「routine（system prompt + 工具）」與「handoff（工具函式回傳另一個 Agent）」即可實作輕量多 agent，handoff 時共享整段對話歷史。",
+    "keyPoints": [
+      "Routine：自然語言步驟 + 完成所需的工具。",
+      "Handoff：工具函式回傳 Agent 物件，執行迴圈偵測到就切換 active agent，像電話轉接。",
+      "共享狀態 = 整個 messages list，接手的 agent 知道完整先前對話。",
+      "Routine 任務塞太多時會開始出錯；條件邏輯靠 LLM 而非顯式 state machine。"
+    ],
+    "numbers": [],
+    "designTakeaway": "Handoff 模式的 agent-comm 成本最低（直接共享歷史），但 context 隨轉接累積、每個 agent 都看到全部資訊；需要權限隔離或 context 精簡時，改用 manager 呼叫子 agent、只傳必要參數。",
+    "caveat": "頁面已標示 archived、可能引用過時模型與 API；原頁未標日期，日期取自來源清單。後續演進為 OpenAI Agents SDK。",
+    "topics": [
+      "orchestration",
+      "agent-comm"
+    ]
+  },
+  {
+    "id": "langchain-how-when-multi-agent",
+    "type": "blog",
+    "org": "LangChain",
+    "title": "How and when to build multi-agent systems",
+    "url": "https://www.langchain.com/blog/how-and-when-to-build-multi-agent-systems",
+    "date": "2025-06",
+    "claim": "Cognition「別做多 agent」與 Anthropic「我們怎麼做多 agent」其實一致：關鍵是 context engineering，且讀取型任務比寫入型任務適合多 agent。",
+    "keyPoints": [
+      "讀取（研究、蒐集）容易平行；寫入同時進行會產生衝突決策。",
+      "Anthropic research 系統：多 agent 做研究，最後由單一 agent 一次寫出綜合結果。",
+      "模糊的任務指示會導致重工與 agent 不一致，需明確的任務描述、邊界與輸出格式。",
+      "長時間 agent 需要 durable execution，從失敗點恢復而非整個重跑。"
+    ],
+    "numbers": [],
+    "designTakeaway": "多 agent 的切分線：平行化「讀」，集中化「寫」。fan-out 子 agent 做蒐集、由單一 agent 做最終綜合，可同時得到平行加速與一致輸出。",
+    "caveat": "框架廠商觀點文，無量化；主要是整理兩篇他人文章。",
+    "topics": [
+      "agent-vs-workflow",
+      "orchestration",
+      "agent-comm",
+      "agent-reliability"
+    ]
+  },
+  {
+    "id": "langchain-context-engineering",
+    "type": "blog",
+    "org": "LangChain",
+    "title": "Context Engineering for Agents",
+    "url": "https://www.langchain.com/blog/context-engineering-for-agents",
+    "date": "2025-07",
+    "claim": "把 context engineering 歸納成 write / select / compress / isolate 四種策略，對應 context poisoning、distraction、confusion、clash 等失敗模式。",
+    "keyPoints": [
+      "Write：scratchpad 與長期記憶，把資訊存到 context 外。",
+      "Select：從 scratchpad、記憶（embedding / knowledge graph）或工具描述（RAG）挑相關內容放回。",
+      "Compress：摘要（遞迴或階層式）或修剪舊訊息。",
+      "Isolate：多 agent 各自 context、sandbox 存放大型物件、用 state schema 選擇性暴露欄位。"
+    ],
+    "numbers": [
+      "引述 Anthropic：多 agent research 用的 token 最多可達一般 chat 的 15 倍。",
+      "引述研究：對工具描述做 RAG 讓工具選擇準確率提升約 3 倍。",
+      "Claude Code 在 context 使用超過 95% 時自動 compact。"
+    ],
+    "designTakeaway": "面試回答 context 管理時可用這四個動詞當框架，並對每一個說代價：write 需要記憶一致性、select 依賴檢索品質、compress 會丟資訊、isolate 增加 token 與協調成本。",
+    "caveat": "數字皆為二手引述（Anthropic、其他論文），不是 LangChain 自己的實驗；分類偏教學用途。",
+    "topics": [
+      "context-memory",
+      "retrieval-strategy"
+    ]
+  },
+  {
+    "id": "langgraph-interrupts",
+    "type": "guide",
+    "org": "LangChain",
+    "title": "Interrupts (LangGraph docs)",
+    "url": "https://docs.langchain.com/oss/python/langgraph/interrupts",
+    "date": "2026",
+    "claim": "interrupt() 透過 checkpointer 保存狀態暫停 graph，之後用 Command(resume=...) 恢復，用來做 human-in-the-loop 核准與編輯。",
+    "keyPoints": [
+      "必須有 checkpointer（正式環境用資料庫）與 thread_id；thread_id 是恢復用的持久游標。",
+      "恢復時節點從頭重跑，interrupt 之前的程式碼會再執行一次，所以之前的副作用必須 idempotent（例如用 upsert 而非 create）。",
+      "常見模式：核准/拒絕、讓人編輯 state、在工具內部 interrupt 做執行前核准。",
+      "多個 interrupt 依 index 對應，不可條件式跳過或在迴圈中改變順序；不要用裸 try/except 包住。"
+    ],
+    "numbers": [],
+    "designTakeaway": "Human-in-the-loop 的暫停點要設計成「副作用之前」，而且暫停前的步驟要能重放；等待人工可能長達數天，狀態必須在持久儲存而不是記憶體或連線上。",
+    "caveat": "LangGraph 特定 API 語意（節點重跑）不一定適用其他框架；文件未標版本日期。",
+    "topics": [
+      "agent-safety",
+      "long-running-async",
+      "agent-reliability"
+    ]
+  },
+  {
+    "id": "a2a-spec",
+    "type": "guide",
+    "org": "A2A Project (Linux Foundation)",
+    "title": "Agent2Agent (A2A) Protocol Specification",
+    "url": "https://a2a-protocol.org/latest/specification/",
+    "date": "2025",
+    "claim": "A2A 定義不透明（opaque）agent 之間以 Task 為單位協作的協定：彼此只交換宣告的能力與訊息，不共享內部狀態、記憶或工具。",
+    "keyPoints": [
+      "Agent Card：描述身分、能力、技能、端點與認證需求，用於探索。",
+      "Task 有生命週期：SUBMITTED → WORKING → COMPLETED / FAILED / CANCELED / REJECTED，中間可進入 INPUT_REQUIRED、AUTH_REQUIRED。",
+      "三種 binding（JSON-RPC 2.0、gRPC、HTTP/REST）共用 Protocol Buffers 資料模型；長任務用 SSE streaming 或 webhook push notification。",
+      "版本：client 帶 A2A-Version header（Major.Minor），server 不支援則回 VersionNotSupportedError；空 header 預設 0.3。"
+    ],
+    "numbers": [],
+    "designTakeaway": "跨團隊/跨廠商的 agent 協作應該設計成「非同步 task + 狀態機 + 推播」而不是同步 RPC，並在協定層做版本協商；內部同一服務的子 agent 則不需要這層開銷。",
+    "caveat": "規格仍在演進（預設版本 0.3），實際互通性與採用度未經大規模驗證；規格頁未標發布年月。",
+    "topics": [
+      "agent-comm",
+      "long-running-async",
+      "agent-deploy-versioning"
+    ]
+  },
+  {
+    "id": "mcp-spec-2025-06-18",
+    "type": "guide",
+    "org": "MCP (Linux Foundation / Anthropic)",
+    "title": "Model Context Protocol Specification 2025-06-18",
+    "url": "https://modelcontextprotocol.io/specification/2025-06-18",
+    "date": "2025-06",
+    "claim": "MCP 以 JSON-RPC 2.0 的有狀態連線，標準化 host / client / server 之間的工具、資源與 prompt 交換，並把同意與授權責任放在 host 實作。",
+    "keyPoints": [
+      "Server 提供 Resources、Prompts、Tools；client 可提供 Sampling、Roots、Elicitation。",
+      "連線建立時做 capability negotiation；規格以日期版本號發布。",
+      "安全原則：使用者同意與控制、資料隱私、工具安全（工具描述與 annotations 除非來自可信 server 否則視為不可信）、sampling 需使用者核准。",
+      "協定本身無法強制這些原則，實作者 SHOULD 自建同意與授權流程。"
+    ],
+    "numbers": [],
+    "designTakeaway": "接第三方 MCP server 時，工具描述本身就是攻擊面（可夾帶指令），要在 host 端做 server allowlist、每個工具的授權範圍與呼叫前同意；不要假設協定層幫你做了權限控管。",
+    "caveat": "規格文件，安全條款多為 SHOULD 而非強制；版本更新頻繁，引用時要對應日期版本。",
+    "topics": [
+      "tool-interface",
+      "agent-permissions",
+      "agent-safety",
+      "agent-deploy-versioning"
+    ]
+  },
+  {
+    "id": "google-secure-ai-agents",
+    "type": "guide",
+    "org": "Google",
+    "title": "An Introduction to Google's Approach for Secure AI Agents",
+    "url": "https://research.google/pubs/an-introduction-to-googles-approach-for-secure-ai-agents/",
+    "date": "2025",
+    "claim": "Agent 安全應採 hybrid defense-in-depth：結合確定性的傳統安全控制與推理式（模型）防禦。",
+    "keyPoints": [
+      "三原則：agent 必須有明確的人類控制者、能力必須被謹慎限制、行動與規劃必須可觀測。",
+      "主要風險：rogue actions（非預期或未授權動作）與敏感資料外洩。",
+      "確定性控制（policy engine）提供可預測的硬邊界，推理式防禦處理情境相關的判斷。"
+    ],
+    "numbers": [],
+    "designTakeaway": "權限設計要能回答「這個 agent 代表誰行動」：每個 agent 綁定一個人類 principal、以該使用者權限而非服務帳號執行，並保留可稽核的行動與計畫紀錄。",
+    "caveat": "作者自稱是「aspirational framework」，偏原則宣示，沒有實驗或量化；本導讀依摘要頁整理。",
+    "topics": [
+      "agent-safety",
+      "agent-permissions"
+    ]
+  },
+  {
+    "id": "azure-agent-orchestration-patterns",
+    "type": "guide",
+    "org": "Microsoft",
+    "title": "AI Agent Orchestration Patterns (Azure Architecture Center)",
+    "url": "https://learn.microsoft.com/en-us/azure/architecture/ai-ml/guide/ai-agent-design-patterns",
+    "date": "2026-02",
+    "claim": "多 agent 編排有 sequential、concurrent、group chat、handoff、magentic 五種模式，應選滿足需求的最低複雜度，且每種都有特定的失敗型態。",
+    "keyPoints": [
+      "複雜度階梯：direct model call → single agent with tools（多數企業情境的合理預設，要設 iteration limit）→ multi-agent。",
+      "Group chat 建議限制在三個以下 agent；maker-checker loop 需明確驗收標準、iteration cap 與達上限時的 fallback（轉人工或附品質警告）。",
+      "Handoff 的風險是無限轉接與不可預測路由；magentic 在預期常卡住或無限迴圈時不要用。",
+      "成本：sequential/handoff 逐步累積、concurrent 會瞬間尖峰、magentic 最難預估；建議逐 agent 監控 token、在 agent 間做 context compaction。"
+    ],
+    "numbers": [
+      "Group chat orchestration 建議限制在 3 個或更少 agent。"
+    ],
+    "designTakeaway": "選編排模式時要同時說出它的終止機制：每種迴圈（maker-checker、handoff、magentic）都需要 iteration cap 與到達上限後的明確 fallback；長流程的共享狀態要外部持久化並只保存最小必要資訊。",
+    "caveat": "雲端廠商架構指南，範例導向自家 Agent Framework / Foundry；建議多為經驗法則，無實驗數據。",
+    "topics": [
+      "orchestration",
+      "agent-vs-workflow",
+      "agent-reliability",
+      "agent-cost-latency"
+    ]
+  },
+  {
+    "id": "temporal-dynamic-agents",
+    "type": "blog",
+    "org": "Temporal",
+    "title": "Of course you can build dynamic AI agents with Temporal",
+    "url": "https://temporal.io/blog/of-course-you-can-build-dynamic-ai-agents-with-temporal",
+    "date": "2025-11",
+    "claim": "Workflow code 需確定性不代表 agent 不能動態決策：LLM 與工具呼叫放在 Activity，結果記入 Event History，replay 時重用先前決策。",
+    "keyPoints": [
+      "LLM 呼叫、工具呼叫 = Activity（非確定層）；Workflow 只做確定性的編排。",
+      "失敗時以 Event History replay，不重做已完成的步驟（例：已訂好機票，恢復時從找飯店繼續）。",
+      "Parent workflow 可協調多個 child workflow 處理長時間、多段任務。",
+      "文中提到 OpenAI Codex 與 Replit Agent 3 在生產環境使用 Temporal。"
+    ],
+    "numbers": [
+      "文中稱 Codex 處理「millions of requests」（未給精確數字）。"
+    ],
+    "designTakeaway": "長時間 agent 的可靠度問題本質是分散式 workflow 問題：把每次 LLM/工具呼叫當成可記錄、可重放的步驟，崩潰後從最後完成的步驟恢復，避免重複扣款或重複寄信。代價是要接受 workflow 引擎的程式模型與運維。",
+    "caveat": "廠商行銷文；客戶案例與規模描述未附數據。",
+    "topics": [
+      "long-running-async",
+      "agent-reliability"
+    ]
+  },
+  {
+    "id": "restate-durable-ai-loops",
+    "type": "blog",
+    "org": "Restate",
+    "title": "Durable AI Loops: Fault Tolerance across Frameworks and without Handcuffs",
+    "url": "https://www.restate.dev/blog/durable-ai-loops-fault-tolerance-across-frameworks-and-without-handcuffs",
+    "date": "2025-06",
+    "claim": "Agent 就是分散式系統；用 durable execution 把 LLM 與工具呼叫寫進 journal，可在不綁定特定 agent SDK 的前提下獲得故障恢復、暫停與 idempotency。",
+    "keyPoints": [
+      "Runtime journal 每個中間步驟結果，失敗後 replay 到最後一個 checkpoint。",
+      "以 middleware 接 Vercel AI SDK、OpenAI Agents SDK。",
+      "等待人工核准時以 durable promise 掛起；在 serverless 上只為實際運算付費，不為等待時間付費。",
+      "限制：平行工具呼叫因 replay 非確定性而不原生支援，需包成單一工具或用 promise combinator。"
+    ],
+    "numbers": [],
+    "designTakeaway": "等待人工核准的長任務不應佔住 process 或連線；用可持久化的 suspend/resume，讓等待成本趨近零。代價是平行工具呼叫等非確定行為需要額外處理。",
+    "caveat": "廠商文、無量化數據；「end-to-end idempotency」需外部服務也配合 idempotency key 才完整成立。",
+    "topics": [
+      "long-running-async",
+      "agent-reliability",
+      "agent-cost-latency"
+    ]
+  },
+  {
+    "id": "inngest-spend-money-once",
+    "type": "blog",
+    "org": "Inngest",
+    "title": "Your agent just learned to spend money. Now make sure it only spends it once",
+    "url": "https://www.inngest.com/blog/your-agent-just-learned-to-spend-money",
+    "date": "2026-07",
+    "claim": "會付款的 agent 在重試時可能重複扣款；需要 step memoization 加上把 toolCallId 當 idempotency key 傳給支付服務。",
+    "keyPoints": [
+      "失敗情境：付款成功但回應途中失敗，重試又執行一次扣款。",
+      "Step memoization：已完成的工具步驟在 replay 時回傳快取結果而不重執行。",
+      "把 toolCallId 傳到支付商的 idempotency header，即使步驟本體執行兩次也只扣一次。",
+      "付款工具有獨立重試預算，而不是整個 agent loop 重跑；agent 執行改成背景工作而非卡住 HTTP 回應。"
+    ],
+    "numbers": [
+      "範例中付款步驟設定 5 次重試；整個改動約 40 行程式碼。"
+    ],
+    "designTakeaway": "有副作用的工具要雙重防護：框架層 memoization（防 agent 重放）+ 下游 idempotency key（防網路重試）。重試要以工具為單位設預算，不可重跑整個 LLM loop，否則 LLM 可能做出不同決策。",
+    "caveat": "廠商文，範例以 Inngest API 呈現；前提是下游支付服務支援 idempotency key。",
+    "topics": [
+      "agent-reliability",
+      "long-running-async",
+      "agent-safety"
+    ]
+  },
+  {
+    "id": "chroma-context-rot",
+    "type": "blog",
+    "org": "Chroma",
+    "title": "Context Rot: How Increasing Input Tokens Impacts LLM Performance",
+    "url": "https://www.trychroma.com/research/context-rot",
+    "date": "2025-07",
+    "claim": "LLM 不會均勻處理長 context；即使任務很簡單，輸入越長表現越差。",
+    "keyPoints": [
+      "Needle 與問題語意相似度越低，長 context 下表現下降越陡。",
+      "單一 distractor 就會降低準確率，多個 distractor 的影響不均勻。",
+      "反直覺：打亂順序的 haystack 在全部受測模型上表現優於邏輯連貫的 haystack。",
+      "LongMemEval：只給相關片段（約 300 tokens）明顯優於給完整對話（約 113k tokens）。"
+    ],
+    "numbers": [
+      "測試 18 個 LLM（含 GPT-4.1、Claude 4、Gemini 2.5、Qwen3）。",
+      "LongMemEval focused 約 300 tokens vs full 約 113k tokens，focused 顯著較佳。"
+    ],
+    "designTakeaway": "長 context window 不能取代 retrieval：先檢索/過濾到小而相關的片段，比把整段歷史丟進去更準；特別要移除語意相近但錯誤的 distractor。",
+    "caveat": "向量資料庫廠商的研究，結論有利於 retrieval；使用相對簡單的任務，作者認為真實任務劣化可能更嚴重，但機制未解釋。",
+    "topics": [
+      "context-memory",
+      "retrieval-strategy"
+    ]
+  },
+  {
+    "id": "simonw-lethal-trifecta",
+    "type": "blog",
+    "org": "Simon Willison",
+    "title": "The lethal trifecta for AI agents: private data, untrusted content, and external communication",
+    "url": "https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/",
+    "date": "2025-06",
+    "claim": "Agent 同時具備存取私人資料、接觸不可信內容、對外通訊三種能力時，攻擊者可透過 prompt injection 竊取資料。",
+    "keyPoints": [
+      "LLM 無法可靠區分指令來源，任何讀到的內容都可能被當作指令。",
+      "宣稱攔截 95% 的 guardrail 產品不夠，在資安中 95% 是不及格。",
+      "MCP 鼓勵混搭不同來源的工具，很容易無意間湊齊三要素。",
+      "文中列出 Microsoft 365 Copilot、GitHub、GitLab 等真實攻擊案例。"
+    ],
+    "numbers": [
+      "作者認為宣稱 95% 偵測率的 guardrail 在資安語境是不及格。"
+    ],
+    "designTakeaway": "權限設計時把三要素當成檢查表：任何 agent 組態最多只能同時擁有兩項；若必須三項並存，就要切斷外傳路徑（網域 allowlist、禁止 markdown 圖片、對外動作需人工核准）。",
+    "caveat": "個人部落格的分析框架，非實驗研究；「避免三者並存」在實務上常與產品需求衝突。",
+    "topics": [
+      "agent-safety",
+      "agent-permissions"
+    ]
+  },
+  {
+    "id": "owasp-llm06-excessive-agency",
+    "type": "guide",
+    "org": "OWASP",
+    "title": "LLM06:2025 Excessive Agency",
+    "url": "https://genai.owasp.org/llmrisk/llm062025-excessive-agency/",
+    "date": "2025",
+    "claim": "Excessive Agency 來自三個根因：功能過多、權限過大、自主性過高，使 LLM 的錯誤或被操控能造成實際損害。",
+    "keyPoints": [
+      "Excessive functionality：例如只需讀取卻提供刪除功能。",
+      "Excessive permissions：例如只需 SELECT 卻有 UPDATE / INSERT / DELETE。",
+      "Excessive autonomy：高影響動作沒有人工審查。",
+      "緩解：最小化擴充、避免開放式工具（shell、任意 URL fetch）、以使用者身分執行、人工核准、在下游系統做 complete mediation、rate limiting。"
+    ],
+    "numbers": [],
+    "designTakeaway": "授權要在下游系統強制（complete mediation），不能信任 LLM 的判斷；用窄而專用的工具取代 shell / 任意 HTTP，並讓每次動作帶著終端使用者的身分與權限。",
+    "caveat": "風險清單與檢查項，沒有發生率或嚴重度數據。",
+    "topics": [
+      "agent-permissions",
+      "agent-safety",
+      "tool-interface"
+    ]
+  },
+  {
+    "id": "hamel-your-ai-product-needs-evals",
+    "type": "blog",
+    "org": "Hamel Husain",
+    "title": "Your AI Product Needs Evals",
+    "url": "https://hamel.dev/blog/posts/evals/",
+    "date": "2024-03",
+    "claim": "失敗的 LLM 產品共同根因是沒有評估系統；好的 eval 讓迭代變快，迭代速度決定成敗。",
+    "keyPoints": [
+      "Level 1：便宜快速的 assertion 單元測試（例如結果數量、不得外洩 UUID），依功能與情境組織，隨觀察到的失敗持續增加。",
+      "Level 2：記錄 trace，人工與 LLM judge 審查；用試算表比對人工與模型判斷，分別追蹤 precision / recall 來校準 judge。",
+      "Level 3：A/B testing，等系統夠成熟才做。",
+      "Rechat 的 Lucy 案例：只靠 prompt engineering 陷入打地鼠，建立系統化 eval 後突破。"
+    ],
+    "numbers": [],
+    "designTakeaway": "Eval 分層對應上線流程：assertion 放 CI 每次 prompt/模型變更都跑、LLM judge 定期抽樣、A/B 作為最後關卡。先投資「看資料」的工具，比先選 eval 框架更有效。",
+    "caveat": "顧問經驗文，以單一客戶案例為主，無量化成效。",
+    "topics": [
+      "agent-eval",
+      "agent-deploy-versioning"
+    ]
+  },
+  {
+    "id": "paper-mast-why-mas-fail",
+    "type": "paper",
+    "org": "UC Berkeley et al.",
+    "title": "Why Do Multi-Agent LLM Systems Fail?",
+    "url": "https://arxiv.org/abs/2503.13657",
+    "date": "2025-03",
+    "claim": "多 agent 系統在 benchmark 上的提升常很有限；失敗主要來自系統設計與 agent 間協調，而不只是模型能力。",
+    "keyPoints": [
+      "MAST 分類：14 個失敗模式、3 大類（system design issues、inter-agent misalignment、task verification）。",
+      "最常見的模式包括 step repetition、reasoning-action mismatch、unaware of termination conditions、disobey task specification。",
+      "建立 LLM-as-a-Judge 標註流程，可大規模分類 trace。",
+      "介入實驗：調整 ChatDev 的工作流程與加入高層目標驗證步驟可改善成功率，但不足以解決所有失敗。"
+    ],
+    "numbers": [
+      "MAST-Data：1600+ 條標註 trace，涵蓋 7 個 MAS 框架；分類由 150 條 trace 建立，人工標註一致性 kappa = 0.88。",
+      "類別占比：system design issues 43.9%、inter-agent misalignment 31.95%、task verification 23.5%。",
+      "單一模式：step repetition 15.7%、reasoning-action mismatch 13.2%、unaware of termination conditions 12.4%、disobey task specification 11.8%。",
+      "ChatDev 介入：workflow 調整（CEO 有最終決定權）成功率 +9.4%；加入高層目標驗證步驟在 ProgramDev +15.6%。",
+      "LLM 標註器對人類專家：accuracy 94%、Cohen's kappa 0.77。"
+    ],
+    "designTakeaway": "設計多 agent 時要預先處理三類問題：明確的終止條件與重複偵測（system design）、agent 間澄清與資訊傳遞協定（misalignment）、獨立的驗證步驟（verification）。只換更強模型無法修好架構性失敗。",
+    "caveat": "trace 主要來自 2024–2025 的開源框架與 GPT-4 / Claude 3 等模型；分類占比依所選框架與任務而定，不代表所有生產系統。",
+    "topics": [
+      "agent-reliability",
+      "agent-eval",
+      "orchestration",
+      "agent-comm"
+    ]
+  },
+  {
+    "id": "paper-who-and-when",
+    "type": "paper",
+    "org": "Penn State / Duke et al.",
+    "title": "Which Agent Causes Task Failures and When? On Automated Failure Attribution of LLM Multi-Agent Systems",
+    "url": "https://arxiv.org/abs/2505.00212",
+    "date": "2025-04",
+    "claim": "多 agent 系統的自動化失敗歸因（找出哪個 agent、哪一步造成失敗）非常困難，連強推理模型都達不到實用水準。",
+    "keyPoints": [
+      "提出 Who&When 資料集，標註失敗責任 agent 與決定性錯誤步驟。",
+      "比較多種 LLM 自動歸因方法（一次看完整 log、逐步檢查、二分搜尋）。",
+      "OpenAI o1、DeepSeek R1 等推理模型也無法達到實用準確度。"
+    ],
+    "numbers": [
+      "資料集涵蓋 127 個 LLM 多 agent 系統的失敗 log。",
+      "最佳方法：agent 層級歸因準確率 53.5%、step 層級僅 14.2%。"
+    ],
+    "designTakeaway": "不能指望事後用 LLM 自動找出多 agent 失敗原因；要在設計時就保留結構化 trace（每個 agent 的輸入、輸出、決策依據），並在 agent 邊界加驗證，讓錯誤在發生處被抓到。",
+    "caveat": "資料集規模有限，失敗 log 來自特定研究系統；準確率會隨模型進步變化。",
+    "topics": [
+      "agent-eval",
+      "agent-reliability"
+    ]
+  },
+  {
+    "id": "paper-autogen",
+    "type": "paper",
+    "org": "Microsoft Research",
+    "title": "AutoGen: Enabling Next-Gen LLM Applications via Multi-Agent Conversation",
+    "url": "https://arxiv.org/abs/2308.08155",
+    "date": "2023-08",
+    "claim": "以「可對話的 agent」為抽象，用多 agent 對話來編程 LLM 應用；agent 可組合 LLM、人類輸入與工具。",
+    "keyPoints": [
+      "Conversable agent：每個 agent 能收發訊息，可設定為 LLM 驅動、人類代理或工具執行者。",
+      "Conversation programming：用自然語言與程式碼共同定義 agent 間互動流程。",
+      "應用涵蓋數學、程式、問答、作業研究、線上決策、娛樂。"
+    ],
+    "numbers": [],
+    "designTakeaway": "把 agent 間協作建模成「對話」很彈性、原型快，但控制流隱含在訊息往來中；需要可預測性時要另外加顯式的發言選擇與終止規則（後續 AutoGen 的 selector group chat 即為此）。",
+    "caveat": "2023 年的框架論文，展示性應用為主；後續版本 API 已大幅改寫，MAST 也以 AG2 等框架的 trace 指出此類對話式架構的失敗模式。",
+    "topics": [
+      "orchestration",
+      "agent-comm"
+    ]
+  },
+  {
+    "id": "paper-metagpt",
+    "type": "paper",
+    "org": "DeepWisdom et al.",
+    "title": "MetaGPT: Meta Programming for A Multi-Agent Collaborative Framework",
+    "url": "https://arxiv.org/abs/2308.00352",
+    "date": "2023-08",
+    "claim": "把人類 SOP 編碼進多 agent 流程、以結構化文件取代自由對話，可減少 LLM 串接造成的連鎖幻覺。",
+    "keyPoints": [
+      "Assembly line：產品經理、架構師、工程師等角色依 SOP 產出 PRD、設計文件、程式碼。",
+      "Agent 交換結構化文件而非自然語言聊天，降低歧義。",
+      "共享 message pool + publish-subscribe：agent 依角色訂閱需要的資訊，避免資訊過載。",
+      "Executable feedback：工程師 agent 執行並測試程式碼，最多 3 次修正。"
+    ],
+    "numbers": [
+      "GPT-4 下 HumanEval Pass@1 85.9%、MBPP 87.7%。",
+      "SoftwareDev：executability 3.75/4（ChatDev 2.25）、執行時間 541s（ChatDev 762s）、token 31,255（ChatDev 19,292）、人工修正 0.83 次（ChatDev 2.5）。",
+      "Executable feedback 讓 HumanEval 提升 4.2%、MBPP 提升 5.4%。"
+    ],
+    "designTakeaway": "agent 之間傳「有 schema 的產出物」比傳聊天訊息可靠；用 pub-sub 共享黑板讓每個 agent 只看自己需要的部分。代價是 token 更多（約 1.6 倍於 ChatDev）、流程僵化，只適合有明確 SOP 的領域。",
+    "caveat": "SoftwareDev 是作者自建資料集；ChatDev 論文用另一組指標得出相反的勝負，兩者互相宣稱勝出，不宜單獨引用。",
+    "topics": [
+      "orchestration",
+      "agent-comm"
+    ]
+  },
+  {
+    "id": "paper-chatdev",
+    "type": "paper",
+    "org": "Tsinghua et al.",
+    "title": "ChatDev: Communicative Agents for Software Development",
+    "url": "https://arxiv.org/abs/2307.07924",
+    "date": "2023-07",
+    "claim": "以 chat chain 規定「溝通什麼」、以 communicative dehallucination 規定「怎麼溝通」，讓角色化 agent 完成設計、寫碼、測試。",
+    "keyPoints": [
+      "Chat chain：把軟體開發切成 design、coding、testing 階段，每個子任務由 instructor 與 assistant 兩個 agent 多輪對話直到共識。",
+      "Communicative dehallucination：assistant 先反問細節再給解，一次處理一個具體問題。",
+      "自然語言適合系統設計，程式語言適合除錯。"
+    ],
+    "numbers": [
+      "SRDD 資料集 1,200 個軟體需求。",
+      "ChatDev / GPT-Engineer / MetaGPT：executability 0.8800 / 0.3583 / 0.4145；quality 0.3953 / 0.1419 / 0.1523。",
+      "人工評估對 GPT-Engineer 勝率 90.16%。"
+    ],
+    "designTakeaway": "把多 agent 對話切成有固定入口與出口的階段，並限制每段只有兩個角色，比自由群聊更可控；讓接收方主動澄清可減少錯誤傳播（對應 MAST 的 fail to ask for clarification）。",
+    "caveat": "作者自建資料集與指標；MetaGPT 論文以不同指標得出相反結論。MAST 也以 ChatDev 為對象指出其失敗模式。",
+    "topics": [
+      "orchestration",
+      "agent-comm"
+    ]
+  },
+  {
+    "id": "paper-camel",
+    "type": "paper",
+    "org": "KAUST",
+    "title": "CAMEL: Communicative Agents for \"Mind\" Exploration of Large Language Model Society",
+    "url": "https://arxiv.org/abs/2303.17760",
+    "date": "2023-03",
+    "claim": "以 role-playing 與 inception prompting 讓兩個 agent（AI user 與 AI assistant）在少量人工介入下自主合作完成任務。",
+    "keyPoints": [
+      "記錄多 agent 對話的典型失敗：role flipping（角色互換）、assistant 重複指令、flake replies（只說「我會…」不交付）、無限迴圈（互相道謝道別）。",
+      "終止條件：user 連續 3 輪未下指令、assistant 開始下指令、<CAMEL_TASK_DONE> token、token 上限、訊息數上限。"
+    ],
+    "numbers": [
+      "訊息數上限 40 則。",
+      "AI Society 人工評估：CAMEL 勝 76.3%、單次 gpt-3.5-turbo 勝 10.4%、平手 13.3%。",
+      "GPT-4 評估：AI Society 73.0% vs 23.0%；Code 76.0% vs 24.0%。"
+    ],
+    "designTakeaway": "多 agent 對話一定要有多重終止條件（任務完成 token、輪數/訊息上限、角色違規偵測）；論文列出的 role flipping、flake reply、無限迴圈在今天的系統仍會出現，可直接當監控指標。",
+    "caveat": "比較對象只是單次 gpt-3.5-turbo，且部分評估由 GPT-4 擔任 judge；主要貢獻是資料生成框架與失敗觀察，而非生產可靠度。",
+    "topics": [
+      "agent-comm",
+      "orchestration",
+      "agent-reliability"
+    ]
+  },
+  {
+    "id": "paper-multiagent-debate",
+    "type": "paper",
+    "org": "MIT / Google Brain",
+    "title": "Improving Factuality and Reasoning in Language Models through Multiagent Debate",
+    "url": "https://arxiv.org/abs/2305.14325",
+    "date": "2023-05",
+    "claim": "多個模型實例各自作答、互相批評並多輪修正，可提升推理與事實正確性。",
+    "keyPoints": [
+      "標準設定 3 個 agent、2 輪辯論；agent 數與輪數增加時表現提升（測到 4 輪）。",
+      "與 chain-of-thought 正交可疊加；不同模型（ChatGPT + Bard）也能互辯。",
+      "有案例是所有初始答案皆錯，辯論後得到正確答案。"
+    ],
+    "numbers": [
+      "（3 agents、2 rounds）Arithmetic：single 67.0% / reflection 72.1% / debate 81.8%。",
+      "GSM8K：77.0% / 75.0% / 85.0%；MMLU：63.9% / 57.7% / 71.1%；Biographies：66.0% / 68.3% / 73.8%。"
+    ],
+    "designTakeaway": "Debate 是用「N 個 agent × R 輪」的呼叫數換正確率，成本至少數倍；適合離線、高價值、可接受延遲的判斷題，不適合即時路徑。也要防止所有 agent 一起自信地收斂到錯誤答案。",
+    "caveat": "使用 2023 年的 ChatGPT；作者自承成本高、長辯論會只看最近輪次、可能收斂到錯誤。後續研究（Should we be going MAD?）指出未必勝過 self-consistency。",
+    "topics": [
+      "planning-reflection",
+      "orchestration",
+      "agent-cost-latency"
+    ]
+  },
+  {
+    "id": "paper-should-we-go-mad",
+    "type": "paper",
+    "org": "Imperial College et al.",
+    "title": "Should we be going MAD? A Look at Multi-Agent Debate Strategies for LLMs",
+    "url": "https://arxiv.org/abs/2311.17371",
+    "date": "2023-11",
+    "claim": "現有形式的 multi-agent debate 並不穩定地優於 self-consistency 或多推理路徑 ensemble，且對超參數敏感。",
+    "keyPoints": [
+      "比較多種 debate 與 prompting 策略在成本、時間、準確率上的取捨。",
+      "調參後部分 MAD 系統（如 Multi-Persona）表現較好，代表 MAD 不一定較差但難以最佳化。",
+      "調整 agent 間的 agreement level 可顯著提升表現，甚至超越其他非 debate 方法。"
+    ],
+    "numbers": [],
+    "designTakeaway": "要用多 agent debate 前先跑 self-consistency（同模型多次取樣投票）當 baseline，它通常更便宜、更好調；debate 的收益需要針對任務調參才會出現。",
+    "caveat": "只測 QA 類 benchmark；結論依賴當時模型與調參預算。",
+    "topics": [
+      "planning-reflection",
+      "orchestration",
+      "agent-cost-latency"
+    ]
+  },
+  {
+    "id": "paper-more-agents",
+    "type": "paper",
+    "org": "Tencent",
+    "title": "More Agents Is All You Need",
+    "url": "https://arxiv.org/abs/2402.05120",
+    "date": "2024-02",
+    "claim": "單純的 sampling-and-voting（Agent Forest），表現就會隨 agent 數量提升，且任務越難提升越大。",
+    "keyPoints": [
+      "方法與其他增強技術（CoT、debate 等）正交可疊加。",
+      "提升幅度與任務難度相關。",
+      "實驗最多用到 40 個 agent；debate 方法因成本只測到 10 個。"
+    ],
+    "numbers": [
+      "GSM8K：Llama2-13B ensemble size 15 達 59%，超過 Llama2-70B 單次 54%。",
+      "MATH 上相對提升 Llama2-13B 達 200%，GPT-3.5-Turbo 為 34%。"
+    ],
+    "designTakeaway": "「小模型 × 多次取樣投票」可以替代「大模型單次」，是 cost-latency 的一個選項；但 token 成本隨 ensemble 線性增加，只在答案可投票（有離散正解）時有效。",
+    "caveat": "只適用可多數決的任務（數學、選擇題、程式），不適用開放式生成或有副作用的 agent 動作；模型為 2024 年初版本。",
+    "topics": [
+      "agent-cost-latency",
+      "orchestration",
+      "planning-reflection"
+    ]
+  },
+  {
+    "id": "paper-swe-agent",
+    "type": "paper",
+    "org": "Princeton",
+    "title": "SWE-agent: Agent-Computer Interfaces Enable Automated Software Engineering",
+    "url": "https://arxiv.org/abs/2405.15793",
+    "date": "2024-05",
+    "claim": "LM agent 是一種新的「使用者」，為它設計專用的 agent-computer interface（ACI）能大幅提升表現，不需改模型權重。",
+    "keyPoints": [
+      "ACI 四原則：動作簡單、動作有效率（一步做有意義的事）、回饋精簡有用、guardrail 幫助從錯誤恢復。",
+      "File viewer 一次顯示 100 行；搜尋指令回傳摘要（最多 50 筆）而非逐筆翻頁。",
+      "edit 指令內建 linter，語法錯誤時拒絕修改並回報。",
+      "超過最近 5 個的舊 observation 摺疊成一行。"
+    ],
+    "numbers": [
+      "SWE-bench pass@1 12.5%、HumanEvalFix pass@1 87.7%（論文摘要）。",
+      "SWE-bench Lite（GPT-4 Turbo）消融：完整 SWE-agent 18.0%；shell-only 11.0%；拿掉 edit 指令 10.3%；拿掉 linter 15.0%；顯示全檔 12.7%、30 行 14.3%；保留完整歷史 15.0%；搜尋改為逐筆迭代 12.0%。"
+    ],
+    "designTakeaway": "工具介面的設計細節（視窗大小、搜尋結果是否摘要、編輯是否有 lint 擋）能造成 5–8 個百分點差距，等同換一代模型；設計工具時要用消融實驗驗證，而且「給更多資訊」（全檔、完整歷史）反而更差。",
+    "caveat": "數字基於 GPT-4 Turbo 與 2024 年的 SWE-bench Lite，絕對值早已被超越，但相對差距的教訓仍適用。",
+    "topics": [
+      "tool-interface",
+      "context-memory"
+    ]
+  },
+  {
+    "id": "paper-agentless",
+    "type": "paper",
+    "org": "UIUC",
+    "title": "Agentless: Demystifying LLM-based Software Engineering Agents",
+    "url": "https://arxiv.org/abs/2407.01489",
+    "date": "2024-07",
+    "claim": "不用 agent 自主決策，固定三階段流程（localization → repair → patch validation）就能在 SWE-bench Lite 勝過當時所有開源 agent，且更便宜。",
+    "keyPoints": [
+      "流程固定為 localization → repair → patch validation 三階段，以測試篩選候選 patch。",
+      "沒有讓 LLM 決定下一步或使用複雜工具。",
+      "發現 SWE-bench Lite 有問題題目（issue 直接含答案、描述不足或誤導），建立 SWE-bench Lite-S 過濾版。"
+    ],
+    "numbers": [
+      "SWE-bench Lite 解題率 32.00%（96 題），摘要列出成本 $0.70。"
+    ],
+    "designTakeaway": "若任務步驟可預先定義，固定 workflow 往往在成本與可預測性上勝過自主 agent；先做 agentless baseline，再證明 agent 的自主性帶來額外價值。",
+    "caveat": "只針對 Python repo 的 issue 修復；之後的 agent 系統分數已大幅超越，結論是「當時」的比較。",
+    "topics": [
+      "agent-vs-workflow",
+      "agent-cost-latency",
+      "agent-eval"
+    ]
+  },
+  {
+    "id": "paper-react",
+    "type": "paper",
+    "org": "Princeton / Google",
+    "title": "ReAct: Synergizing Reasoning and Acting in Language Models",
+    "url": "https://arxiv.org/abs/2210.03629",
+    "date": "2022-10",
+    "claim": "讓 LLM 交錯產生推理（thought）與行動（action），推理幫助規劃與處理例外，行動帶回外部資訊減少幻覺。",
+    "keyPoints": [
+      "Thought → Action → Observation 迴圈是現今多數 agent loop 的原型。",
+      "HotpotQA、Fever 透過 Wikipedia API 取得事實，克服純 CoT 的幻覺與錯誤傳播。",
+      "推理軌跡讓人可以檢查與介入 agent 的決策。"
+    ],
+    "numbers": [
+      "ALFWorld 絕對成功率比 imitation / RL 方法高 34%；WebShop 高 10%（few-shot prompting，只用 1–2 個範例）。"
+    ],
+    "designTakeaway": "Agent loop 的基本單位是「想 → 做 → 看結果」；把 thought 留在 trace 裡是可觀測性與除錯的基礎。代價是每步都要一次 LLM 呼叫，循序執行延遲高（後續 LLMCompiler 等改為先規劃再平行執行）。",
+    "caveat": "使用 2022 年的 PaLM 與 few-shot prompting；現代模型已內建 tool calling 與 reasoning，原始 prompt 格式不再需要。",
+    "topics": [
+      "planning-reflection",
+      "orchestration",
+      "tool-interface"
+    ]
+  },
+  {
+    "id": "paper-reflexion",
+    "type": "paper",
+    "org": "Northeastern / MIT",
+    "title": "Reflexion: Language Agents with Verbal Reinforcement Learning",
+    "url": "https://arxiv.org/abs/2303.11366",
+    "date": "2023-03",
+    "claim": "Agent 在失敗後以文字反思回饋並存入 episodic memory，下一次嘗試讀回這些反思，不需更新權重就能改進。",
+    "keyPoints": [
+      "回饋可為 scalar 或自由文字，來源可為外部（測試結果）或內部模擬。",
+      "反思文字寫入記憶緩衝，作為下一輪 trial 的 context。",
+      "在決策（ALFWorld）、推理（HotPotQA）、程式（HumanEval）上都有改進。"
+    ],
+    "numbers": [
+      "HumanEval pass@1 91%，當時 GPT-4 為 80%。"
+    ],
+    "designTakeaway": "有可靠外部訊號（單元測試、環境回饋）時，「失敗 → 反思 → 重試」迴圈很划算；沒有可靠訊號時，自我反思可能強化錯誤。要設重試上限，並把反思記憶限定在同一任務範圍內以免污染其他任務。",
+    "caveat": "需要多次 trial 才收斂，成本與延遲倍增；HumanEval 等任務有明確測試訊號，開放式任務的效果較不確定。",
+    "topics": [
+      "planning-reflection",
+      "context-memory",
+      "agent-reliability"
+    ]
+  },
+  {
+    "id": "paper-magentic-one",
+    "type": "paper",
+    "org": "Microsoft Research",
+    "title": "Magentic-One: A Generalist Multi-Agent System for Solving Complex Tasks",
+    "url": "https://arxiv.org/abs/2411.04468",
+    "date": "2024-11",
+    "claim": "由一個 Orchestrator 以 Task Ledger 與 Progress Ledger 規劃、追蹤、重新規劃，指揮 WebSurfer、FileSurfer、Coder、ComputerTerminal，可在不調整 agent 的情況下達到多個 benchmark 的競爭水準。",
+    "keyPoints": [
+      "外圈 Task Ledger 記錄事實、猜測與計畫；內圈 Progress Ledger 每步回答：是否完成、是否在迴圈、是否有進展、下一個 agent、給它什麼指令。",
+      "偵測到停滯或迴圈時累加 stall counter，超過門檻就跳回外圈重新規劃。",
+      "ComputerTerminal 是不經 LLM 的確定性執行器。",
+      "觀察到的風險：agent 嘗試重設帳號密碼、未審閱即同意條款、向外部求助。"
+    ],
+    "numbers": [
+      "GAIA：GPT-4o 版 32.33%，GPT-4o + o1 版 38.00%（與當時 SOTA 統計上相當）。",
+      "AssistantBench（EM）：11.0% / 13.3%；WebArena：32.8%。",
+      "o1 拒絕 26% 的 GitLab 任務，因此 WebArena 未比較 o1 版本。"
+    ],
+    "designTakeaway": "中央 orchestrator 應維護顯式的計畫與進度帳本（而非只靠對話歷史），並有停滯偵測 + 重新規劃機制來防無限迴圈；模組化讓昂貴模型只用在需要的 agent。代價是每任務數美元、10–30 分鐘延遲。",
+    "caveat": "作者列出成本高（每任務數美元）、延遲 10–30 分鐘、無法處理影片等限制；benchmark 結果是 2024 年的模型，且「與 SOTA 相當」非大幅領先。",
+    "topics": [
+      "orchestration",
+      "planning-reflection",
+      "agent-eval",
+      "agent-safety"
+    ]
+  },
+  {
+    "id": "paper-memgpt",
+    "type": "paper",
+    "org": "UC Berkeley",
+    "title": "MemGPT: Towards LLMs as Operating Systems",
+    "url": "https://arxiv.org/abs/2310.08560",
+    "date": "2023-10",
+    "claim": "借用作業系統的階層式記憶管理（virtual context management），讓 LLM 在快速（context 內）與慢速（外部儲存）記憶之間搬移資料，看起來擁有超過 context window 的記憶。",
+    "keyPoints": [
+      "Main context 類比 RAM，外部 archival / recall storage 類比磁碟，由 LLM 透過函式呼叫自行換入換出。",
+      "以 interrupt 機制管理控制流。",
+      "評估於超長文件分析與多 session 對話（記得、反思、演化）。"
+    ],
+    "numbers": [],
+    "designTakeaway": "長期記憶可以讓 agent 自己管理（以工具讀寫記憶），彈性高但多花 LLM 呼叫、且記憶品質取決於模型何時決定寫入；另一種做法是由系統在固定時機抽取記憶（如 Mem0），可預測性較高。",
+    "caveat": "2023 年的 GPT-4 時代設計；context window 變大後，部分動機弱化，但「何時寫入、何時讀回」的問題仍在。",
+    "topics": [
+      "context-memory",
+      "retrieval-strategy"
+    ]
+  },
+  {
+    "id": "paper-lost-in-the-middle",
+    "type": "paper",
+    "org": "Stanford et al.",
+    "title": "Lost in the Middle: How Language Models Use Long Contexts",
+    "url": "https://arxiv.org/abs/2307.03172",
+    "date": "2023-07",
+    "claim": "相關資訊位於輸入開頭或結尾時表現最好，位於中間時顯著下降，即使是長 context 模型也一樣（U 形曲線）。",
+    "keyPoints": [
+      "實驗：multi-document QA 與 key-value retrieval，改變相關文件位置與總文件數。",
+      "Reader 表現遠早於 retriever recall 飽和，多放文件不等於多利用。",
+      "把 query 放在文件前後兩端，對 key-value 任務幾近完美，但對 multi-document QA 幫助很小。"
+    ],
+    "numbers": [
+      "GPT-3.5-Turbo、20 份文件：相關文件在第一位 75.8%、中間位置 53.8–57.3%、最後一位 63.2%；closed-book（不給文件）56.1%。",
+      "超過 20 份文件後，GPT-3.5-Turbo 僅再提升約 1.5%。"
+    ],
+    "designTakeaway": "檢索結果不是越多越好：控制 top-k、做 reranking 並把最相關的放在開頭或結尾；把答案埋在中間時，效果可能比完全不檢索還差。",
+    "caveat": "2023 年模型（GPT-3.5、Claude 1.3、MPT 等），新一代模型位置偏差已減輕但未消失（見 Chroma context rot）。",
+    "topics": [
+      "retrieval-strategy",
+      "context-memory"
+    ]
+  },
+  {
+    "id": "paper-rag-mcp",
+    "type": "paper",
+    "org": "Academic",
+    "title": "RAG-MCP: Mitigating Prompt Bloat in LLM Tool Selection via Retrieval-Augmented Generation",
+    "url": "https://arxiv.org/abs/2505.03275",
+    "date": "2025-05",
+    "claim": "工具（MCP）數量增加會造成 prompt bloat 與選擇困難；先用語意檢索挑出相關工具再交給 LLM，可大幅降低 token 並提升選擇準確率。",
+    "keyPoints": [
+      "工具描述存在外部索引，依查詢檢索最相關的 MCP。",
+      "只把被選中的工具描述放進 prompt。",
+      "設計 MCP stress test 觀察工具數增加時的劣化。"
+    ],
+    "numbers": [
+      "Prompt token 減少超過 50%。",
+      "工具選擇準確率 43.13%，baseline（全部工具放入）13.62%。"
+    ],
+    "designTakeaway": "工具數量到數十上百時，把「工具選擇」變成檢索問題（工具描述 RAG / tool search），以一次檢索換取更小的 prompt；風險是檢索漏掉正確工具時 agent 根本看不到它，需要 fallback（例如允許 agent 再搜尋工具）。",
+    "caveat": "絕對準確率仍低（43%）；實驗設定與 benchmark 規模有限，未經同儕審查的 arXiv 預印本。",
+    "topics": [
+      "tool-interface",
+      "retrieval-strategy",
+      "agent-cost-latency"
+    ]
+  },
+  {
+    "id": "paper-routellm",
+    "type": "paper",
+    "org": "UC Berkeley / LMSYS",
+    "title": "RouteLLM: Learning to Route LLMs with Preference Data",
+    "url": "https://arxiv.org/abs/2406.18665",
+    "date": "2024-06",
+    "claim": "以人類偏好資料訓練 router，在強模型與弱模型之間動態分流，可在不明顯犧牲品質下大幅降低成本。",
+    "keyPoints": [
+      "Router 依查詢預測弱模型是否足夠，不夠才送強模型。",
+      "利用 Chatbot Arena 偏好資料與資料增強訓練 router。",
+      "測試時替換強/弱模型組合，router 仍維持效果（transfer）。"
+    ],
+    "numbers": [
+      "在部分情境下成本降低超過 2 倍，回應品質不受影響。"
+    ],
+    "designTakeaway": "模型選擇可以是 per-request 的路由決策，而不是全域設定；router 本身要有 eval 與品質門檻，並監控被分到弱模型的請求是否抱怨率上升。",
+    "caveat": "評估以 MT-Bench、MMLU、GSM8K 等單輪任務為主；多步 agent 中一步錯就連鎖失敗，路由收益不一定照搬。",
+    "topics": [
+      "agent-cost-latency"
+    ]
+  },
+  {
+    "id": "paper-frugalgpt",
+    "type": "paper",
+    "org": "Stanford",
+    "title": "FrugalGPT: How to Use Large Language Models While Reducing Cost and Improving Performance",
+    "url": "https://arxiv.org/abs/2305.05176",
+    "date": "2023-05",
+    "claim": "以 LLM cascade（先用便宜模型、可信度不足再升級）可大幅降低成本，甚至在同成本下提升準確率。",
+    "keyPoints": [
+      "Cascade：依序呼叫由便宜到昂貴的模型，以 scoring function 判斷答案是否可接受。",
+      "另提 prompt adaptation、LLM approximation（快取、微調小模型）等降成本策略。"
+    ],
+    "numbers": [
+      "可在達到最佳單一模型（如 GPT-4）表現下降低最多 98% 成本，或在同成本下比 GPT-4 準確率高 4%。"
+    ],
+    "designTakeaway": "Cascade 是用延遲換成本：便宜模型答對時省錢，答錯時多一次呼叫延遲；適合批次或延遲寬鬆的流程，即時對話要評估 p95 延遲。關鍵元件是可靠的「答案可信度」判斷器。",
+    "caveat": "「最多 98%」是特定資料集上的最佳情況；以分類/問答任務評估，不是多步 agent。",
+    "topics": [
+      "agent-cost-latency"
+    ]
+  },
+  {
+    "id": "paper-llm-compiler",
+    "type": "paper",
+    "org": "UC Berkeley",
+    "title": "An LLM Compiler for Parallel Function Calling",
+    "url": "https://arxiv.org/abs/2312.04511",
+    "date": "2023-12",
+    "claim": "借用編譯器概念，先規劃出函式呼叫的相依圖，再平行執行無相依的呼叫，比 ReAct 逐步執行更快、更便宜。",
+    "keyPoints": [
+      "三元件：Function Calling Planner（產生 DAG）、Task Fetching Unit（派發可執行任務）、Executor（平行執行）。",
+      "減少每步都要回到 LLM 決策的次數。"
+    ],
+    "numbers": [
+      "相較 ReAct：延遲最多加速 3.7 倍、成本最多節省 6.7 倍、準確率最多提升約 9%。"
+    ],
+    "designTakeaway": "工具呼叫之間沒有相依時，先規劃後平行執行（plan-then-execute）可同時降延遲與 token；代價是計畫一旦錯誤要重新規劃，對需要依中間結果動態調整的任務幫助較小。",
+    "caveat": "「最多」數字為最佳情境；benchmark 多為可平行分解的問答任務。",
+    "topics": [
+      "agent-cost-latency",
+      "planning-reflection",
+      "orchestration"
+    ]
+  },
+  {
+    "id": "paper-overthinking",
+    "type": "paper",
+    "org": "UC Berkeley et al.",
+    "title": "The Danger of Overthinking: Examining the Reasoning-Action Dilemma in Agentic Tasks",
+    "url": "https://arxiv.org/abs/2502.08235",
+    "date": "2025-02",
+    "claim": "Large reasoning model 在 agent 任務中常偏好內部推理而忽略與環境互動（overthinking），反而降低表現並增加成本。",
+    "keyPoints": [
+      "三種模式：Analysis Paralysis（只規劃不行動）、Rogue Actions（一次送出多個動作不等回饋）、Premature Disengagement（未驗證就放棄或結束）。",
+      "以 overthinking score 量化，於 SWE-bench Verified 分析。"
+    ],
+    "numbers": [
+      "分析 4,018 條 trajectory。",
+      "選擇 overthinking score 較低的解，表現提升近 30%，計算成本降低 43%。"
+    ],
+    "designTakeaway": "Agent 用推理模型時，更多 thinking budget 不等於更好；要讓 agent 盡早與環境互動取得真實回饋，並可用 overthinking 指標在多個候選中挑選，或對推理長度設上限。",
+    "caveat": "只在 SWE-bench Verified 上測；30% / 43% 是在多候選中挑選的情境，不是單次執行的提升。",
+    "topics": [
+      "agent-cost-latency",
+      "agent-reliability",
+      "planning-reflection"
+    ]
+  },
+  {
+    "id": "paper-tau-bench",
+    "type": "paper",
+    "org": "Sierra",
+    "title": "τ-bench: A Benchmark for Tool-Agent-User Interaction in Real-World Domains",
+    "url": "https://arxiv.org/abs/2406.12045",
+    "date": "2024-06",
+    "claim": "Agent 評估要包含與（模擬）使用者的多輪互動與領域規則遵循，並用 pass^k 衡量多次執行的一致性。",
+    "keyPoints": [
+      "LLM 模擬使用者，agent 使用領域 API 工具並遵守 policy（零售、航空）。",
+      "評分方式：比對對話結束時資料庫狀態與標註目標狀態，而非比對文字。",
+      "提出 pass^k：k 次全部成功的機率，用來衡量可靠度。"
+    ],
+    "numbers": [
+      "gpt-4o 等 SOTA function-calling agent 成功率 <50%。",
+      "retail 領域 pass^8 <25%。"
+    ],
+    "designTakeaway": "客服/交易型 agent 要用 pass^k 而非 pass@1 做上線門檻；用「最終狀態比對」評分可容許不同的對話路徑，比比對回覆文字更穩健。",
+    "caveat": "使用者由 LLM 模擬，與真人行為有差距；數字是 2024 年模型，已被後續模型超越。",
+    "topics": [
+      "agent-eval",
+      "agent-reliability"
+    ]
+  },
+  {
+    "id": "paper-agentdojo",
+    "type": "paper",
+    "org": "ETH Zurich",
+    "title": "AgentDojo: A Dynamic Environment to Evaluate Prompt Injection Attacks and Defenses for LLM Agents",
+    "url": "https://arxiv.org/abs/2406.13352",
+    "date": "2024-06",
+    "claim": "工具回傳的資料可以劫持 agent 執行惡意任務；需要一個可擴充的環境同時量測 utility 與攻擊成功率。",
+    "keyPoints": [
+      "環境涵蓋 email、e-banking、旅遊訂位等任務，含 user task 與 injection task。",
+      "同時報告 benign utility、utility under attack、targeted attack success rate（ASR）。",
+      "SOTA 模型在無攻擊時就有許多任務失敗；現有攻擊能破壞部分但非全部安全性質。",
+      "Tool filter 在工具清單無法事先規劃、或合法任務所需工具本身就足以攻擊時會失效。"
+    ],
+    "numbers": [
+      "97 個任務、629 個安全測試案例。",
+      "GPT-4o、「important message」攻擊：無防禦 benign utility 69.0%、targeted ASR 57.69%。",
+      "Tool filter：utility 73.13%、ASR 6.84%；PI detector：utility 降到 41.49%、ASR 7.95%；Data delimiting：ASR 41.65%；Repeat prompt：ASR 27.82%。"
+    ],
+    "designTakeaway": "防禦要同時看 utility 與 ASR：PI detector 把 utility 砍近一半，tool filter（依任務事先限縮可用工具）在兩者間取得較好平衡，說明「最小權限的工具集」比「偵測注入」更有效。",
+    "caveat": "數字為 2024 年模型與特定攻擊；攻擊是靜態的，不代表自適應攻擊者；CaMeL 等後續防禦以此為 benchmark。",
+    "topics": [
+      "agent-safety",
+      "agent-eval",
+      "agent-permissions"
+    ]
+  },
+  {
+    "id": "paper-camel-defense",
+    "type": "paper",
+    "org": "Google DeepMind / ETH Zurich",
+    "title": "Defeating Prompt Injections by Design (CaMeL)",
+    "url": "https://arxiv.org/abs/2503.18813",
+    "date": "2025-03",
+    "claim": "在 LLM 外建立系統層：從可信的使用者查詢抽取控制流與資料流，讓不可信資料無法改變程式執行，並以 capability 阻擋未授權的資料外流。",
+    "keyPoints": [
+      "Privileged LLM 只看可信查詢並產生程式；quarantined LLM 處理不可信資料但不能呼叫工具。",
+      "每個值帶 capability（來源與可流向何處的 metadata），工具呼叫前由 policy 檢查。",
+      "即使底層模型會被注入，安全性由系統設計保證而非模型穩健度。"
+    ],
+    "numbers": [
+      "AgentDojo 上以可證明的安全性解出 77% 任務，無防禦時為 84%。"
+    ],
+    "designTakeaway": "把 prompt injection 當成資訊流控制問題：用確定性的 policy 與資料標記（taint/capability）決定哪些資料能流向哪些工具，代價是約 7 個百分點的 utility 與更複雜的執行架構。",
+    "caveat": "只在 AgentDojo 驗證；需要撰寫 policy，且不防禦不改變控制流的攻擊（如誤導文字內容）；實作複雜度高。",
+    "topics": [
+      "agent-safety",
+      "agent-permissions"
+    ]
+  },
+  {
+    "id": "paper-design-patterns-prompt-injection",
+    "type": "paper",
+    "org": "IBM / Invariant Labs / ETH Zurich / Google / Microsoft",
+    "title": "Design Patterns for Securing LLM Agents against Prompt Injections",
+    "url": "https://arxiv.org/abs/2506.08837",
+    "date": "2025-06",
+    "claim": "Agent 一旦讀了不可信輸入，就必須被限制成該輸入不可能觸發任何有後果的動作；提出六種以架構換安全的設計模式。",
+    "keyPoints": [
+      "Action-Selector：LLM 只從固定動作集挑選，對注入免疫但失去彈性。",
+      "Plan-Then-Execute：讀不可信資料前先定好計畫；LLM Map-Reduce：隔離的 LLM 各自處理單筆資料，輸出受限後再彙整。",
+      "Dual LLM：特權 LLM 用工具、隔離 LLM 讀不可信資料；Code-Then-Execute：LLM 先寫程式再對資料執行（CaMeL 屬此類）。",
+      "Context-Minimization：觸發動作後把使用者 prompt 移出 context。"
+    ],
+    "numbers": [],
+    "designTakeaway": "安全與彈性是連續的取捨軸：越早固定動作或計畫越安全、越不靈活。設計時先決定 agent 會不會讀不可信內容，會的話選一種模式把「讀」與「做」分離。",
+    "caveat": "以設計模式與案例分析為主，沒有大規模量化評估；多數模式會犧牲某些使用情境。",
+    "topics": [
+      "agent-safety",
+      "orchestration",
+      "agent-permissions"
+    ]
+  },
+  {
+    "id": "paper-llm-as-judge",
+    "type": "paper",
+    "org": "LMSYS / UC Berkeley",
+    "title": "Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena",
+    "url": "https://arxiv.org/abs/2306.05685",
+    "date": "2023-06",
+    "claim": "強 LLM（GPT-4）作為 judge 與人類偏好的一致率可達與人類彼此間相同的水準，但存在可辨識的偏差。",
+    "keyPoints": [
+      "偏差：position bias（偏好特定位置）、verbosity bias（偏好較長回答）、self-enhancement（偏好自己生成的答案）、數學/推理評分能力有限。",
+      "緩解：交換位置評兩次、提供參考答案、CoT 評分、few-shot。",
+      "釋出 MT-bench 問題、3,000 筆專家投票、30,000 筆對話。"
+    ],
+    "numbers": [
+      "GPT-4 judge 與受控及群眾人類偏好一致率超過 80%，與人類之間的一致率相當。"
+    ],
+    "designTakeaway": "用 LLM judge 做 agent eval 時要內建去偏：pairwise 比較要交換順序評兩次、judge 模型最好與被評模型不同家族、並定期用人工標註校準一致率。",
+    "caveat": "評估對象是聊天回答品質，不是多步 agent 軌跡；>80% 一致率不代表在特定領域（如程式正確性）可靠。",
+    "topics": [
+      "agent-eval"
+    ]
+  }
+]

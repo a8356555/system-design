@@ -1,0 +1,1244 @@
+[
+ {
+  "id": "anthropic-multi-agent-research",
+  "title": "Anthropic Research（multi-agent 研究系統）",
+  "kind": "業界實例",
+  "source": "Agent Case Study",
+  "file": "",
+  "origin": "https://www.anthropic.com/engineering/multi-agent-research-system",
+  "core": "開放式研究無法事先寫死步驟：要讓 lead agent 動態拆題、平行派 subagent 各自用獨立 context 搜尋，又要控制 15 倍 token 成本、避免重工與失控。",
+  "scaleNumbers": [
+   "Opus 4 lead + Sonnet 4 subagents 比 single-agent Opus 4 內部評測高 90.2%",
+   "token 用量單獨解釋 80% 的效能差異；三個因素合計解釋 95%",
+   "agent 約用 chat 的 4× token，multi-agent 約 15×",
+   "複雜查詢研究時間最多縮短 90%（平行派 3–5 個 subagent、每個平行呼叫 3+ 工具）",
+   "改寫 tool description 後後續 agent 任務完成時間減少 40%",
+   "scaling 規則：簡單查詢 1 個 agent 3–10 次 tool call；比較題 2–4 個 subagent 各 10–15 次",
+   "context 超過 200,000 tokens 時把計畫存到外部 memory",
+   "早期 eval 只用約 20 個真實查詢"
+  ],
+  "decisions": [
+   {
+    "decision": "整體架構：單 agent 還是多 agent",
+    "chosen": "orchestrator-worker：lead agent 規劃、平行派 subagent，各自在獨立 context window 搜尋後壓縮回報",
+    "rejected": [
+     {
+      "option": "single agent 循序搜尋",
+      "why": "廣度型查詢需要同時探索多個方向，單一 context 裝不下也太慢；內部評測落後 90.2%"
+     },
+     {
+      "option": "靜態 RAG（先取固定 chunks 再回答）",
+      "why": "研究是 path-dependent，要依新發現調整方向，靜態檢索做不到"
+     }
+    ],
+    "tradeoff": "token 約 chat 的 15×，只有高價值、可平行的廣度任務划算；需要共享大量 context 或高度相依的任務（例如多數 coding）不適合。"
+   },
+   {
+    "decision": "lead 怎麼派工給 subagent",
+    "chosen": "每個 subagent 拿到明確 objective、輸出格式、建議工具/來源與任務邊界；並在 prompt 寫入依複雜度決定 subagent 數量的規則",
+    "rejected": [
+     {
+      "option": "簡短指令（如「研究半導體短缺」）",
+      "why": "subagent 誤解任務或做重複搜尋（兩個都查 2025 供應鏈）"
+     },
+     {
+      "option": "讓 lead 自由決定派多少",
+      "why": "曾對簡單查詢派出 50 個 subagent"
+     }
+    ],
+    "tradeoff": "lead 的 prompt 變長、規劃成本上升；換到 subagent 之間不重工、資源與查詢難度相稱。"
+   },
+   {
+    "decision": "lead 等 subagent 的方式",
+    "chosen": "同步：lead 等這一批 subagent 全部完成再進下一步",
+    "rejected": [
+     {
+      "option": "非同步執行（subagent 邊跑邊回、lead 可隨時再派）",
+      "why": "結果協調、狀態一致性、錯誤傳遞都更難；文章列為未來方向"
+     }
+    ],
+    "tradeoff": "協調簡單，但整個系統會被最慢的 subagent 卡住，資訊流有瓶頸。"
+   },
+   {
+    "decision": "大型產出怎麼回到使用者",
+    "chosen": "subagent 把產出寫到檔案系統，只回傳輕量 reference；引用另由 CitationAgent 處理",
+    "rejected": [
+     {
+      "option": "所有結果都經 lead 轉手",
+      "why": "多階段轉述會掉資訊，複製大輸出也浪費 token"
+     }
+    ],
+    "tradeoff": "多一個外部儲存與一個 agent 步驟；換到資訊不失真、lead context 不被塞爆。"
+   },
+   {
+    "decision": "長時間執行的 agent 怎麼部署新版本",
+    "chosen": "rainbow deployment：新舊版本同時運行，逐步把流量移到新版",
+    "rejected": [
+     {
+      "option": "一次全部切換",
+      "why": "正在執行中的 agent 會被改動打斷"
+     }
+    ],
+    "tradeoff": "要同時維運多個版本；換到長任務不被部署中斷。"
+   }
+  ],
+  "topics": [
+   "orchestration",
+   "agent-comm",
+   "agent-cost-latency",
+   "agent-eval",
+   "agent-deploy-versioning"
+  ],
+  "followUps": [
+   "什麼任務不該用 multi-agent？需要所有 agent 共享同一份 context、或步驟高度相依的任務（多數 coding），15× token 換不到效益。",
+   "怎麼 eval 非確定性的 agent？從 ~20 個真實查詢起步，LLM-as-judge 依 rubric 打 0–1 分，再加人工測試抓 SEO 內容農場這類自動評測漏掉的偏差。",
+   "agent 跑到一半掛掉怎麼辦？從 checkpoint 續跑而非重頭，並讓 agent 知道工具失敗以便自行調整。"
+  ]
+ },
+ {
+  "id": "anthropic-sandboxing",
+  "title": "Claude Code Sandboxing",
+  "kind": "業界實例",
+  "source": "Agent Case Study",
+  "file": "",
+  "origin": "https://www.anthropic.com/engineering/claude-code-sandboxing",
+  "core": "coding agent 需要廣泛存取 codebase 才有用，但 prompt injection 可能讓它亂動；要在不靠逐次 permission prompt 的情況下，劃出 agent 可以自由行動的安全邊界。",
+  "scaleNumbers": [
+   "內部使用中 sandboxing 讓 permission prompt 減少 84%"
+  ],
+  "decisions": [
+   {
+    "decision": "用什麼取代逐次 permission prompt",
+    "chosen": "預先定義的 sandbox 邊界：邊界內自由行動，越界才詢問",
+    "rejected": [
+     {
+      "option": "每個動作都問使用者",
+      "why": "approval fatigue，使用者會不看就按同意，安全效果反而下降"
+     }
+    ],
+    "tradeoff": "邊界內的動作不再有人看；邊界設定錯誤時會整片放行。"
+   },
+   {
+    "decision": "隔離哪些維度",
+    "chosen": "同時做 filesystem 隔離（只能寫工作目錄）與 network 隔離（只能連核准的 domain）",
+    "rejected": [
+     {
+      "option": "只做 filesystem 隔離",
+      "why": "被攻陷的 agent 仍可把 SSH key 等敏感檔外傳"
+     },
+     {
+      "option": "只做 network 隔離",
+      "why": "沒有檔案隔離，agent 可輕易改系統檔逃出 sandbox"
+     }
+    ],
+    "tradeoff": "要維護 proxy 與 domain allowlist；新 domain 需使用者確認。"
+   },
+   {
+    "decision": "在哪一層強制執行",
+    "chosen": "OS 層原語：Linux bubblewrap、macOS seatbelt，涵蓋 agent 啟動的所有子程序與腳本",
+    "rejected": [
+     {
+      "option": "只在 agent 的工具層檢查",
+      "why": "（補充）agent 跑的 script / 子程序可繞過工具層檢查，OS 層才能涵蓋整棵程序樹"
+     }
+    ],
+    "tradeoff": "要分平台實作；換到不論 agent 用什麼方式執行都被同一條邊界限制。"
+   },
+   {
+    "decision": "雲端版的 git 憑證放哪",
+    "chosen": "憑證不進 sandbox；git 走 sandbox 外的 proxy，proxy 持有 scoped credential 並檢查 branch 與目的地",
+    "rejected": [
+     {
+      "option": "把 token 放進 sandbox 給 agent 用",
+      "why": "sandbox 內的程式碼可能被 injection 控制，token 一進去就可能外流"
+     }
+    ],
+    "tradeoff": "多一層 proxy 基礎設施；換到即使 sandbox 被攻陷也拿不到憑證。"
+   }
+  ],
+  "topics": [
+   "agent-permissions",
+   "agent-safety"
+  ],
+  "followUps": [
+   "為什麼 filesystem 與 network 隔離缺一不可？少 network 會被外傳，少 filesystem 會被逃脫。",
+   "sandbox 跟 permission prompt 是互斥的嗎？不是，sandbox 內免問，越界（新 domain、工作目錄外）仍要問。"
+  ]
+ },
+ {
+  "id": "anthropic-auto-mode",
+  "title": "Claude Code Auto Mode",
+  "kind": "業界實例",
+  "source": "Agent Case Study",
+  "file": "",
+  "origin": "https://www.anthropic.com/engineering/claude-code-auto-mode",
+  "core": "使用者對 93% 的 permission prompt 都直接同意，人工審核已失效；要用模型 classifier 取代人，同時壓低誤擋（影響可用性）與漏放（造成破壞），並防止 agent 用說詞或 injection 說服 classifier。",
+  "scaleNumbers": [
+   "使用者接受 93% 的 permission prompt",
+   "評測集：10,000 筆真實內部流量、52 筆真實 overeager 行為、1,000 筆合成資料外洩",
+   "Stage 1 單獨：FPR 8.5%、overeager FNR 6.6%、合成外洩 FNR 1.8%",
+   "完整 pipeline：FPR 0.4%、overeager FNR 17%、合成外洩 FNR 5.7%",
+   "連續 3 次或累計 20 次被擋即升級給人（headless 則終止）",
+   "預設 20+ 條 block rules"
+  ],
+  "decisions": [
+   {
+    "decision": "classifier 的成本與準確度怎麼取捨",
+    "chosen": "兩段式：Stage 1 只輸出單 token yes/no、偏向擋；只有被擋的再進 Stage 2 做 chain-of-thought，且同輸入可吃 prompt cache",
+    "rejected": [
+     {
+      "option": "單段 classifier",
+      "why": "要嘛推理少而誤擋多，要嘛每個動作都推理而成本與延遲高，無法兼顧"
+     }
+    ],
+    "tradeoff": "FPR 從 8.5% 降到 0.4%，但 overeager FNR 從 6.6% 升到 17%；漏放多半是判斷錯「使用者先前的同意是否涵蓋這次的影響範圍」。"
+   },
+   {
+    "decision": "classifier 看得到哪些內容",
+    "chosen": "只看使用者訊息與工具呼叫本身；剝掉 assistant 的說明文字與 tool 回傳結果",
+    "rejected": [
+     {
+      "option": "看完整 transcript",
+      "why": "agent 可以用說詞說服 classifier；tool 輸出是惡意內容進入 context 的入口，實測效果下降"
+     },
+     {
+      "option": "只看 tool call",
+      "why": "FNR 最低，但失去使用者意圖錨點，會擋掉使用者明確授權的動作"
+     }
+    ],
+    "tradeoff": "失去 provenance：無法確認 job ID 是查來的還是 agent 編的；為了 injection 抗性接受這個損失。"
+   },
+   {
+    "decision": "哪些動作需要過 classifier",
+    "chosen": "三層：內建安全工具 allowlist（讀檔、搜尋）→ 專案目錄內的寫檔直接放行（可用版本控制審查）→ 其餘（shell、網路、外部工具、spawn subagent）才送 classifier；進入 auto mode 時移除會給任意執行權限的既有規則",
+    "rejected": [
+     {
+      "option": "所有動作都送 classifier",
+      "why": "例行 coding 動作也要吃 classifier 延遲，沒必要"
+     }
+    ],
+    "tradeoff": "專案內寫檔不經審查，靠 git 事後還原；換到 classifier 只花在高破壞潛力的動作。"
+   },
+   {
+    "decision": "被擋之後怎麼辦",
+    "chosen": "deny-and-continue：拒絕理由當 tool result 回給 agent，要它找更安全的做法；超過門檻才升級給人",
+    "rejected": [
+     {
+      "option": "被擋就停下來問人",
+      "why": "會重新引入它本來要消除的中斷；誤擋只需一次重試成本"
+     }
+    ],
+    "tradeoff": "被攻陷或過度積極的 agent 可能反覆嘗試，所以要有 3 次連續 / 20 次累計的硬上限。"
+   },
+   {
+    "decision": "prompt injection 防幾層",
+    "chosen": "輸入層 probe 掃 tool 輸出、疑似 injection 就在 agent context 加警告；加上看不到 tool 輸出的 transcript classifier；subagent 派出與回傳時各檢查一次",
+    "rejected": [
+     {
+      "option": "只靠 transcript classifier",
+      "why": "主 agent 仍會讀到 tool 結果，被劫持後產生的動作可能看起來合理"
+     }
+    ],
+    "tradeoff": "多一道 server 端檢查；攻擊者要同時騙過兩層才會成功。"
+   }
+  ],
+  "topics": [
+   "agent-safety",
+   "agent-permissions",
+   "agent-eval",
+   "agent-cost-latency"
+  ],
+  "followUps": [
+   "17% FNR 能接受嗎？取決於比較對象：比 --dangerously-skip-permissions 好很多，比仔細人工審核差，高風險基礎設施不能只靠它。",
+   "為什麼不讓 classifier 看 agent 的解釋？agent 會合理化自己的動作，classifier 只該依使用者意圖與實際動作判斷。",
+   "多 agent 時在哪裡檢查？派工時檢查任務是不是 agent 自己延伸出來的，回傳時檢查 subagent 中途是否被 injection。"
+  ]
+ },
+ {
+  "id": "anthropic-managed-agents",
+  "title": "Anthropic Managed Agents",
+  "kind": "業界實例",
+  "source": "Agent Case Study",
+  "file": "",
+  "origin": "https://www.anthropic.com/engineering/managed-agents",
+  "core": "harness 裡寫死的對模型能力假設會隨模型進步過時；要設計比實作活得久的介面，把 brain（harness）、hands（sandbox）、session log 拆開，讓各自能獨立失敗、替換與擴展。",
+  "scaleNumbers": [
+   "改為按需 provision container 後，p50 TTFT 約降 60%、p95 降超過 90%"
+  ],
+  "decisions": [
+   {
+    "decision": "harness 與執行環境要不要放同一個 container",
+    "chosen": "brain 與 hands 解耦：harness 把 container 當 stateless 工具，透過 execute(name, input) 呼叫",
+    "rejected": [
+     {
+      "option": "session + harness + sandbox 同一個 container",
+      "why": "等於養寵物：container 掛了整個 session 就沒了；除錯要 shell 進去，有安全與隱私問題"
+     }
+    ],
+    "tradeoff": "多了跨元件呼叫與介面設計；換到 container 失敗只是一次 tool error，可重開新的繼續。"
+   },
+   {
+    "decision": "session 狀態放哪",
+    "chosen": "放在 harness 外的 durable session log（emitEvent / getSession），harness 掛了用 wake(sessionId) 從最後事件續跑",
+    "rejected": [
+     {
+      "option": "存在 container / harness 記憶體內",
+      "why": "harness 或 container 一掛狀態就遺失"
+     }
+    ],
+    "tradeoff": "每個事件都要寫外部儲存；換到 harness 可無狀態、可隨時替換。"
+   },
+   {
+    "decision": "超過 context window 的歷史怎麼處理",
+    "chosen": "session log 當作可查詢的 context 物件，harness 用 getEvents() 依需要切片、轉換後再送進模型",
+    "rejected": [
+     {
+      "option": "不可逆的 compaction / trimming",
+      "why": "無法預測之後哪些 token 會用到，丟掉就救不回來"
+     }
+    ],
+    "tradeoff": "儲存完整歷史的成本；換到 context 策略可隨模型改變而改，不必改資料。"
+   },
+   {
+    "decision": "憑證放哪",
+    "chosen": "憑證不進 sandbox：git token 在初始化時綁進本地 remote；其他工具的 OAuth token 放 vault，經 MCP proxy 呼叫",
+    "rejected": [
+     {
+      "option": "憑證跟 agent 產生的程式碼放同一個 container",
+      "why": "prompt injection 可讀出 token，甚至用它開不受限的新 session"
+     }
+    ],
+    "tradeoff": "多 vault 與 proxy；換到 sandbox 內的程式碼結構上拿不到 token。"
+   },
+   {
+    "decision": "什麼時候建 container",
+    "chosen": "等 agent 真的需要時才透過 tool call provision",
+    "rejected": [
+     {
+      "option": "每個 session 一開始就建好",
+      "why": "不需要 container 的 session 也要等初始化，拉高 TTFT"
+     }
+    ],
+    "tradeoff": "第一次用到 container 時才付冷啟動成本；p50 TTFT 約降 60%。"
+   }
+  ],
+  "topics": [
+   "long-running-async",
+   "agent-permissions",
+   "context-memory",
+   "agent-reliability",
+   "agent-deploy-versioning"
+  ],
+  "followUps": [
+   "harness 掛掉怎麼恢復？session log 在 harness 外，新 harness wake 後讀 log 從最後事件續跑。",
+   "為什麼不用 compaction？compaction 不可逆；保留完整 log、在送進模型前才轉換，策略可改。",
+   "一個 brain 能用多個 hands 嗎？可以，每個 hand 都是同樣的 execute() 介面，brain 之間也能互相傳遞。"
+  ]
+ },
+ {
+  "id": "anthropic-c-compiler",
+  "title": "用 16 個平行 Claude 寫 C compiler",
+  "kind": "業界實例",
+  "source": "Agent Case Study",
+  "file": "",
+  "origin": "https://www.anthropic.com/engineering/building-c-compiler",
+  "core": "在沒有人即時監督下讓多個 agent 平行改同一個大型 codebase 並持續前進：靠測試當唯一回饋訊號，又要避免所有 agent 同時撞同一個 bug、互相覆蓋。",
+  "scaleNumbers": [
+   "16 個 agent、近 2,000 個 Claude Code session、兩週",
+   "總成本略低於 $20,000",
+   "2 billion input tokens、140 million output tokens",
+   "產出 100,000 行的 compiler，可編 Linux 6.9（x86、ARM、RISC-V）",
+   "多數 compiler test suite 99% 通過",
+   "16-bit x86 輸出超過 60kb，超出 32k 上限（未解）"
+  ],
+  "decisions": [
+   {
+    "decision": "agent 怎麼持續工作",
+    "chosen": "無限迴圈的 harness：每次啟動一個新 Claude Code session，讀同一份 prompt 自己挑下一個任務",
+    "rejected": [
+     {
+      "option": "一般 agent scaffold（做完一段就停下等人）",
+      "why": "目標是不需要人介入的持續進展"
+     }
+    ],
+    "tradeoff": "沒有人看著；曾發生 agent 執行 pkill -9 bash 把自己的迴圈殺掉。"
+   },
+   {
+    "decision": "多個 agent 怎麼協調",
+    "chosen": "各自在 Docker container、共用 upstream git repo；在 current_tasks/ 寫檔當作任務 lock，完成後 pull、merge、push、移除 lock",
+    "rejected": [
+     {
+      "option": "orchestrator agent 管理高階目標與通訊",
+      "why": "（補充）作者明說是早期研究原型、刻意沒做；git + lock 檔就能運作，merge conflict 交給 Claude 自己解"
+     }
+    ],
+    "tradeoff": "merge conflict 很頻繁；沒有高階規劃，agent 之間只能透過 repo 溝通。"
+   },
+   {
+    "decision": "大型單一任務（編 Linux kernel）如何平行",
+    "chosen": "以 GCC 當 oracle：隨機用 GCC 編大部分檔案、只用自製 compiler 編剩下的，讓每個 agent 修不同檔案的 bug；再用 delta debugging 找成對才會壞的檔案",
+    "rejected": [
+     {
+      "option": "所有 agent 直接編整個 kernel",
+      "why": "每個 agent 撞到同一個 bug、各自修、再互相覆蓋"
+     }
+    ],
+    "tradeoff": "要另寫 test harness；換到單一大任務被切成可平行的獨立失敗。"
+   },
+   {
+    "decision": "測試輸出怎麼設計給 agent 看",
+    "chosen": "高品質測試 + CI 強制不能讓舊功能壞掉；輸出精簡、錯誤一律標 ERROR；預設 --fast 只跑 1% 或 10% 隨機樣本",
+    "rejected": [
+     {
+      "option": "印出完整測試 log、每次跑全套",
+      "why": "塞爆 context；agent 沒有時間感，會花好幾小時跑測試而不前進"
+     }
+    ],
+    "tradeoff": "抽樣可能漏掉回歸，需要 CI 全量兜底；新功能仍常常弄壞舊功能。"
+   }
+  ],
+  "topics": [
+   "agent-comm",
+   "long-running-async",
+   "agent-reliability",
+   "agent-cost-latency",
+   "contention"
+  ],
+  "followUps": [
+   "為什麼 agent 會互相覆蓋？任務不可切分時大家修同一個 bug；要把問題切成可獨立失敗的單位（GCC oracle）。",
+   "這種 harness 最重要的是什麼？測試品質：agent 只會朝測試說的方向前進，測試錯就會解錯問題。"
+  ]
+ },
+ {
+  "id": "anthropic-harness-long-running-apps",
+  "title": "Long-running app 開發 harness（planner / generator / evaluator）",
+  "kind": "業界實例",
+  "source": "Agent Case Study",
+  "file": "",
+  "origin": "https://www.anthropic.com/engineering/harness-design-long-running-apps",
+  "core": "長任務有兩個失敗：context 變滿時模型提早收工（context anxiety），以及自己評自己總是過度稱讚；而且每個用來補模型弱點的 harness 元件都會隨模型進步而過時。",
+  "scaleNumbers": [
+   "復古遊戲 maker：solo 20 分鐘 $9 vs 完整 harness 6 小時 $200（貴 20 倍以上）",
+   "DAW（V2 harness）：總計 3 小時 50 分、$124.70；第一輪 build 2 小時 7 分 $71.08",
+   "前端設計每次生成 5–15 輪迭代，完整跑最長約 4 小時",
+   "Sprint 3 的 contract 有 27 條驗收條件",
+   "V2 在 Opus 4.6 上連續跑超過兩小時不需 sprint 拆分"
+  ],
+  "decisions": [
+   {
+    "decision": "誰來評品質",
+    "chosen": "generator 與 evaluator 分開（GAN 式）：evaluator 用 Playwright MCP 實際操作 app，依具體 criteria 給批評；用 few-shot 範例校準",
+    "rejected": [
+     {
+      "option": "generator 自評",
+      "why": "agent 會自信地稱讚平庸的成果；把獨立 evaluator 調得嚴格比讓 generator 自我批判容易得多"
+     }
+    ],
+    "tradeoff": "多一個 agent 的時間與 token；evaluator 要多輪讀 log、對齊人類判斷才可用，仍會漏掉深層 bug。"
+   },
+   {
+    "decision": "context 滿了怎麼辦",
+    "chosen": "V1（Sonnet 4.5）：context reset + 結構化交接 artifact；V2（Opus 4.6）：移除 reset，改用 SDK 的自動 compaction",
+    "rejected": [
+     {
+      "option": "V1 時用 compaction",
+      "why": "Sonnet 4.5 有 context anxiety，留在同一 session 會提早收工，需要乾淨的新 context"
+     }
+    ],
+    "tradeoff": "reset 增加協調複雜度、token 與延遲；模型行為改善後就成了多餘成本。"
+   },
+   {
+    "decision": "任務怎麼拆",
+    "chosen": "V1：sprint 制，每個 sprint 先由 generator 提案、evaluator 協商 contract 再實作；V2：拿掉 sprint，只保留 planner 與結束時一次 QA",
+    "rejected": [
+     {
+      "option": "V2 仍保留 sprint 拆分與每 sprint 評測",
+      "why": "Opus 4.6 規劃更仔細、能撐更久，模型可自行完成拆分；evaluator 只在任務超出模型能獨立可靠完成的範圍時才值得"
+     }
+    ],
+    "tradeoff": "拿掉結構省成本，但需要持續重測每個元件是否還是 load-bearing。"
+   },
+   {
+    "decision": "要不要有 planner",
+    "chosen": "保留 planner：把 1–4 句需求擴成高階產品 spec，刻意不寫細部技術實作",
+    "rejected": [
+     {
+      "option": "直接把原始需求丟給 generator",
+      "why": "generator 會 under-scope，不先寫 spec 就開工，產品功能較少"
+     },
+     {
+      "option": "planner 寫細部技術設計",
+      "why": "spec 中的技術錯誤會一路往下傳"
+     }
+    ],
+    "tradeoff": "多一個步驟（約 5 分鐘、$0.46）；換到範圍完整的產品。"
+   }
+  ],
+  "topics": [
+   "planning-reflection",
+   "agent-eval",
+   "context-memory",
+   "long-running-async",
+   "agent-cost-latency"
+  ],
+  "followUps": [
+   "harness 元件怎麼決定留或拿掉？每個元件都編碼一個「模型做不到 X」的假設，換新模型就逐一拿掉測試。",
+   "evaluator 一定值得嗎？不一定，只有任務超出模型單獨可靠完成的範圍時才值得付出成本。"
+  ]
+ },
+ {
+  "id": "cursor-scaling-agents",
+  "title": "Cursor：數百個 agent 跑數週的長任務",
+  "kind": "業界實例",
+  "source": "Agent Case Study",
+  "file": "",
+  "origin": "https://cursor.com/blog/scaling-agents",
+  "core": "讓數百個並行 agent 在同一專案上跑數週：協調機制太少會衝突、太多會變脆弱，還要防 agent 長時間漂移與 tunnel vision。",
+  "scaleNumbers": [
+   "單一專案數百個並行 agent，消耗 trillions of tokens",
+   "瀏覽器專案近一週、超過 1M 行、1,000 個檔案",
+   "React 遷移超過三週，+266K / -193K",
+   "影片渲染 25 倍快",
+   "其他：Java LSP 7.4K commits 550K LoC；Windows 7 emulator 14.6K commits 1.2M LoC；Excel 12K commits 1.6M LoC",
+   "用 lock 時 20 個 agent 只剩 2–3 個的有效吞吐"
+  ],
+  "decisions": [
+   {
+    "decision": "多個 agent 怎麼分配工作",
+    "chosen": "階層式：planner 持續探索 codebase 產生任務、可遞迴派 sub-planner；worker 只專心完成任務、不與其他 worker 協調；judge 決定是否進下一輪",
+    "rejected": [
+     {
+      "option": "平權 agent 透過共享檔案 + lock 自行協調",
+      "why": "agent 持有 lock 太久或忘了釋放；20 個 agent 只剩 2–3 個的吞吐"
+     },
+     {
+      "option": "optimistic concurrency control",
+      "why": "比較穩，但 agent 變得保守、只做小而安全的修改，工作空轉"
+     }
+    ],
+    "tradeoff": "planner 需要好模型且仍需定期重新開始以防漂移；換到可擴展到非常大的專案。"
+   },
+   {
+    "decision": "要不要加 integrator 角色做品質控管與衝突解決",
+    "chosen": "不加，移除",
+    "rejected": [
+     {
+      "option": "integrator agent",
+      "why": "造成的瓶頸比它解決的還多"
+     }
+    ],
+    "tradeoff": "沒有中央把關，靠 worker 自己處理衝突；結構太多會變脆弱，太少會衝突。"
+   },
+   {
+    "decision": "每個角色用什麼模型",
+    "chosen": "依角色挑模型：GPT-5.2 當 planner（比 GPT-5.1-Codex 好），長時間自主工作偏好 GPT-5.2",
+    "rejected": [
+     {
+      "option": "全部用同一個模型",
+      "why": "不同角色需求不同"
+     },
+     {
+      "option": "Opus 4.5 跑長時間自主任務",
+      "why": "較早停下、會在方便時走捷徑"
+     }
+    ],
+    "tradeoff": "多模型增加維運與評測成本；結論只適用於這個 harness 與當時的模型。"
+   }
+  ],
+  "topics": [
+   "orchestration",
+   "agent-comm",
+   "long-running-async",
+   "agent-cost-latency",
+   "contention"
+  ],
+  "followUps": [
+   "為什麼 lock 不行？agent 不可靠地持有與釋放 lock，加上 lock contention，吞吐崩掉。",
+   "還沒解決的問題？planner 該在任務完成時被喚醒、agent 有時跑太久、仍需定期 fresh start 防漂移。"
+  ]
+ },
+ {
+  "id": "cursor-token-efficiency",
+  "title": "Cursor：長時間 agent 的 token 效率",
+  "kind": "業界實例",
+  "source": "Agent Case Study",
+  "file": "",
+  "origin": "https://cursor.com/blog/improved-token-efficiency",
+  "core": "agent 跑越久，token 隨對話長度累積；要在不降低品質的前提下砍 token，而且每一刀都要靠 A/B 驗證品質沒掉。",
+  "scaleNumbers": [
+   "整體使用者 token 成本降 7%，品質不降",
+   "system prompt 約砍掉 66%",
+   "呼叫過 MCP 工具的 session 總 token 降 46.9%",
+   "工具改動態載入後，靜態 tool description token 降 60%；這些工具在不到 20% 的對話中會用到",
+   "cold cache miss 降 20%",
+   "讀檔改成每 10 行標一次行號，cache-read token 降 1.6%；一個行號約 3–5 tokens"
+  ],
+  "decisions": [
+   {
+    "decision": "system prompt 要多詳細",
+    "chosen": "移除不必要的 guardrail，只保留必要指令",
+    "rejected": [
+     {
+      "option": "保留大量 DO NOT 清單",
+      "why": "那是舊模型時代的寫法，新模型不需要"
+     }
+    ],
+    "tradeoff": "依賴模型能力假設，換模型家族時可能不成立；需要大規模 A/B 驗證。"
+   },
+   {
+    "decision": "工具定義要全部放進 context 嗎",
+    "chosen": "高頻工具（read、search、edit、shell、ask_question）常駐，其餘動態載入",
+    "rejected": [
+     {
+      "option": "全部工具都靜態載入",
+      "why": "多數工具不到 20% 對話會用到，白付 token"
+     }
+    ],
+    "tradeoff": "動態載入有額外開銷；與 Manus 的「不要動態增減工具以保 cache」形成對比。"
+   },
+   {
+    "decision": "prompt cache 怎麼下斷點",
+    "chosen": "在穩定的 context 層之後明確設定 cache breakpoint",
+    "rejected": [
+     {
+      "option": "依賴 provider 的隱式自動 cache",
+      "why": "cold miss 較多"
+     }
+    ],
+    "tradeoff": "與 provider API 綁得更緊、需要 provider 支援；cold miss 降 20% 但沒歸零。"
+   },
+   {
+    "decision": "subagent 怎麼用",
+    "chosen": "移除鼓勵使用 subagent 的 prompt，讓模型自己判斷；subagent 預設用同一個模型",
+    "rejected": [
+     {
+      "option": "prompt 中鼓勵多開 subagent、自由選模型",
+      "why": "subagent 隔離會重複工作或做已不需要的事，浪費 token"
+     }
+    ],
+    "tradeoff": "委派行為變得較不可預測，模型搭配彈性下降。"
+   }
+  ],
+  "topics": [
+   "agent-cost-latency",
+   "context-memory",
+   "tool-interface",
+   "agent-eval"
+  ],
+  "followUps": [
+   "怎麼證明砍 token 沒傷品質？線上 A/B；但 eval 不完全反映真實請求分佈。",
+   "行號為什麼每 10 行一個？每個行號 3–5 tokens，抽稀省 token，評測顯示引用準確度可接受。"
+  ]
+ },
+ {
+  "id": "cursor-semantic-search",
+  "title": "Cursor：agent 的 semantic search",
+  "kind": "業界實例",
+  "source": "Agent Case Study",
+  "file": "",
+  "origin": "https://cursor.com/blog/semsearch",
+  "core": "coding agent 要在大型 codebase 裡找到相關程式碼；只靠 grep 對「auth 在哪處理」這類自然語言問題不夠，但 semantic search 需要自訓 embedding 與索引基礎設施。",
+  "scaleNumbers": [
+   "回答問題準確度平均高 12.5%（依模型 6.5%–23.5%）",
+   "線上 A/B：code retention +0.3%；1,000+ 檔案的大 codebase +2.6%",
+   "沒有 semantic search 時，不滿意的追問增加 2.2%"
+  ],
+  "decisions": [
+   {
+    "decision": "agent 用什麼搜尋 codebase",
+    "chosen": "semantic search 與 grep 並用",
+    "rejected": [
+     {
+      "option": "只用 grep 與命令列工具",
+      "why": "自然語言查詢與大 codebase 上效果較差；每種設定下加 semantic search 都更好"
+     }
+    ],
+    "tradeoff": "要維護 embedding 模型與索引管線；小 codebase 效益較小。"
+   },
+   {
+    "decision": "embedding 模型怎麼來",
+    "chosen": "用 agent session trace 自訓 embedding，學 agent 實際解題時找了什麼",
+    "rejected": [
+     {
+      "option": "通用 code similarity embedding",
+      "why": "無法反映 agent 在 coding 任務中實際需要的檔案"
+     }
+    ],
+    "tradeoff": "需要大量自家 trace 與訓練成本；換到更貼近 agent 用法的檢索。"
+   },
+   {
+    "decision": "怎麼評估檢索改進",
+    "chosen": "離線用 Cursor Context Bench（已知答案）+ 線上 A/B 控制模型變數",
+    "rejected": [
+     {
+      "option": "只看離線檢索指標",
+      "why": "（補充）離線 recall 不等於使用者是否保留程式碼、是否不滿意，線上指標才反映實際效益"
+     }
+    ],
+    "tradeoff": "A/B 需要大量流量；線上提升幅度（+0.3%）遠小於離線（+12.5%）。"
+   }
+  ],
+  "topics": [
+   "retrieval-strategy",
+   "agent-eval",
+   "search"
+  ],
+  "followUps": [
+   "既然 agent 會用 grep，為什麼還要 semantic search？大 codebase 與概念性問題 grep 找不到，兩者互補。",
+   "為什麼線上提升遠小於離線？線上指標（retention）受很多因素影響，但在大 codebase 上差距明顯（+2.6%）。"
+  ]
+ },
+ {
+  "id": "github-copilot-coding-agent",
+  "title": "GitHub Copilot coding agent",
+  "kind": "業界實例",
+  "source": "Agent Case Study",
+  "file": "",
+  "origin": "https://github.blog/news-insights/product-news/github-copilot-meet-the-new-coding-agent/",
+  "core": "讓自主 coding agent 直接進入團隊既有的開發流程：在哪裡跑、改動怎麼被審、怎麼避免它繞過 branch protection、CI 與 code review 這些既有控制。",
+  "scaleNumbers": [
+   "GitHub Marketplace 有 25,000 個 actions",
+   "runner 每天執行 40 million jobs",
+   "計費：每次 model request 算一個 premium request（2025-06-04 起）"
+  ],
+  "decisions": [
+   {
+    "decision": "agent 在哪裡跑",
+    "chosen": "GitHub Actions 驅動的雲端環境",
+    "rejected": [
+     {
+      "option": "開發者本機 IDE 內的 agent mode",
+      "why": "（補充）本機需要人守著；背景 agent 要能在使用者離線時非同步跑，且沿用 Actions 既有的信任與設定"
+     }
+    ],
+    "tradeoff": "要用 Actions 分鐘數與 premium request；換到非同步、可同時派多個任務。"
+   },
+   {
+    "decision": "agent 的產出怎麼交付",
+    "chosen": "開 draft PR、逐步 push commit，並在 session log 中顯示推理過程；由 issue 指派或 VS Code / Chat 觸發",
+    "rejected": [
+     {
+      "option": "直接寫進 default branch",
+      "why": "跳過既有 review 流程"
+     }
+    ],
+    "tradeoff": "人仍要 review 每個 PR；換到改動可追蹤、沿用既有 review 流程。"
+   },
+   {
+    "decision": "怎麼防止 agent 繞過既有控制",
+    "chosen": "只能 push 到自己建立的 branch；發起者不能 approve 自己的 agent PR；CI workflow 要人核准才跑；沿用 org / repo rulesets",
+    "rejected": [
+     {
+      "option": "讓 agent 跟一般開發者有相同權限",
+      "why": "（補充）發起者可藉 agent 規避 required review；agent 產生的 workflow 改動可能在 CI 中執行任意程式"
+     }
+    ],
+    "tradeoff": "多一步人工核准 CI，速度變慢；換到 agent 不會單方面把程式碼送進 production。"
+   },
+   {
+    "decision": "agent 能連哪些外部資源",
+    "chosen": "網路存取限縮在可自訂的 trusted list；外部資料與工具走 MCP server",
+    "rejected": [
+     {
+      "option": "完全開放網路",
+      "why": "（補充）被 prompt injection 時可把程式碼或 secret 外傳"
+     }
+    ],
+    "tradeoff": "需要 repo 管理者維護 allowlist 與 MCP 設定。"
+   }
+  ],
+  "topics": [
+   "agent-permissions",
+   "agent-safety",
+   "long-running-async"
+  ],
+  "followUps": [
+   "為什麼發起者不能 approve？避免一個人透過 agent 自己寫、自己批，繞過 required review。",
+   "為什麼 CI 要人核准？agent 的改動在跑 workflow 前先被人看過，防止在有 secret 的環境執行惡意程式。"
+  ]
+ },
+ {
+  "id": "langchain-replit-agent",
+  "title": "Replit Agent",
+  "kind": "業界實例",
+  "source": "Agent Case Study",
+  "file": "",
+  "origin": "https://www.langchain.com/breakoutagents/replit",
+  "core": "讓使用者從零建出可部署 app：多步驟任務越往後可靠度越低，要用角色分工、可回滾 checkpoint 與讓使用者留在迴圈中來抵銷錯誤累積。",
+  "scaleNumbers": [
+   "30+ 個工具",
+   "alpha 測試約 15 位 AI-first 開發者與 influencer"
+  ],
+  "decisions": [
+   {
+    "decision": "單 agent 還是多 agent",
+    "chosen": "manager agent + 多個 editor agent（各負責特定任務）+ verifier agent",
+    "rejected": [
+     {
+      "option": "單一 agent 做所有事",
+      "why": "錯誤率上升；把工作分給專職 agent 降低失敗"
+     }
+    ],
+    "tradeoff": "要協調多個 agent；換到每個 agent 的任務範圍小、較可靠。"
+   },
+   {
+    "decision": "要追求完全自主嗎",
+    "chosen": "不追求完全自主；verifier 常回頭問使用者，每個步驟自動 commit，可回到任一步驟",
+    "rejected": [
+     {
+      "option": "完全自主一路做完",
+      "why": "多步驟軌跡中前幾步最成功、後面可靠度下降，需要人隨時介入與回滾"
+     }
+    ],
+    "tradeoff": "使用者要花注意力；換到錯誤不會一路累積到最後。"
+   },
+   {
+    "decision": "工具怎麼呼叫",
+    "chosen": "自訂受限的 Python DSL 讓模型寫程式呼叫工具",
+    "rejected": [
+     {
+      "option": "傳統 function calling API",
+      "why": "30+ 工具、參數複雜時準確度不足"
+     }
+    ],
+    "tradeoff": "要維護 DSL 與其解譯器；換到更高的工具呼叫準確度。"
+   },
+   {
+    "decision": "提升檔案編輯等複雜任務的方法",
+    "chosen": "few-shot + 長指令 + XML 分段，並升級到 Claude 3.5 Sonnet；長軌跡用 LLM 壓縮記憶",
+    "rejected": [
+     {
+      "option": "fine-tuning",
+      "why": "試過沒有突破"
+     }
+    ],
+    "tradeoff": "依賴外部模型進步；壓縮記憶可能遺失細節。"
+   }
+  ],
+  "topics": [
+   "orchestration",
+   "agent-safety",
+   "tool-interface",
+   "agent-reliability",
+   "context-memory"
+  ],
+  "followUps": [
+   "為什麼每步自動 commit？後段步驟最容易錯，可以讓使用者回到最後一個好的狀態。",
+   "怎麼找出 agent 卡在哪？用 LangSmith 搜尋長 trace，找使用者需要介入的瓶頸。"
+  ]
+ },
+ {
+  "id": "vercel-removed-80-percent-tools",
+  "title": "Vercel d0：砍掉 80% 的 agent 工具",
+  "kind": "業界實例",
+  "source": "Agent Case Study",
+  "file": "",
+  "origin": "https://vercel.com/blog/we-removed-80-percent-of-our-agents-tools",
+  "core": "text-to-SQL agent 原本用 15 個專用工具與大量 prompt 限制模型，結果又慢又常失敗；關鍵是判斷模型已經夠強時，結構與工具反而變成負擔，但前提是資料層本身有好的文件。",
+  "scaleNumbers": [
+   "工具從 15 個減到 2 個（bash、SQL 執行），砍掉 80%",
+   "執行時間 274.8s → 77.4s（3.5× 快）",
+   "成功率 4/5（80%）→ 5/5（100%）",
+   "token ~102k → ~61k（少 37%）；步驟 ~12 → ~7（少 42%）",
+   "最差案例：舊架構 724 秒、100 步、145,463 tokens 後失敗；新架構 141 秒、19 步、67,483 tokens 成功"
+  ],
+  "decisions": [
+   {
+    "decision": "給 agent 多少工具",
+    "chosen": "只給 bash 與 SQL 執行，在 Vercel Sandbox 中用 grep / cat / ls / find 直接讀 semantic layer 檔案",
+    "rejected": [
+     {
+      "option": "15 個專用工具（schema lookup、驗證、錯誤恢復等）",
+      "why": "每個工具都是替模型做的選擇；限制選項反而讓模型繞遠路與失敗"
+     }
+    ],
+    "tradeoff": "agent 可存取更多原始資料，需要 sandbox 隔離；工具少了可解釋性與可控的檢查點也少。"
+   },
+   {
+    "decision": "context 怎麼給",
+    "chosen": "讓模型直接讀檔案系統中的原始定義",
+    "rejected": [
+     {
+      "option": "預先過濾好的 context",
+      "why": "人為限制了模型推理需要的資訊"
+     }
+    ],
+    "tradeoff": "只有在 semantic layer 結構良好、命名一致時才有效；遺留命名與沒文件的 join 只會讓錯誤查詢更快產生。"
+   },
+   {
+    "decision": "要不要用大量 prompt 約束推理",
+    "chosen": "減少約束，讓 Opus 4.5 等新模型自己決定",
+    "rejected": [
+     {
+      "option": "大量 prompt engineering 限制推理",
+      "why": "新模型做的選擇比被限制時更好，舊做法變成負擔"
+     }
+    ],
+    "tradeoff": "行為較不可預測，依賴模型能力；換模型時要重新驗證。"
+   }
+  ],
+  "topics": [
+   "tool-interface",
+   "agent-vs-workflow",
+   "agent-cost-latency",
+   "retrieval-strategy"
+  ],
+  "followUps": [
+   "這個做法什麼時候會失敗？資料層文件差、命名混亂時，只會更快產生錯的查詢。",
+   "這跟 Spotify 限縮工具的結論矛盾嗎？不矛盾：Spotify 要的是大規模遷移的可預測性，Vercel 要的是探索式查詢的彈性。"
+  ]
+ },
+ {
+  "id": "manus-context-engineering",
+  "title": "Manus：context engineering",
+  "kind": "業界實例",
+  "source": "Agent Case Study",
+  "file": "",
+  "origin": "https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus",
+  "core": "agent 每步都累積 context，input:output 約 100:1，KV-cache 命中率成為成本與延遲的主要指標；要在保住 cache 的前提下管理工具、記憶與注意力。",
+  "scaleNumbers": [
+   "input:output token 比約 100:1",
+   "平均每個任務約 50 次 tool call",
+   "Claude Sonnet：cached input $0.30/MTok vs uncached $3/MTok（10 倍差）",
+   "agent 框架重寫過四次"
+  ],
+  "decisions": [
+   {
+    "decision": "自訓模型還是 context engineering",
+    "chosen": "在 frontier model 上做 context engineering",
+    "rejected": [
+     {
+      "option": "從開源模型訓練 end-to-end agent 模型",
+      "why": "每次迭代要數週，PMF 前負擔不起；且模型進步時自訓模型會一夕過時"
+     }
+    ],
+    "tradeoff": "依賴外部 API 與其成本；換到數小時內就能改進，產品與底層模型解耦。"
+   },
+   {
+    "decision": "如何維持 KV-cache 命中",
+    "chosen": "prompt prefix 穩定（不放到秒的時間戳）、context 只 append 不修改、序列化 deterministic、必要時手動設 cache breakpoint",
+    "rejected": [
+     {
+      "option": "依需要動態載入 / 移除工具（類 RAG）",
+      "why": "工具定義位於 context 前段，任何變動都讓後面全部 cache 失效"
+     }
+    ],
+    "tradeoff": "context 變大且不能改歷史；system prompt 失去即時時間資訊。"
+   },
+   {
+    "decision": "如何限制特定狀態下可用的工具",
+    "chosen": "工具保留在 context，用狀態機在解碼時遮蔽 token logits；工具名用一致前綴（browser_、shell_）方便遮蔽",
+    "rejected": [
+     {
+      "option": "迭代中動態移除工具",
+      "why": "破壞 cache；舊的 observation 參照已不存在的工具會讓模型困惑、產生幻覺動作"
+     }
+    ],
+    "tradeoff": "需要支援 constrained decoding / response prefill 的推論環境。"
+   },
+   {
+    "decision": "context 太長怎麼辦",
+    "chosen": "把檔案系統當無限的外部 context，壓縮時只保留可還原的 reference（URL、檔案路徑）；用 todo.md 反覆改寫目標，把目標拉回最近的 token",
+    "rejected": [
+     {
+      "option": "硬截斷或激進壓縮",
+      "why": "不可逆，之後才需要的資訊救不回來"
+     }
+    ],
+    "tradeoff": "agent 要自己管理檔案操作；todo.md 多花一點 token。"
+   },
+   {
+    "decision": "失敗的動作要不要留在 context",
+    "chosen": "保留錯誤與 stack trace；並在序列化中加入少量結構化變化",
+    "rejected": [
+     {
+      "option": "清掉錯誤、默默重試",
+      "why": "抹掉證據，模型無法調整；錯誤會改變模型之後的選擇"
+     },
+     {
+      "option": "大量重複格式的 few-shot",
+      "why": "模型會模仿既有模式、陷入重複動作"
+     }
+    ],
+    "tradeoff": "context 中有雜訊；換到模型能從錯誤中修正。"
+   }
+  ],
+  "topics": [
+   "context-memory",
+   "agent-cost-latency",
+   "tool-interface",
+   "agent-reliability"
+  ],
+  "followUps": [
+   "為什麼不動態載入工具？工具定義在 context 前段，改了整段 cache 失效；改用 logit masking。",
+   "為什麼 KV-cache 命中率是最重要指標？input:output 100:1，cached 與 uncached 價差 10 倍，直接決定成本與 TTFT。"
+  ]
+ },
+ {
+  "id": "spotify-honk-part1",
+  "title": "Spotify Honk：背景 coding agent（Part 1 + Part 2）",
+  "kind": "業界實例",
+  "source": "Agent Case Study",
+  "file": "",
+  "origin": "https://engineering.atspotify.com/2025/11/spotifys-background-coding-agent-part-1",
+  "core": "在數千個 repo 上自動做複雜程式遷移：原本的 deterministic 腳本難寫難維護，換成 agent 後要讓結果可預測、可驗證、可大量合併。（Part 2：https://engineering.atspotify.com/2025/11/context-engineering-background-coding-agents-part-2）",
+  "scaleNumbers": [
+   "1,500+ 個 AI 產生的 PR 已合併進 production",
+   "2024 年中，Fleet Management 已自動化約一半的 PR",
+   "遷移時間比手寫省 60–90%",
+   "數百位開發者使用",
+   "Maven dependency updater 腳本超過 20,000 行",
+   "Part 2：已用 Claude Code 做約 50 個遷移；自製 loop 限 10 turns / session、最多重試 3 次 session"
+  ],
+  "decisions": [
+   {
+    "decision": "遷移邏輯怎麼定義",
+    "chosen": "只把 transformation 層換成自然語言 prompt + agent；目標 repo 選擇、開 PR、review、merge 沿用既有 Fleet Management",
+    "rejected": [
+     {
+      "option": "繼續用 AST / regex deterministic 腳本",
+      "why": "複雜轉換需要專門知識，腳本會長到 20,000+ 行"
+     },
+     {
+      "option": "整條流程重做",
+      "why": "（補充）既有基礎設施已驗證可靠，只換最痛的那一層風險最小"
+     }
+    ],
+    "tradeoff": "引入不可預測與耗時；需要新的驗證與品質控管機制。"
+   },
+   {
+    "decision": "用哪個 agent",
+    "chosen": "用 Claude Code，外面包內部 CLI（可切換 agent / LLM、MCP 格式化與 lint、LLM-as-judge 評 diff、log 上傳 GCP、trace 進 MLflow）",
+    "rejected": [
+     {
+      "option": "Goose / Aider",
+      "why": "規模化後難以穩定產出可合併的 PR"
+     },
+     {
+      "option": "自製 agent loop",
+      "why": "使用者要自己給 git-grep 指定檔案；遇到連鎖修改、多檔修改時會用完 turns 或 context 滿了迷路"
+     }
+    ],
+    "tradeoff": "要維護自己的 CLI；換到可換底層 agent、可觀測。"
+   },
+   {
+    "decision": "給 agent 哪些工具",
+    "chosen": "只給三個：verify（formatter、linter、測試）、受限 git（不能 push、不能改 origin）、嚴格 allowlist 的 bash",
+    "rejected": [
+     {
+      "option": "動態 MCP 工具、code search、文件查詢工具",
+      "why": "工具越多、不可預測的維度越多；改要求使用者把相關 context 寫進 prompt"
+     }
+    ],
+    "tradeoff": "prompt 作者負擔變重；換到可預測、可測試。"
+   },
+   {
+    "decision": "context 靜態給還是動態抓",
+    "chosen": "較大的靜態 prompt：寫前置條件、具體範例、用測試描述目標狀態、一次只做一個改動",
+    "rejected": [
+     {
+      "option": "簡短 prompt + 讓 agent 透過 MCP 動態抓 context",
+      "why": "較難測試與預測"
+     }
+    ],
+    "tradeoff": "prompt 寫得太籠統或太細都會失敗，目前仍靠直覺與試錯迭代。"
+   },
+   {
+    "decision": "從哪裡觸發",
+    "chosen": "透過 MCP 開放給 Slack 與 GitHub Enterprise：互動式 agent 先蒐集任務資訊產生 prompt，再交給背景 coding agent 開 PR",
+    "rejected": [
+     {
+      "option": "只能從遷移工具觸發",
+      "why": "（補充）PM 或沒有本機 repo 的人也想提改動，從聊天觸發門檻最低"
+     }
+    ],
+    "tradeoff": "入口變多，需要更強的 guardrail 與 sandbox。"
+   }
+  ],
+  "topics": [
+   "tool-interface",
+   "context-memory",
+   "agent-vs-workflow",
+   "long-running-async",
+   "agent-eval"
+  ],
+  "followUps": [
+   "為什麼不給 code search？工具越多越不可預測；fleet 遷移重視可預測性，context 由人預先寫進 prompt。",
+   "怎麼確認 agent 產出可以合併？verify 工具跑 formatter / lint / test，再用 LLM-as-judge 評 diff，最後走既有的 PR review。"
+  ],
+  "extraSources": [
+   "https://engineering.atspotify.com/2025/11/context-engineering-background-coding-agents-part-2"
+  ]
+ },
+ {
+  "id": "stripe-minions",
+  "title": "Stripe Minions：one-shot 端到端 coding agent",
+  "kind": "業界實例",
+  "source": "Agent Case Study",
+  "file": "",
+  "origin": "https://stripe.dev/blog/minions-stripes-one-shot-end-to-end-coding-agents",
+  "core": "在數億行、技術棧冷門、每年處理超過 1 兆美元支付的 codebase 上，讓無人看管的 agent 從 Slack 訊息一次跑到可 review 的 PR，同時保證一定會跑完 Stripe 要求的步驟。",
+  "scaleNumbers": [
+   "每週超過 1,000 個 PR 完全由 minion 產生並合併",
+   "數億行程式碼、少數幾個大 repo；超過 $1 trillion / 年 支付量",
+   "devbox 預熱，10 秒內啟動",
+   "Toolshed 中央 MCP server 有 400+ 個工具",
+   "測試超過三百萬個",
+   "本地 lint 少於 5 秒",
+   "最多兩輪 CI"
+  ],
+  "decisions": [
+   {
+    "decision": "用現成 agent 還是自建",
+    "chosen": "自建，基於早期 fork 的 Block goose",
+    "rejected": [
+     {
+      "option": "直接用通用 coding agent",
+      "why": "通用 agent 擅長 greenfield，難在 Stripe 這種成熟、受限的大 codebase 中迭代；需接上 Stripe 既有的開發基礎設施"
+     }
+    ],
+    "tradeoff": "要維護 fork；換到能深度控制 agent 行為。"
+   },
+   {
+    "decision": "流程由 agent 決定還是寫死",
+    "chosen": "blueprint：deterministic 節點（git、linter、測試）與 agent loop 交錯",
+    "rejected": [
+     {
+      "option": "純 agent loop",
+      "why": "無法保證一定會跑 Stripe 要求的步驟（如 linter）"
+     }
+    ],
+    "tradeoff": "多一層編排；換到每次 run 都完成必要步驟。"
+   },
+   {
+    "decision": "在哪裡跑",
+    "chosen": "與工程師相同的 devbox：預熱 10 秒啟動、預載程式碼與服務、與 production 和網際網路隔離",
+    "rejected": [
+     {
+      "option": "git worktree 平行",
+      "why": "在 Stripe 的規模下無法擴展"
+     }
+    ],
+    "tradeoff": "要維持預熱 devbox 池的成本；換到沿用人類開發工具、可大量平行。"
+   },
+   {
+    "decision": "agent 怎麼取得 context",
+    "chosen": "接 MCP，經中央 Toolshed（400+ 工具）取得文件、ticket、build 狀態、Sourcegraph；讀與人類工具相同、依子目錄條件套用的 rule files",
+    "rejected": [
+     {
+      "option": "全域無條件套用規則",
+      "why": "大量無關規則會淹沒 agent"
+     }
+    ],
+    "tradeoff": "中央 Toolshed 成為共用依賴；需要策展工具與規則。"
+   },
+   {
+    "decision": "CI 回饋迴圈跑幾輪",
+    "chosen": "先跑 <5 秒的本地 lint，再最多兩輪 CI：第一輪失敗讓 minion 修一次再 push，然後結束",
+    "rejected": [
+     {
+      "option": "讓 agent 一直跑 CI 到過",
+      "why": "LLM 多跑 CI 的邊際效益遞減，速度與完整性要平衡"
+     }
+    ],
+    "tradeoff": "部分 PR 不會完全修好，交給人類 review 接手。"
+   }
+  ],
+  "topics": [
+   "agent-vs-workflow",
+   "orchestration",
+   "agent-permissions",
+   "tool-interface",
+   "agent-cost-latency"
+  ],
+  "followUps": [
+   "為什麼 one-shot 不互動？讓工程師可以同時平行派多個 minion，結果由人 review。",
+   "為什麼 lint 要放本地？CI 會失敗的 lint 越早回饋越好，省 token 與時間。"
+  ]
+ },
+ {
+  "id": "stripe-payment-method-factory",
+  "title": "Stripe Payment Method Factory",
+  "kind": "業界實例",
+  "source": "Agent Case Study",
+  "file": "",
+  "origin": "https://stripe.dev/blog/stripes-payment-method-factory-orchestrating-agents-for-repeated-custom-integrations",
+  "core": "125+ 種支付方式的整合模式相似但每次都從頭做；要把過去經驗固化成可重用 prompt，並用可靠的編排與自動測試，讓 review 不成為新的瓶頸。",
+  "scaleNumbers": [
+   "支援超過 125 種支付方式",
+   "建立超過 100 個可重用 prompt",
+   "同一前端 API 任務：原生 Claude Code 約 20 天工程量 vs 用可重用 prompt 4 天",
+   "scaffolding 一步超過 5,000 行、改動超過 100 個檔案、需依序跑 15 個指令；從最多一週縮到一天",
+   "factory 已做 3 個新整合、遷移 10 個既有整合",
+   "整合時間從最長 6 個月縮短到 2–6 週"
+  ],
+  "decisions": [
+   {
+    "decision": "誰來編排整條整合流程",
+    "chosen": "deterministic 程式碼當 orchestrator，派 implementation subagent 做各步驟",
+    "rejected": [
+     {
+      "option": "高階 orchestrator agent",
+      "why": "昂貴、慢、有時不可靠；有時自己動手實作而非委派，吃光 context"
+     }
+    ],
+    "tradeoff": "失去 LLM 編排的彈性；換到可預測、較便宜。可預測的協調應該用程式碼。"
+   },
+   {
+    "decision": "任務怎麼切",
+    "chosen": "先規劃（agent 訪談工程師拿幣別、地區等資訊並存入知識庫），再拆成多步，每步一個 prompt、一個 PR",
+    "rejected": [
+     {
+      "option": "所有 prompt 合成一個 master prompt",
+      "why": "超出 context；單一大 PR 難以 review、容易 merge 衝突"
+     }
+    ],
+    "tradeoff": "PR 數量變多、步驟間要協調；換到每個 PR 小而好審。"
+   },
+   {
+    "decision": "prompt 怎麼變可靠",
+    "chosen": "從過去實作萃取模板；observer agent 與實作 agent 並行讀 transcript，找出無效動作、工具失敗、CI 警訊，工程師據此修 prompt",
+    "rejected": [
+     {
+      "option": "每次用原生 Claude Code 從零做",
+      "why": "（補充）文章的對照實驗：同任務約 20 天 vs 4 天"
+     }
+    ],
+    "tradeoff": "前期要投入 prompt 工程，且 100+ 個 prompt 要隨 codebase 演進維護。"
+   },
+   {
+    "decision": "prompt 怎麼持續維護",
+    "chosen": "知識迴圈：自動收集 learning log、decision log、transcript 與 reviewer 留言，由專職 agent 提出 prompt 改進，簡單的交給 minion 一鍵套用",
+    "rejected": [
+     {
+      "option": "純人工維護 prompt",
+      "why": "（補充）100+ 個 prompt 隨 codebase 變化，人工維護跟不上"
+     }
+    ],
+    "tradeoff": "複雜的改動仍需人工審核。"
+   },
+   {
+    "decision": "生成速度上去後 review 變瓶頸怎麼辦",
+    "chosen": "agent 對 provider sandbox 自測，驗證 request / response / 狀態 / event，並把 provider 回應存成 snapshot 當 immutable contract 取代手寫 mock；PR 保持小並附上完整 context",
+    "rejected": [
+     {
+      "option": "靠 reviewer 逐行審查",
+      "why": "（補充）產出速度上升後 code review 成為瓶頸；有測試證據 reviewer 才有信心"
+     }
+    ],
+    "tradeoff": "要建 agent 可用的測試工具；UI 測試等步驟仍靠人工。"
+   }
+  ],
+  "topics": [
+   "orchestration",
+   "agent-vs-workflow",
+   "agent-eval",
+   "planning-reflection",
+   "agent-reliability"
+  ],
+  "followUps": [
+   "為什麼不用 LLM 當 orchestrator？流程已知且固定，用程式碼更便宜可靠；LLM orchestrator 還會越權自己實作。",
+   "agent 寫太快、review 跟不上怎麼辦？讓 agent 自測並附上證據，PR 保持小。"
+  ]
+ }
+]

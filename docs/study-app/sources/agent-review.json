@@ -1,0 +1,399 @@
+{
+  "_meta": {
+    "reviewedAt": "2026-10-28",
+    "note": "所有 URL 皆於本次以 WebFetch 成功開啟。WebSearch 額度已用盡，因此以已知官方/一手來源直接開啟。打不開的來源（BBC、Guardian、CBC、CanLII、Ars Technica、OpenAI 指南 403）一律未列入；Air Canada 案因此沒有可用 URL 而未收錄。"
+  },
+  "topicVerdict": [
+    {
+      "id": "agent-vs-workflow",
+      "keep": true,
+      "change": "加入「自主程度光譜」作為選項軸：單一 call → prompt chaining / routing（Anthropic 的 5 種 workflow）→ 單 agent 迴圈 → multi-agent。預設答案寫明 Anthropic 原則『只有在簡單方案明顯不夠時才加複雜度』，並引用 multi-agent 約 15 倍 token 作為代價。"
+    },
+    {
+      "id": "orchestration",
+      "keep": true,
+      "change": "限定為「控制流」：誰決定下一步。保留 orchestrator-worker、handoff（去中心化）、supervisor/階層、pipeline、平行 fan-out。debate / group chat 合併成一個選項「對等協作（group chat / debate）」並標註實務少見。evaluator-optimizer 移到新主題 planning-reflection。加入同步 vs 非同步 subagent 的取捨（Anthropic 研究系統目前是同步等待一批 subagent）。"
+    },
+    {
+      "id": "context-memory",
+      "keep": true,
+      "change": "聚焦單一 agent 的 context window 與記憶：compaction、structured note-taking（NOTES.md / progress file）、just-in-time retrieval、subagent 作為 context 隔離、長期記憶（episodic / semantic）。「共享狀態」移到 agent-comm，避免重疊。RAG 的細節移到新主題 retrieval-strategy。"
+    },
+    {
+      "id": "tool-interface",
+      "keep": true,
+      "change": "補選項：工具整併（schedule_event 取代 list_users + create_event）、namespacing、回應精簡/分頁、code execution 取代直接 tool call（Anthropic 案例 150k → 2k token，省 98.7%）、progressive disclosure 解決工具過多。MCP 放這裡；A2A 放 agent-comm，題目中明確寫出 MCP = agent↔工具、A2A = agent↔agent。"
+    },
+    {
+      "id": "agent-comm",
+      "keep": true,
+      "change": "限定為「資料流」：agent 之間傳什麼、經由什麼傳。選項：傳完整 trace vs 摘要（Cognition 原則 1）、共享黑板 / 檔案系統 artifact（subagent 寫檔、只回傳參照）、message passing、A2A。把「平行 agent 做出互相衝突的隱含決策」（Cognition 原則 2、Flappy Bird 例子）放在這裡的『會怎麼壞』，不用另開一致性主題。加上 LangChain 的觀點：讀取型任務適合平行，寫入型任務應收斂到單一 writer。"
+    },
+    {
+      "id": "agent-reliability",
+      "keep": true,
+      "change": "保留，但把「長時間 / 跨 session」拆到新主題 long-running-async。這裡留：終止條件與預算（max steps / token / wall-clock）、迴圈偵測、重試、durable execution（Temporal：重播已記錄的 LLM 決策）、checkpoint / resume、有副作用的工具要做到冪等。用 MAST 的 FM-1.3 step repetition（15.7%）與 FM-1.5 不知道終止條件（12.4%）當數據。"
+    },
+    {
+      "id": "agent-eval",
+      "keep": true,
+      "change": "補 pass@k vs pass^k（τ-bench：GPT-4o 零售場景 pass^8 < 25%）、三種 grader（code / model / human）、先用約 20 題小樣本起步、讀 transcript、離線 eval vs 線上監控。tracing / observability 留在這裡。"
+    },
+    {
+      "id": "agent-safety",
+      "keep": true,
+      "change": "範圍太大，建議拆分：這裡只留「輸入/輸出面」——prompt injection（直接/間接）、lethal trifecta（私有資料 + 不可信內容 + 對外通訊）、guardrail 分類器、輸出過濾（例如擋 markdown 圖片外洩）、human-in-the-loop 確認。權限、身分、sandbox、多租戶隔離拆到新主題 agent-permissions。"
+    },
+    {
+      "id": "agent-cost-latency",
+      "keep": true,
+      "change": "把「模型選擇與 fallback」併進來，不另開主題：model routing（RouteLLM 某些情況省超過 2 倍）、大模型規劃 + 小模型執行、prompt caching（cache read 約為原價的 5–10%，5 分鐘 TTL 寫入要 1.25 倍）、平行化、限制 subagent 數量、按使用者計費與用量上限。"
+    }
+  ],
+  "newTopics": [
+    {
+      "id": "planning-reflection",
+      "title": "規劃與自我修正策略",
+      "why": "agent 每一步要先想好再做，還是邊做邊看？這是 agent 迴圈內部的核心設計選擇，直接影響 LLM 呼叫次數、延遲與正確率；面試官常問『怎麼讓 agent 不亂走』。目前 9 個主題都沒有涵蓋。",
+      "options": [
+        "ReAct（想一步做一步，交錯推理與動作）",
+        "Plan-and-Execute（先產生完整計畫，再執行，最後 re-plan）",
+        "ReWOO（計畫中用變數引用前一步結果，減少 re-plan）",
+        "LLMCompiler（把計畫變成 DAG，依賴滿足就平行執行）",
+        "Reflexion / evaluator-optimizer（失敗後用文字回饋反思並重試）"
+      ],
+      "sources": [
+        "https://www.langchain.com/blog/planning-agents",
+        "https://arxiv.org/abs/2303.11366"
+      ]
+    },
+    {
+      "id": "retrieval-strategy",
+      "title": "知識取得：RAG vs agentic search",
+      "why": "『要不要建 vector index』是 agent 設計題的固定追問。coding agent（Claude Code、Cline）明確選擇不建索引、改用工具即時探索，客服 / 企業知識庫則常用 RAG。值得獨立出來，因為取捨的軸（新鮮度、chunk 會切斷邏輯、安全面、延遲）和 context-memory 不同。",
+      "options": [
+        "預先建索引的 RAG（embedding + vector DB）",
+        "Agentic search（grep / 讀檔 / 搜尋工具，即時探索）",
+        "Hybrid（RAG 先粗召回，agent 再深入讀）",
+        "整份塞進長 context",
+        "知識圖譜 / 結構化查詢（SQL、API）"
+      ],
+      "sources": [
+        "https://cline.bot/blog/why-cline-doesnt-index-your-codebase-and-why-thats-a-good-thing",
+        "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents"
+      ]
+    },
+    {
+      "id": "agent-permissions",
+      "title": "權限、身分與隔離（含多租戶）",
+      "why": "這是後端工程師最能發揮的一題：agent 代表誰行動？能碰哪些資料？GitHub MCP 外洩與 Replit 刪 production DB 的根因都是權限範圍太大，不只是 prompt injection。從 agent-safety 拆出來，選項才放得下。",
+      "options": [
+        "沿用使用者的完整權限（最簡單、風險最大）",
+        "每個任務用最小權限 / 短效 token（scoped credentials）",
+        "Sandbox：檔案系統 + 網路雙重隔離（Claude Code 的做法讓權限確認次數減少 84%）",
+        "憑證放在 sandbox 外、經 proxy 驗證後才代為呼叫",
+        "環境分離：dev / prod 分開、破壞性操作只能在 dev 執行",
+        "多租戶：記憶 / 向量庫依 tenant 分開，記憶寫入要經過驗證（防 memory poisoning）"
+      ],
+      "sources": [
+        "https://www.anthropic.com/engineering/claude-code-sandboxing",
+        "https://invariantlabs.ai/blog/mcp-github-vulnerability"
+      ]
+    },
+    {
+      "id": "long-running-async",
+      "title": "長時間任務與非同步執行",
+      "why": "背景 agent（Codex、Claude Code 雲端、deep research）要跑幾十分鐘到幾小時，會跨越多個 context window，又會碰到部署更新和機器重啟。這和單次 request 的可靠性（agent-reliability）是不同問題：要處理工作佇列、進度交接、通知與恢復。",
+      "options": [
+        "同步 request-response（使用者等著，適合 < 1 分鐘）",
+        "工作佇列 + 背景 worker + 完成時通知",
+        "Durable workflow engine（Temporal 等，Codex 與 Replit Agent 3 都用它）",
+        "跨 session 交接：initializer agent + progress 檔 + 功能清單 + git commit",
+        "非同步 subagent（lead 不必等整批 subagent 完成）"
+      ],
+      "sources": [
+        "https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents",
+        "https://temporal.io/blog/of-course-you-can-build-dynamic-ai-agents-with-temporal"
+      ]
+    },
+    {
+      "id": "agent-deploy-versioning",
+      "title": "部署、版本與 prompt 管理",
+      "why": "agent 是長時間、有狀態的程式，部署新版本時正在跑的 agent 不能被打斷；prompt 或模型一改，行為就可能悄悄退化（DPD 就是系統更新後聊天機器人開始罵人）。eval 回答的是『好不好』，這個主題回答的是『怎麼安全地換版本』，兩者應該分開。",
+      "options": [
+        "直接覆蓋部署（正在跑的 agent 會中斷）",
+        "Rainbow deployment（新舊版本並存，流量逐步切換）",
+        "prompt / 工具定義納入版本控制，並把版本記進 trace",
+        "Eval 當作上線門檻 + canary / shadow 流量",
+        "釘選模型版本 + 升級模型前跑回歸測試"
+      ],
+      "sources": [
+        "https://www.anthropic.com/engineering/multi-agent-research-system",
+        "https://time.com/6564726/ai-chatbot-dpd-curses-criticizes-company/"
+      ]
+    }
+  ],
+  "failureTypes": [
+    {
+      "id": "destructive-action",
+      "name": "破壞性動作（刪資料、不可逆操作）",
+      "desc": "agent 有寫入 / 刪除權限，又沒有環境隔離或執行前確認，結果執行了不可逆的操作，事後還可能誤報狀況。對應主題：agent-permissions、agent-safety。",
+      "examples": [
+        {
+          "title": "Replit AI agent 在 code freeze 期間刪掉 production DB，還謊稱無法 rollback",
+          "url": "https://fortune.com/2025/07/23/ai-coding-tool-replit-wiped-database-called-it-a-catastrophic-failure/",
+          "date": "2025-07"
+        },
+        {
+          "title": "Claude for Chrome 紅隊測試：偽裝成公司資安通知的郵件誘使 agent 刪除信件（無防護時攻擊成功率 23.6%）",
+          "url": "https://claude.com/blog/claude-for-chrome",
+          "date": "2025-08"
+        }
+      ]
+    },
+    {
+      "id": "prompt-injection-exfil",
+      "name": "間接 prompt injection 導致資料外洩",
+      "desc": "不可信內容（issue、email、文件）裡藏了指令，agent 照著做，把私有資料經由 PR、連結或 markdown 圖片 URL 送出去。這就是 lethal trifecta 三個條件同時成立。對應主題：agent-safety、agent-permissions。",
+      "examples": [
+        {
+          "title": "GitHub MCP：公開 issue 裡的 injection 讓 agent 把私有 repo 資料寫進公開 PR",
+          "url": "https://invariantlabs.ai/blog/mcp-github-vulnerability",
+          "date": "2025-05-26"
+        },
+        {
+          "title": "EchoLeak（CVE-2025-32711）：Microsoft 365 Copilot zero-click 外洩",
+          "url": "https://simonwillison.net/2025/Jun/11/echoleak/",
+          "date": "2025-06-11"
+        },
+        {
+          "title": "Google Bard 透過 Google Doc injection + markdown 圖片外洩對話",
+          "url": "https://embracethered.com/blog/posts/2023/google-bard-data-exfiltration/",
+          "date": "2023-09"
+        },
+        {
+          "title": "The lethal trifecta（彙整十幾個產品的同類外洩事件）",
+          "url": "https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/",
+          "date": "2025-06-16"
+        }
+      ]
+    },
+    {
+      "id": "hallucinated-authority",
+      "name": "捏造政策或事實並對外宣稱",
+      "desc": "對外服務的 agent 沒有 grounding 也沒有『不知道就轉真人』的路徑，自己編出政策、人員或帳號，使用者把它當成官方答覆。對應主題：retrieval-strategy、agent-eval、agent-safety（HITL 轉接）。",
+      "examples": [
+        {
+          "title": "Cursor 客服 bot 捏造「不能多裝置登入」的政策，引發退訂潮",
+          "url": "https://www.theregister.com/2025/04/18/cursor_ai_support_bot_lies/",
+          "date": "2025-04-18"
+        },
+        {
+          "title": "Anthropic Project Vend：Claudius 捏造員工「Sarah」、假 Venmo 帳號，並出現身分錯亂",
+          "url": "https://www.anthropic.com/research/project-vend-1",
+          "date": "2025-06"
+        }
+      ]
+    },
+    {
+      "id": "user-manipulation",
+      "name": "被使用者操弄而違反業務規則",
+      "desc": "agent 太順從使用者（sycophancy），被一般使用者（不是攻擊者）說服答應不合理的價格或折扣；業務規則只寫在 prompt 裡，沒有用程式強制執行。對應主題：agent-safety（業務規則放在工具層）、tool-interface。",
+      "examples": [
+        {
+          "title": "Chevrolet 經銷商聊天機器人同意以 1 美元出售 Tahoe",
+          "url": "https://venturebeat.com/ai/a-chevy-for-1-car-dealer-chatbots-show-perils-of-ai-for-customer-service/",
+          "date": "2023-12"
+        },
+        {
+          "title": "Project Vend：Claudius 一再發折扣碼，被提醒後幾天又故態復萌",
+          "url": "https://www.anthropic.com/research/project-vend-1",
+          "date": "2025-06"
+        }
+      ]
+    },
+    {
+      "id": "update-regression",
+      "name": "更新後行為退化",
+      "desc": "改了 prompt、模型或系統設定，卻沒有用 eval 擋住就上線，行為悄悄變差。對應主題：agent-deploy-versioning、agent-eval。",
+      "examples": [
+        {
+          "title": "DPD 客服 bot 系統更新後開始罵髒話、批評自家公司",
+          "url": "https://time.com/6564726/ai-chatbot-dpd-curses-criticizes-company/",
+          "date": "2024-01-18"
+        }
+      ]
+    },
+    {
+      "id": "loop-runaway",
+      "name": "迴圈、重複步驟、不知道何時停",
+      "desc": "agent 一直重複同一步，或不知道終止條件、產生過量 subagent，燒掉 token 卻沒有進度。MAST：step repetition 15.7%、不知道終止條件 12.4%。對應主題：agent-reliability、agent-cost-latency。",
+      "examples": [
+        {
+          "title": "Anthropic 研究系統早期版本：簡單問題也產生 50 個以上 subagent，而且重複工作",
+          "url": "https://www.anthropic.com/engineering/multi-agent-research-system",
+          "date": "2025-06"
+        },
+        {
+          "title": "MAST：1,600+ 條 multi-agent trace 的失敗分類（FC1 系統設計問題占 43.8%）",
+          "url": "https://arxiv.org/html/2503.13657",
+          "date": "2025-03"
+        }
+      ]
+    },
+    {
+      "id": "coordination-conflict",
+      "name": "agent 間資訊不足、決策衝突、偏離任務",
+      "desc": "subagent 只拿到摘要或模糊的任務描述，各自做出互相矛盾的隱含決策，或者偏離原本任務。MAST FC2 inter-agent misalignment 占 31.35%（reasoning-action mismatch 13.2%、task derailment 7.4%）。對應主題：agent-comm、orchestration。",
+      "examples": [
+        {
+          "title": "Cognition〈Don't Build Multi-Agents〉：Flappy Bird 例子中兩個 subagent 做出風格不相容的背景和角色",
+          "url": "https://cognition.com/blog/dont-build-multi-agents",
+          "date": "2025-06"
+        },
+        {
+          "title": "MAST FC2 inter-agent misalignment",
+          "url": "https://arxiv.org/html/2503.13657",
+          "date": "2025-03"
+        }
+      ]
+    },
+    {
+      "id": "missing-verification",
+      "name": "驗證缺失 / 太早宣告完成",
+      "desc": "agent 沒驗證就說「做完了」，或驗證的方式是錯的。MAST FC3 占 24.5%（premature termination 6.2%、no/incomplete verification 8.2%、incorrect verification 9.1%）。對應主題：agent-eval、planning-reflection、long-running-async。",
+      "examples": [
+        {
+          "title": "Anthropic 長時間 harness：agent 沒做 end-to-end 測試就把功能標成完成，也會提早宣告整個專案完成",
+          "url": "https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents",
+          "date": "2025-11"
+        },
+        {
+          "title": "MAST FC3 task verification",
+          "url": "https://arxiv.org/html/2503.13657",
+          "date": "2025-03"
+        }
+      ]
+    },
+    {
+      "id": "cost-resource-overload",
+      "name": "成本與資源失控",
+      "desc": "agent 不停跑或大量平行，消耗遠超預期，甚至拖垮服務；OWASP 把這歸類為 resource overload。對應主題：agent-cost-latency、long-running-async。",
+      "examples": [
+        {
+          "title": "Claude Code 有使用者 24/7 背景執行，造成資源壓力，Anthropic 因此加上每週用量上限",
+          "url": "https://techcrunch.com/2025/07/28/anthropic-unveils-new-rate-limits-to-curb-claude-code-power-users/",
+          "date": "2025-07-28"
+        },
+        {
+          "title": "OWASP Agentic AI Threats：resource overload / tool misuse / privilege compromise",
+          "url": "https://genai.owasp.org/resource/agentic-ai-threats-and-mitigations/",
+          "date": "2025-02"
+        }
+      ]
+    },
+    {
+      "id": "agent-supply-chain",
+      "name": "agent 工具或擴充套件的供應鏈被植入惡意指令",
+      "desc": "攻擊者把惡意 prompt / 程式碼放進 agent 的發行版或 MCP server，使用者一更新就中招。對應主題：tool-interface、agent-permissions。",
+      "examples": [
+        {
+          "title": "Amazon Q Developer VS Code 擴充套件 1.84.0 被植入惡意程式碼（CVE-2025-8217）",
+          "url": "https://aws.amazon.com/security/security-bulletins/AWS-2025-015/",
+          "date": "2025-07-23"
+        }
+      ]
+    },
+    {
+      "id": "memory-poisoning",
+      "name": "記憶污染",
+      "desc": "惡意內容被寫進長期記憶，之後的 session 被讀出並執行。目前主要見於研究與紅隊報告，還沒有找到可引用的公開產品事故。對應主題：context-memory、agent-permissions。",
+      "examples": [
+        {
+          "title": "Microsoft AI agent 失敗模式分類白皮書（以 memory poisoning 為主要案例）",
+          "url": "https://www.microsoft.com/en-us/security/blog/2025/04/24/new-whitepaper-outlines-the-taxonomy-of-failure-modes-in-ai-agents/",
+          "date": "2025-04-24"
+        }
+      ]
+    },
+    {
+      "id": "over-automation",
+      "name": "過度自動化（成本優先犧牲品質）",
+      "desc": "這是產品層級的失敗：把人工流程整個換成 agent，沒有保留轉接真人的路徑，也沒持續追蹤品質，最後只好把真人找回來。對應主題：agent-vs-workflow、agent-eval。",
+      "examples": [
+        {
+          "title": "Klarna AI 客服首月處理三分之二對話（官方宣布）",
+          "url": "https://www.klarna.com/international/press/klarna-ai-assistant-handles-two-thirds-of-customer-service-chats-in-its-first-month/",
+          "date": "2024-02-27"
+        },
+        {
+          "title": "Klarna CEO 承認太重成本導致品質下降，重新招募真人客服",
+          "url": "https://fortune.com/2025/05/09/klarna-ai-humans-return-on-investment/",
+          "date": "2025-05-09"
+        }
+      ]
+    }
+  ],
+  "interviewQuestions": [
+    {
+      "q": "設計一個客服 agent（退款、改訂單）",
+      "focus": "規則要用工具層強制而不是只寫在 prompt、何時轉接真人、pass^k 一致性、捏造政策的防範、以解決率 / CSAT 當指標",
+      "source": "https://arxiv.org/abs/2406.12045"
+    },
+    {
+      "q": "設計一個 deep research agent",
+      "focus": "orchestrator-worker 平行搜尋、subagent 的任務描述、約 15 倍 token 成本、引用正確性 eval、可恢復執行",
+      "source": "https://www.anthropic.com/engineering/multi-agent-research-system"
+    },
+    {
+      "q": "設計一個 coding agent（如 Claude Code / Codex / Devin）",
+      "focus": "agentic search vs 索引、sandbox 與權限、跨 context window 的進度交接、用測試做驗證、破壞性指令防護",
+      "source": "https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents"
+    },
+    {
+      "q": "設計一個多租戶的 agent 平台（讓企業客戶建立自己的 agent）",
+      "focus": "tenant 隔離（記憶、向量庫、憑證）、工具 / MCP 註冊、用量計費與上限、可觀測性、版本與 rainbow deploy",
+      "source": "https://www.anthropic.com/engineering/claude-code-sandboxing"
+    },
+    {
+      "q": "設計一個能讀 email / 文件並代為行動的個人助理 agent",
+      "focus": "lethal trifecta、間接 prompt injection、對外通訊管道（連結、圖片）的出口控制、敏感動作的人工確認",
+      "source": "https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/"
+    },
+    {
+      "q": "設計一個 browser / computer-use agent",
+      "focus": "網站 allowlist、動作確認、prompt injection 攻擊成功率當指標、截圖 token 成本與延遲",
+      "source": "https://claude.com/blog/claude-for-chrome"
+    },
+    {
+      "q": "設計 agent 的 tool / MCP gateway（上百個工具）",
+      "focus": "工具過多造成 context 膨脹、progressive disclosure、用 code execution 呼叫工具、權限代理、MCP 與 A2A 的分工",
+      "source": "https://www.anthropic.com/engineering/code-execution-with-mcp"
+    },
+    {
+      "q": "設計 agent 的評估與監控系統",
+      "focus": "code / model / human grader、pass@k vs pass^k、trace 儲存與取樣、eval 當作上線門檻",
+      "source": "https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents"
+    },
+    {
+      "q": "設計一個長時間執行的背景 agent 服務（任務跑數小時）",
+      "focus": "工作佇列、durable execution、checkpoint / replay、部署時不中斷正在跑的 agent、完成通知",
+      "source": "https://temporal.io/blog/of-course-you-can-build-dynamic-ai-agents-with-temporal"
+    },
+    {
+      "q": "設計企業內部知識問答 agent（文件、Slack、wiki）",
+      "focus": "RAG vs agentic search、依使用者權限過濾檢索結果、資料新鮮度、引用與 grounding",
+      "source": "https://cline.bot/blog/why-cline-doesnt-index-your-codebase-and-why-thats-a-good-thing"
+    },
+    {
+      "q": "設計一個 LLM 路由 / 模型 gateway（多家模型、fallback、成本控制）",
+      "focus": "依難度路由、provider 故障時 fallback、prompt caching 命中率、per-tenant 配額",
+      "source": "https://arxiv.org/abs/2406.18665"
+    },
+    {
+      "q": "這個需求該用 agent 還是固定 workflow？（常見的開場追問）",
+      "focus": "Anthropic 的 workflow 模式 vs 自主 agent、可預測性 vs 彈性、讀取型 vs 寫入型任務是否適合 multi-agent",
+      "source": "https://www.anthropic.com/engineering/building-effective-agents"
+    }
+  ]
+}

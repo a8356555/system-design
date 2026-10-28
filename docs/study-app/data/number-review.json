@@ -526,5 +526,381 @@
   "verdict": "supported",
   "evidence": "7-bit-per-byte varint: decode ~180M numbers/second; 30-bit Varint w/ 2-bit length: ~240M; Group varint: ~400M numbers/second",
   "fix": ""
+ },
+ {
+  "file": "inc-agent-coordination.json",
+  "id": "anthropic-2025-claude-code-weekly-limits",
+  "figure": "2025-08-28 生效，預估影響不到 5% 訂閱者",
+  "verdict": "supported",
+  "evidence": "go into effect August 28 ... this limit will affect less than 5% of subscribers (TechCrunch)",
+  "fix": ""
+ },
+ {
+  "file": "inc-agent-coordination.json",
+  "id": "microsoft-2025-magentic-marketplace",
+  "figure": "接受第一提案比例：Claude Sonnet 4.5 93.3%、Gemini 2.5 Flash 86.7%、GPT-4o 100%",
+  "verdict": "unsupported",
+  "evidence": "Blog text only says 'All models showed strong preference for the first proposal received' (Figure 8 is an image). Paper arXiv 2510.25779 text: 'first proposals achieving selection rates between 60-100%'; 'GPT-4o and Sonnet-4.5 showed the most extreme behavior in certain conditions, achieving 100% first-proposal selection' — 93.3%/86.7% per-model values not in any text.",
+  "fix": ""
+ },
+ {
+  "file": "inc-agent-destructive.json",
+  "id": "klarna-2025-ai-customer-service-reversal",
+  "figure": "Klarna 新聞稿：首月 2.3 million 次對話、相當於 700 名全職客服，解決時間從 11 分鐘降到不到 2 分鐘，重複詢問下降 25%，預估 2024 年增加 4,000 萬美元利潤",
+  "verdict": "supported",
+  "evidence": "The AI assistant has had 2.3 million conversations ... equivalent work of 700 full-time agents ... 25% drop in repeat inquiries ... less than 2 mins compared to 11 mins previously ... $40 million USD in profit improvement to Klarna in 2024",
+  "fix": ""
+ },
+ {
+  "file": "inc-agent-destructive.json",
+  "id": "klarna-2025-ai-customer-service-reversal",
+  "figure": "Fortune：一年不招聘、員工減少 1,000 人以上；彈性客服起薪 400 瑞典克朗（41.17 美元）",
+  "verdict": "supported",
+  "evidence": "drop its employee count by over a thousand ... it had hired no human workers for the previous year ... pay starting at 400 Swedish krona ($41.17)",
+  "fix": ""
+ },
+ {
+  "file": "inc-agent-injection.json",
+  "id": "embracethered-2023-bard-doc-exfil",
+  "figure": "2023-09-19 回報 Google VRP，2023-10-19 確認修補",
+  "verdict": "supported",
+  "evidence": "Issue reported September, 19th 2023 - Issue confirmed fixed October, 19th 2023",
+  "fix": ""
+ },
+ {
+  "file": "inc-agent-injection.json",
+  "id": "embracethered-2024-chatgpt-spaiware-memory",
+  "figure": "2023-04 首次回報外洩向量；2023-12 url_safe 上線（僅 web）；2024-05~06 示範記憶注入；2024-09 macOS 1.2024.247 修補",
+  "verdict": "supported",
+  "evidence": "April, 2023: Data exfiltration attack vector via image rendering reported ... December, 2023: Partial fix via url_safe ... only for the web application ... May, 2024: inject fake memories ... June, 2024: end-to-end exploit demo ... September, 2024: OpenAI fixes the vulnerability in ChatGPT version 1.2024.247",
+  "fix": ""
+ },
+ {
+  "file": "inc-agent-regression.json",
+  "id": "anthropic-2026-claude-code-quality-postmortem",
+  "figure": "Effort 變更 2026-03-04 上線、04-07 還原",
+  "verdict": "supported",
+  "evidence": "On March 4, we changed Claude Code's default reasoning effort from high to medium ... We reverted this change on April 7",
+  "fix": ""
+ },
+ {
+  "file": "inc-agent-regression.json",
+  "id": "anthropic-2026-claude-code-quality-postmortem",
+  "figure": "Caching bug 2026-03-26 上線、04-10 修復",
+  "verdict": "supported",
+  "evidence": "On March 26, we shipped a change to clear Claude's older thinking ... We fixed it on April 10.",
+  "fix": ""
+ },
+ {
+  "file": "inc-agent-regression.json",
+  "id": "anthropic-2026-claude-code-quality-postmortem",
+  "figure": "Verbosity prompt 2026-04-16 上線、04-20 還原；Opus 4.6 與 4.7 皆下降 3%",
+  "verdict": "supported",
+  "evidence": "On April 16, we added a system prompt instruction to reduce verbosity ... reverted on April 20 ... One of these evaluations showed a 3% drop for both Opus 4.6 and 4.7.",
+  "fix": ""
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "cursor-token-efficiency",
+  "figure": "讀檔改成每 10 行標一次行號，cache-read token 降 1.6%；一個行號約 3–5 tokens",
+  "verdict": "supported",
+  "evidence": "including line numbers only on every tenth line ... reduced cache-read tokens by 1.6% ... A single line number uses only around three to five tokens",
+  "fix": ""
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "github-copilot-coding-agent",
+  "figure": "計費：每次 model request 算一個 premium request（2025-06-04 起）",
+  "verdict": "supported",
+  "evidence": "Beginning June 4, 2025, Copilot coding agent will use one premium request per model request the agent makes.",
+  "fix": ""
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "stripe-minions",
+  "figure": "每週超過 1,000 個 PR 完全由 minion 產生並合併",
+  "verdict": "supported",
+  "evidence": "Over a thousand pull requests merged each week at Stripe are completely minion-produced",
+  "fix": ""
+ },
+ {
+  "file": "cases-agent-1.json",
+  "id": "stripe-minions",
+  "figure": "本地 lint 少於 5 秒",
+  "verdict": "supported",
+  "evidence": "automatically run selected lints on each git push. This takes less than five seconds.",
+  "fix": ""
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "klarna-ai-assistant",
+  "figure": "上線第一個月 230 萬次對話，佔客服對話的三分之二（公司自述）",
+  "verdict": "supported",
+  "evidence": "The AI assistant has had 2.3 million conversations, two-thirds of Klarna's customer service chats",
+  "fix": ""
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "klarna-ai-assistant",
+  "figure": "預估 2024 年帶來 4,000 萬美元獲利改善（公司自述）",
+  "verdict": "supported",
+  "evidence": "It's estimated to drive a $40 million USD in profit improvement to Klarna in 2024",
+  "fix": ""
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "salesforce-agentforce-memory",
+  "figure": "Agentforce 每天執行 1,100 萬次呼叫",
+  "verdict": "unsupported",
+  "evidence": "Article body has no such figure; '11 million calls per day' appears only as the headline of a separate Related Articles link ('how Agentforce runs secure AI agents at 11 million calls per day'). Cite that article instead.",
+  "fix": ""
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "salesforce-multi-agent-teams",
+  "figure": "1 個 orchestrator 加 7 個 specialist，各自有獨立的模型、預算、回合上限",
+  "verdict": "supported",
+  "evidence": "Agent Designer contains an orchestrator and seven specialists, each with its own model, budget, and turn limit.",
+  "fix": ""
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "intercom-fin-scale",
+  "figure": "Fin 每週完整解決超過 200 萬次對話（公司自述）",
+  "verdict": "supported",
+  "evidence": "Fin now fully resolves over two million conversations per week.",
+  "fix": ""
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "intercom-fin-scale",
+  "figure": "資料庫 128 shards、約 200 萬 RPS，前面有超過 1,000 萬次/秒的 cache read",
+  "verdict": "supported",
+  "evidence": "spread across 128 shards. The database layer handles around two million requests per second, with more than ten million cache reads per second in front of it.",
+  "fix": ""
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "snyk-assist",
+  "figure": "約 1 年只在內部使用；2026 年 4 月上線到支援入口；2026 年 9 月 1 日進入核心產品",
+  "verdict": "supported",
+  "evidence": "For roughly a year, Snyk Assist ran as an internal tool ... In April 2026 we launched Snyk Assist to customers in our support portal ... On 1 September 2026, Snyk Assist moved into the core Snyk product",
+  "fix": ""
+ },
+ {
+  "file": "cases-agent-2.json",
+  "id": "honeycomb-hard-stuff-llm",
+  "figure": "部分客戶 schema 超過 5,000 個欄位；只納入過去 7 天有資料的欄位",
+  "verdict": "supported",
+  "evidence": "Some customers have schemas with over 5000 unique fields ... only include fields that received data in the past seven days",
+  "fix": ""
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "anthropic-prompt-injection-browser",
+  "figure": "加強防護後攻擊成功率：Opus 4.5 1.4%、Sonnet 4.5 1.9%、Haiku 4.5 2.4%、Sonnet 4 2.0%（內部 best-of-N 攻擊者）。",
+  "verdict": "unsupported",
+  "evidence": "Only in a chart graphic; WebFetch summary reading of a chart is not verifiable text (same rule as Magentic Marketplace).",
+  "fix": ""
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-mast-why-mas-fail",
+  "figure": "類別占比：system design issues 43.9%、inter-agent misalignment 31.95%、task verification 23.5%。",
+  "verdict": "wrong",
+  "evidence": "Current arXiv version (Fig.1): Specification Issues 44.2%, Inter-Agent Misalignment 32.3%, Task Verification 23.5%. 43.9%/31.95% not in v1, v2 or latest.",
+  "fix": "類別占比：system design issues 44.2%、inter-agent misalignment 32.3%、task verification 23.5%。"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-mast-why-mas-fail",
+  "figure": "單一模式：step repetition 15.7%、reasoning-action mismatch 13.2%、unaware of termination conditions 12.4%、disobey task specification 11.8%。",
+  "verdict": "supported",
+  "evidence": "Fig.1/Sec.4: step repetitions (FM-1.3, 15.7%) ... mismatches between reasoning and action (FM-2.6, 13.2%) ... not recognizing task completion (FM-1.5, 12.4%) ... follow task requirements (FM-1.1, 11.8%)",
+  "fix": ""
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-mast-why-mas-fail",
+  "figure": "ChatDev 介入：workflow 調整（CEO 有最終決定權）成功率 +9.4%；加入高層目標驗證步驟在 ProgramDev +15.6%。",
+  "verdict": "supported",
+  "evidence": "workflow adjustment ensuring the CEO had the final say contributed to a +9.4% increase in overall task success rate ... adding a high-level task objective verification step to ChatDev yields a +15.6% improvement in task success on ProgramDev",
+  "fix": ""
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-mast-why-mas-fail",
+  "figure": "LLM 標註器對人類專家：accuracy 94%、Cohen's kappa 0.77。",
+  "verdict": "supported",
+  "evidence": "The LLM annotator achieves high agreement with human experts (accuracy 94%, Cohen's Kappa of 0.77; Table 2)",
+  "fix": ""
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-metagpt",
+  "figure": "GPT-4 下 HumanEval Pass@1 85.9%、MBPP 87.7%。",
+  "verdict": "supported",
+  "evidence": "MetaGPT achieves a new state-of-the-art (SoTA) with 85.9% and 87.7% in Pass@1 (HumanEval, MBPP, with GPT-4)",
+  "fix": ""
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-metagpt",
+  "figure": "SoftwareDev：executability 3.75/4（ChatDev 2.25）、執行時間 541s（ChatDev 762s）、token 31,255（ChatDev 19,292）、人工修正 0.83 次（ChatDev 2.5）。",
+  "verdict": "supported",
+  "evidence": "Table 1: Executability 2.25 / 3.67 / 3.75; Running Times (s) 762 / 503 / 541; Token Usage 19,292 / 24,613 / 31,255; Human Revision Cost 2.5 / 2.25 / 0.83 (ChatDev / w/o Feedback / MetaGPT)",
+  "fix": ""
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-metagpt",
+  "figure": "Executable feedback 讓 HumanEval 提升 4.2%、MBPP 提升 5.4%。",
+  "verdict": "supported",
+  "evidence": "adding executable feedback into MetaGPT leads to a significant improvement of 4.2% and 5.4% in Pass @1 on HumanEval and MBPP",
+  "fix": ""
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-chatdev",
+  "figure": "SRDD 資料集 1,200 個軟體需求。",
+  "verdict": "supported",
+  "evidence": "comprises 1,200 software task prompts (SRDD)",
+  "fix": ""
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-chatdev",
+  "figure": "ChatDev / GPT-Engineer / MetaGPT：executability 0.8800 / 0.3583 / 0.4145；quality 0.3953 / 0.1419 / 0.1523。",
+  "verdict": "supported",
+  "evidence": "Table 1: GPT-Engineer Executability 0.3583 Quality 0.1419; MetaGPT 0.4145 / 0.1523; ChatDev 0.8800 / 0.3953",
+  "fix": ""
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-chatdev",
+  "figure": "人工評估對 GPT-Engineer 勝率 90.16%。",
+  "verdict": "supported",
+  "evidence": "Table (pairwise): GPT-Engineer Human 09.18% 90.16% 00.66%",
+  "fix": ""
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-camel",
+  "figure": "訊息數上限 40 則。",
+  "verdict": "supported",
+  "evidence": "we have set a maximum limit of 40 messages",
+  "fix": ""
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-camel",
+  "figure": "AI Society 人工評估：CAMEL 勝 76.3%、單次 gpt-3.5-turbo 勝 10.4%、平手 13.3%。",
+  "verdict": "supported",
+  "evidence": "AI Society Human Evaluation: Draw 13.3%, gpt-3.5-turbo Wins 10.4%, CAMEL Agents Win 76.3%",
+  "fix": ""
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-camel",
+  "figure": "GPT-4 評估：AI Society 73.0% vs 23.0%；Code 76.0% vs 24.0%。",
+  "verdict": "supported",
+  "evidence": "AI Society GPT4 Evaluation 4.0% 23.0% 73.0%; Code GPT4 Evaluation 0.0% 24.0% 76.0% (Draw / gpt-3.5 / CAMEL)",
+  "fix": ""
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-multiagent-debate",
+  "figure": "（3 agents、2 rounds）Arithmetic：single 67.0% / reflection 72.1% / debate 81.8%。",
+  "verdict": "supported",
+  "evidence": "Table 1 (run with 3 agents and two rounds of debate): Single Agent 67.0, Reflection 72.1, Debate 81.8 (Arithmetic)",
+  "fix": ""
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-multiagent-debate",
+  "figure": "GSM8K：77.0% / 75.0% / 85.0%；MMLU：63.9% / 57.7% / 71.1%；Biographies：66.0% / 68.3% / 73.8%。",
+  "verdict": "supported",
+  "evidence": "Table 1 GSM: 77.0 / 75.0 / 85.0; Table 2: Biographies 66.0 / 68.3 / 73.8, MMLU 63.9 / 57.7 / 71.1",
+  "fix": ""
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-more-agents",
+  "figure": "GSM8K：Llama2-13B ensemble size 15 達 59%，超過 Llama2-70B 單次 54%。",
+  "verdict": "wrong",
+  "evidence": "Text: 'the enhanced Llama2-13B model achieves 59% accuracy on the GSM8K dataset, outperforming the Llama2-70B model, which scores 54%' — Table 2 'Ours' uses ensemble size 40. Fig.1: 'When the ensemble size scales up to 15, Llama2-13B achieves comparable accuracy with Llama2-70B.'",
+  "fix": "GSM8K：Llama2-13B ensemble size 40 達 59%，超過 Llama2-70B 單次 54%（size 15 時已與 70B 相當）。"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-more-agents",
+  "figure": "MATH 上相對提升 Llama2-13B 達 200%，GPT-3.5-Turbo 為 34%。",
+  "verdict": "supported",
+  "evidence": "Table 6 relative performance gain (%): MATH (hard) Llama2-13B 200, GPT-3.5-Turbo 34",
+  "fix": ""
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-swe-agent",
+  "figure": "SWE-bench Lite（GPT-4 Turbo）消融：完整 SWE-agent 18.0%；shell-only 11.0%；拿掉 edit 指令 10.3%；拿掉 linter 15.0%；顯示全檔 12.7%、30 行 14.3%；保留完整歷史 15.0%；搜尋改為逐筆迭代 12.0%。",
+  "verdict": "supported",
+  "evidence": "Table 3 / Fig: full 18.0; Shell-only 11.00; No edit 10.3; edit w/o linting 15.0; Full file 12.7; 30 lines 14.3; Full history 15.0; Iterative search 12.0",
+  "fix": ""
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-magentic-one",
+  "figure": "GAIA：GPT-4o 版 32.33%，GPT-4o + o1 版 38.00%（與當時 SOTA 統計上相當）。",
+  "verdict": "supported",
+  "evidence": "Table: Magentic-One (GPT-4o) GAIA 32.33±5.3; Magentic-One (GPT-4o, o1) 38.00±5.5",
+  "fix": ""
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-magentic-one",
+  "figure": "AssistantBench（EM）：11.0% / 13.3%；WebArena：32.8%。",
+  "verdict": "supported",
+  "evidence": "Table: AssistantBench 11.0±4.6 (GPT-4o) / 13.3±4.9 (GPT-4o, o1); WebArena 32.8±3.2",
+  "fix": ""
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-magentic-one",
+  "figure": "o1 拒絕 26% 的 GitLab 任務，因此 WebArena 未比較 o1 版本。",
+  "verdict": "supported",
+  "evidence": "the o1 model refused to complete 26% of WebArena Gitlab tasks, and 12% of Shopping Administration tasks, making a fair comparison impossible",
+  "fix": ""
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-lost-in-the-middle",
+  "figure": "GPT-3.5-Turbo、20 份文件：相關文件在第一位 75.8%、中間位置 53.8–57.3%、最後一位 63.2%；closed-book（不給文件）56.1%。",
+  "verdict": "wrong",
+  "evidence": "Table (20 docs) GPT-3.5-Turbo: Index0 75.8%, Index4 57.2%, Index9 53.8%, Index14 55.4%, Index19 63.2%; closed-book 56.1%. 57.3% is the GPT-3.5-Turbo (16K) row.",
+  "fix": "GPT-3.5-Turbo、20 份文件：相關文件在第一位 75.8%、中間位置 53.8–57.2%、最後一位 63.2%；closed-book（不給文件）56.1%。"
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-lost-in-the-middle",
+  "figure": "超過 20 份文件後，GPT-3.5-Turbo 僅再提升約 1.5%。",
+  "verdict": "supported",
+  "evidence": "50 documents instead of 20 retrieved documents only marginally improves performance (~1.5% for GPT-3.5-Turbo and ~1% for claude-1.3)",
+  "fix": ""
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-agentdojo",
+  "figure": "GPT-4o、「important message」攻擊：無防禦 benign utility 69.0%、targeted ASR 57.69%。",
+  "verdict": "supported",
+  "evidence": "Defenses table (GPT-4o): No defense Benign utility 69.0%, Targeted ASR 57.69%",
+  "fix": ""
+ },
+ {
+  "file": "agent-readings.json",
+  "id": "paper-agentdojo",
+  "figure": "Tool filter：utility 73.13%、ASR 6.84%；PI detector：utility 降到 41.49%、ASR 7.95%；Data delimiting：ASR 41.65%；Repeat prompt：ASR 27.82%。",
+  "verdict": "supported",
+  "evidence": "Benign utility: PI detector 41.49%, Tool filter 73.13%; Targeted ASR: Delimiting 41.65%, PI detector 7.95%, Repeat prompt 27.82%, Tool filter 6.84%",
+  "fix": ""
  }
 ]

@@ -1,4 +1,4 @@
-"""Check that numeric figures in data/{inc,mech}-*.json appear in their cited source pages.
+"""Check that numeric figures in data/{inc,mech}-*.json, agent cases and agent readings appear in their cited source pages.
 
 Fetches each source URL directly with a normal browser UA (no archives/mirrors: a blocked page is
 reported as unreadable, not worked around). PDFs go through pdftotext. A figure counts as verified
@@ -59,6 +59,15 @@ def load_items():
             urls = [s["url"] for s in x.get("sources", []) if s.get("url")]
             if x.get("numbers"):
                 items.append((os.path.basename(path), x["id"], x["numbers"], urls))
+    for path in sorted(glob.glob(os.path.join(HERE, "data", "cases-agent-*.json"))):
+        for c in json.load(open(path)):
+            if c.get("scaleNumbers") and c.get("origin"):
+                items.append((os.path.basename(path), c["id"], c["scaleNumbers"], [c["origin"]] + c.get("extraSources", [])))
+    path = os.path.join(HERE, "data", "agent-readings.json")
+    if os.path.exists(path):
+        for r in json.load(open(path)):
+            if r.get("numbers") and r.get("url"):
+                items.append(("agent-readings.json", r["id"], r["numbers"], [r["url"]]))
     return items
 
 

@@ -257,7 +257,7 @@ window.DATA = /*DATA*/null;
     get(k, d) { try { const v = localStorage.getItem("sdt:" + k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
     set(k, v) { try { localStorage.setItem("sdt:" + k, JSON.stringify(v)); } catch (e) {} },
   };
-  const GROUPS = ["正確性", "擴展", "即時與非同步", "資料與查詢", "邊界與介面"];
+  const GROUPS = ["正確性", "擴展", "即時與非同步", "資料與查詢", "邊界與介面", "Agent 系統設計"];
   const DOMAINS = [
     ["video", "影音串流"], ["maps", "地圖與叫車"], ["connections", "連線與傳輸"], ["recsys", "推薦與排序"],
     ["moderation", "內容審核與反濫用"], ["data-pipeline", "資料管線"], ["deploy-migration", "部署與遷移"],
@@ -274,7 +274,8 @@ window.DATA = /*DATA*/null;
   D.mechanisms = D.mechanisms || [];
   const topicById = Object.fromEntries(D.topics.map((t) => [t.id, t]));
   const caseById = Object.fromEntries(D.cases.map((c) => [c.id, c]));
-  const fileToCase = Object.fromEntries(D.cases.map((c) => [c.file, c.id]));
+  const fileToCase = Object.fromEntries(D.cases.flatMap((c) => [[c.file, c.id], ["agent-case:" + c.id, c.id]]).filter(([k]) => k));
+  D.readings = D.readings || [];
   let done = store.get("done", {});
   let known = store.get("known", {});
 
@@ -290,6 +291,7 @@ window.DATA = /*DATA*/null;
     parts.push('<a class="navlink' + (active === "cases" ? " on" : "") + '" href="#cases">案例<span class="count">' + D.cases.length + "</span></a>");
     parts.push('<a class="navlink' + (active === "mech" ? " on" : "") + '" href="#mech">領域機制<span class="count">' + D.mechanisms.length + "</span></a>");
     if (D.incidents.length) parts.push('<a class="navlink' + (active === "inc" ? " on" : "") + '" href="#inc">真實事故<span class="count">' + D.incidents.length + "</span></a>");
+    if (D.readings.length) parts.push('<a class="navlink' + (active === "read" ? " on" : "") + '" href="#read">Agent 論文與指南<span class="count">' + D.readings.length + "</span></a>");
     parts.push('<a class="navlink' + (active === "components" ? " on" : "") + '" href="#components">元件速查<span class="count">' + D.components.length + "</span></a>");
     parts.push('<a class="navlink' + (active === "quiz" ? " on" : "") + '" href="#quiz">自測<span class="count">' + D.quiz.length + "</span></a></div>");
     for (const g of GROUPS) {
@@ -311,6 +313,7 @@ window.DATA = /*DATA*/null;
     h += '<p class="lede">這裡把 ' + D.topics.length + " 個常見決策拆成「有哪些選項、各自付出什麼代價、會怎麼壞、什麼規模該換」，再用 " + D.cases.length + " 個面試題與業界實例看別人實際怎麼選。</p>";
     if (D.mechanisms.length) h += '<p class="lede" style="margin-top:10px">另外收錄 ' + D.mechanisms.length + ' 條<a href="#mech">領域機制</a>：影音編碼、地圖路線、交易撮合、遊戲同步、音訊指紋、支付、搜尋引擎等特定應用才會用到、從通用 pattern 推不出來的做法。</p>';
     if (D.incidents.length) h += '<p class="lede" style="margin-top:10px">還有 ' + D.incidents.length + ' 篇<a href="#inc">真實事故</a>：P99 延遲、級聯故障、過載、快取熱點、資料庫遷移、變更事故等，各家公司在線上怎麼發現、修正、付出什麼代價。</p>';
+    if (D.readings.length) h += '<p class="lede" style="margin-top:10px">新增 <a href="#topic-agent-vs-workflow">Agent 系統設計</a>：什麼時候該用 agent、multi-agent 怎麼分工、context 與工具怎麼設計、怎麼評估與防 prompt injection，搭配上線案例、真實失敗事件與 ' + D.readings.length + ' 篇<a href="#read">論文與指南導讀</a>。</p>';
     h += '<div class="how3"><div><b>1．讀一個決策主題</b>先看情境問句，再比較選項的代價與失效方式，最後背下預設答案與面試說法。</div><div><b>2．看案例怎麼選</b>每個案例列出被否決的方案與理由，練習說出「為什麼不選 B」。</div><div><b>3．用自測驗收</b>取捨題和情境題佔一半以上，答不出來的會被標記，下次優先出現。</div></div>';
     h += '<h2>決策主題　<span class="mono" style="font-size:13px;color:var(--ink-2)">已讀 ' + doneN + " / " + D.topics.length + "</span></h2>";
     h += '<div class="groups">';
@@ -377,7 +380,11 @@ window.DATA = /*DATA*/null;
     if (rm.length) h += '<h2>相關的領域機制（' + rm.length + "）</h2><div class=\"results\">" + rm.map((m) => '<a href="#mechitem-' + esc(m.id) + '"><b>' + esc(m.title) + "</b><span>" + esc((m.apps || []).join("、")) + "</span></a>").join("") + "</div>";
     const qs = D.quiz.filter((q) => q.topic === t.id);
     if (qs.length) h += '<h2>自測（' + qs.length + '）</h2><div class="qlist">' + qs.map((q) => "<details><summary>" + esc(q.q) + ' <span class="badge b-src">' + esc(q.kind) + '</span></summary><p>' + esc(q.a) + "</p></details>").join("") + "</div>";
-    if (t.sources?.length) h += '<h2>延伸閱讀（repo 筆記）</h2>' + t.sources.map((s) => '<div class="path">docs/' + esc(s) + "</div>").join("");
+    if (t.sources?.length) h += '<h2>延伸閱讀</h2><div class="srcs">' + t.sources.map((s) => /^https?:/.test(s)
+      ? '<a href="' + esc(s) + '" target="_blank" rel="noopener">' + esc(s.replace(/^https?:\/\/(www\.)?/, "")) + " ↗</a>"
+      : '<div class="path">docs/' + esc(s) + "</div>").join("") + "</div>";
+    const rr = D.readings.filter((r) => (r.topics || []).includes(t.id));
+    if (rr.length) h += '<h2>相關論文與指南（' + rr.length + '）</h2><div class="results">' + rr.map((r) => '<a href="#readitem-' + esc(r.id) + '"><b>' + esc(r.org) + "：" + esc(r.title) + "</b><span>" + esc(r.claim) + "</span></a>").join("") + "</div>";
     h += '<label class="done-toggle"><input type="checkbox" id="doneBox"' + (done[t.id] ? " checked" : "") + "> 標記為已讀</label>";
     return h;
   }
@@ -394,16 +401,19 @@ window.DATA = /*DATA*/null;
     }
     if (c.followUps?.length) h += '<div><b>常見追問</b><ul class="plain">' + c.followUps.map((f) => "<li>" + esc(f) + "</li>").join("") + "</ul></div>";
     h += '<div class="chips">' + (c.topics || []).filter((x) => topicById[x]).map((x) => '<a class="chip" href="#topic-' + x + '">' + esc(shortTitle(topicById[x].title)) + "</a>").join("") + "</div>";
-    h += '<div class="path">docs/' + esc(c.file) + (c.origin ? '　<a href="' + esc(c.origin) + '" target="_blank" rel="noopener">原文 ↗</a>' : "") + "</div>";
+    if (c.numbersUnverified) h += '<div class="chips"><span class="badge b-premium" title="來源頁面無法自動讀取，數字未能逐字核對">數字未核對</span></div>';
+    if (!c.file) h += c.origin ? '<div class="srcs"><a href="' + esc(c.origin) + '" target="_blank" rel="noopener">原文 ↗</a></div>' : "";
+    else h += '<div class="path">docs/' + esc(c.file) + (c.origin ? '　<a href="' + esc(c.origin) + '" target="_blank" rel="noopener">原文 ↗</a>' : "") + "</div>";
     return h + "</div></details>";
   }
 
   let caseFilter = { kind: "全部", topic: "" };
   function casesPage() {
     let h = '<div class="eyebrow">' + D.cases.length + ' 個案例</div><h1>案例：別人實際怎麼選</h1><p class="lede">每個案例只留決策：選了什麼、否決了什麼、為什麼，以及這個選擇的代價。</p>';
-    h += '<div class="filters"><div class="grp"><span>類型</span>' + ["全部", "面試題", "業界實例"].map((k) => '<button type="button" class="chip' + (caseFilter.kind === k ? " on" : "") + '" data-kind="' + k + '">' + k + "</button>").join("") + "</div>";
+    h += '<div class="filters"><div class="grp"><span>類型</span>' + ["全部", "面試題", "業界實例", "Agent 案例"].map((k) => '<button type="button" class="chip' + (caseFilter.kind === k ? " on" : "") + '" data-kind="' + k + '">' + k + "</button>").join("") + "</div>";
     h += '<div class="grp"><span>主題</span><button type="button" class="chip' + (!caseFilter.topic ? " on" : "") + '" data-ctopic="">全部</button>' + D.topics.map((t) => '<button type="button" class="chip' + (caseFilter.topic === t.id ? " on" : "") + '" data-ctopic="' + t.id + '">' + esc(shortTitle(t.title)) + "</button>").join("") + "</div></div>";
-    const list = D.cases.filter((c) => (caseFilter.kind === "全部" || c.kind === caseFilter.kind) && (!caseFilter.topic || (c.topics || []).includes(caseFilter.topic)));
+    const isAgent = (c) => c.source === "Agent Case Study";
+    const list = D.cases.filter((c) => (caseFilter.kind === "全部" || (caseFilter.kind === "Agent 案例" ? isAgent(c) : c.kind === caseFilter.kind && !isAgent(c))) && (!caseFilter.topic || (c.topics || []).includes(caseFilter.topic)));
     h += '<div class="cases">' + (list.length ? list.map((c) => caseCard(c)).join("") : '<p class="empty">沒有符合的案例，換一個主題試試。</p>') + "</div>";
     return h;
   }
@@ -440,6 +450,29 @@ window.DATA = /*DATA*/null;
     return h + "</article>";
   }
 
+  let readTopic = "";
+  function readCard(r) {
+    let h = '<article class="mech" id="readitem-' + esc(r.id) + '"><div class="mech-h"><h3>' + esc(r.title) + '</h3><span class="chips"><span class="badge b-src">' + esc(r.type) + '</span><span class="chip">' + esc(r.org) + "</span>" + (r.date ? '<span class="mono" style="font-size:11px">' + esc(r.date) + "</span>" : "") + "</span></div>";
+    h += '<div class="use"><b>主張</b>' + esc(r.claim) + "</div>";
+    if (r.keyPoints?.length) h += '<ul class="plain">' + r.keyPoints.map((k) => "<li>" + esc(k) + "</li>").join("") + "</ul>";
+    if (r.numbers?.length) h += '<div class="nums">' + r.numbers.map((n) => '<span class="num">' + esc(n) + "</span>").join("") + "</div>";
+    if (r.numbersUnverified) h += '<div class="chips"><span class="badge b-premium" title="來源頁面無法自動讀取，數字未能逐字核對">數字未核對</span></div>';
+    h += '<div class="chain inc"><div class="c-trick"><span class="k">設計上的啟示</span>' + esc(r.designTakeaway) + '</div><div class="c-cost"><span class="k">限制</span>' + esc(r.caveat) + "</div></div>";
+    const tps = (r.topics || []).filter((x) => topicById[x]);
+    if (tps.length) h += '<div class="chips">' + tps.map((x) => '<a class="chip" href="#topic-' + x + '">' + esc(shortTitle(topicById[x].title)) + "</a>").join("") + "</div>";
+    h += '<div class="srcs"><a href="' + esc(r.url) + '" target="_blank" rel="noopener">原文 ↗</a></div>';
+    return h + "</article>";
+  }
+  function readPage(sel) {
+    if (sel !== undefined) readTopic = sel;
+    const agentTopics = D.topics.filter((t) => t.group === "Agent 系統設計");
+    let h = '<div class="eyebrow">' + D.readings.length + ' 篇</div><h1>Agent 論文與指南導讀</h1><p class="lede">每篇只留一個主張、對設計的啟示與限制。廠商文章的成效數字多為自述，引用時要說清楚。</p>';
+    h += '<div class="filters"><div class="grp"><span>主題</span><a class="chip' + (!readTopic ? " on" : "") + '" href="#read">全部</a>' +
+      agentTopics.map((t) => '<a class="chip' + (readTopic === t.id ? " on" : "") + '" href="#read-' + t.id + '">' + esc(shortTitle(t.title)) + '<span class="mono" style="font-size:11px">' + D.readings.filter((r) => (r.topics || []).includes(t.id)).length + "</span></a>").join("") + "</div></div>";
+    const list = D.readings.filter((r) => !readTopic || (r.topics || []).includes(readTopic));
+    return h + '<div class="mechs">' + list.map(readCard).join("") + "</div>";
+  }
+
   let mechDomain = "";
   function mechPage(sel) {
     if (sel !== undefined) mechDomain = sel;
@@ -458,7 +491,7 @@ window.DATA = /*DATA*/null;
   function incCard(x) {
     let h = '<article class="mech" id="incitem-' + esc(x.id) + '"><div class="mech-h"><h3>' + esc(x.company) + "：" + esc(x.title) + '</h3><span class="chips">' +
       (x.date ? '<span class="chip mono">' + esc(x.date) + "</span>" : "") +
-      '<span class="badge ' + (x.kind === "postmortem" ? "b-premium" : "b-src") + '">' + (x.kind === "postmortem" ? "事故檢討" : "設計文章") + "</span>" + (x.byAgents ? agentsBadge : "") + "</span></div>";
+      '<span class="badge ' + (x.kind === "postmortem" ? "b-premium" : "b-src") + '">' + ({ postmortem: "事故檢討", "incident-report": "事件報導", experiment: "實驗環境" }[x.kind] || "設計文章") + "</span>" + (x.byAgents ? agentsBadge : "") + "</span></div>";
     h += '<div class="chain inc"><div class="c-naive"><span class="k">症狀</span>' + esc(x.symptom) + '</div><div class="c-break"><span class="k">根因</span>' + esc(x.rootCause) +
       '</div><div class="c-why"><span class="k">為什麼難</span>' + esc(x.whyHard) + '</div><div class="c-trick"><span class="k">修正</span>' + esc(x.fix) +
       '</div><div class="c-cost"><span class="k">代價</span>' + esc(x.tradeoff) + "</div></div>";
@@ -526,14 +559,15 @@ window.DATA = /*DATA*/null;
   function searchPage(term) {
     const s = term.toLowerCase();
     const hit = (o) => JSON.stringify(o).toLowerCase().includes(s);
-    const ts = D.topics.filter(hit), cs = D.cases.filter(hit), ps = D.components.filter(hit), ms = D.mechanisms.filter(hit), is = D.incidents.filter(hit);
+    const ts = D.topics.filter(hit), cs = D.cases.filter(hit), ps = D.components.filter(hit), ms = D.mechanisms.filter(hit), is = D.incidents.filter(hit), rs = D.readings.filter(hit);
     let h = '<div class="eyebrow">搜尋</div><h1>「' + esc(term) + "」</h1>";
-    if (!ts.length && !cs.length && !ps.length && !ms.length && !is.length) return h + '<p class="empty">沒有找到，試試英文術語（例如 outbox、HNSW、fencing token）。</p>';
+    if (!ts.length && !cs.length && !ps.length && !ms.length && !is.length && !rs.length) return h + '<p class="empty">沒有找到，試試英文術語（例如 outbox、HNSW、fencing token）。</p>';
     h += '<div class="results">';
     for (const t of ts) h += '<a href="#topic-' + t.id + '"><b>主題・' + esc(t.title) + "</b><span>" + esc(t.oneLiner) + "</span></a>";
     for (const c of cs) h += '<a href="#case-' + c.id + '"><b>案例・' + esc(c.title) + "</b><span>" + esc(c.core) + "</span></a>";
     for (const c of ps) h += '<a href="#comp-' + c.id + '"><b>元件・' + esc(c.name) + "</b><span>" + esc(c.what) + "</span></a>";
     for (const x of is) h += '<a href="#incitem-' + esc(x.id) + '"><b>事故・' + esc(x.company) + "：" + esc(x.title) + "</b><span>" + esc(x.rootCause) + "</span></a>";
+    for (const r of rs) h += '<a href="#readitem-' + esc(r.id) + '"><b>導讀・' + esc(r.title) + "</b><span>" + esc(r.claim) + "</span></a>";
     for (const m of ms) h += '<a href="#mechitem-' + esc(m.id) + '"><b>機制・' + esc(m.title) + "</b><span>" + esc((m.apps || []).join("、") + "｜" + m.trick) + "</span></a>";
     return h + "</div>";
   }
@@ -552,12 +586,14 @@ window.DATA = /*DATA*/null;
     else if (hash === "mech") { html = mechPage(""); active = "mech"; }
     else if (hash.startsWith("mechitem-")) { html = mechPage(""); active = "mech"; }
     else if (hash.startsWith("mech-")) { html = mechPage(hash.slice(5)); active = "mech"; }
+    else if (hash === "read" || hash.startsWith("readitem-")) { html = readPage(""); active = "read"; }
+    else if (hash.startsWith("read-")) { html = readPage(hash.slice(5)); active = "read"; }
     else if (hash === "quiz") html = quizPage();
     else { html = home(); active = "home"; }
     $("#view").innerHTML = html;
     nav(active);
     if (hash.startsWith("case-") && !term) { const el = document.getElementById(hash); if (el) { el.open = true; el.scrollIntoView(); } }
-    else if ((hash.startsWith("comp-") || hash.startsWith("mechitem-") || hash.startsWith("incitem-")) && !term) { const el = document.getElementById(hash); if (el) el.scrollIntoView(); }
+    else if ((hash.startsWith("comp-") || hash.startsWith("mechitem-") || hash.startsWith("incitem-") || hash.startsWith("readitem-")) && !term) { const el = document.getElementById(hash); if (el) el.scrollIntoView(); }
     else window.scrollTo(0, 0);
     $("#rail").classList.remove("open");
     store.set("last", hash);
